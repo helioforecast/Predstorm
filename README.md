@@ -1,3 +1,3 @@
 # PREDSTORM
 
-<June 2018: This is work in progress>
+June 2018: This is work in progress
