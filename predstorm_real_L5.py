@@ -101,7 +101,7 @@ sun_syn=25.5 #days
 
 
 #how far to see in the future with STEREO-A data to the right of the current time
-realtime_plot_timeadd=4
+realtime_plot_timeadd=7
 
 #to shift the left beginning of the plot
 realtime_plot_leftadd=2
@@ -110,7 +110,8 @@ realtime_plot_leftadd=2
 #to get older data for plotting Burton/OBrien Dst for verification
 verification_mode=0
 #verify_filename='real/savefiles/predstorm_realtime_stereo_l1_save_v1_2018-05-04-10_00.p'
-verify_filename='real/savefiles/predstorm_realtime_stereo_l1_save_v1_2018-05-29-12_32.p'
+#verify_filename='real/savefiles/predstorm_realtime_stereo_l1_save_v1_2018-05-29-12_32.p'
+verify_filename='real/savefiles/predstorm_realtime_stereo_l1_save_v1_2018-06-16-07_13.p'
 #intervals for verification
 verify_int_start=mdates.date2num(sunpy.time.parse_time('2018-05-31 12:00:00'))
 verify_int_end=mdates.date2num(sunpy.time.parse_time('2018-06-02 23:00:00'))
