@@ -1,6 +1,6 @@
 # MFR classification
 #
-# analyses HELCATS ICMECAT data pattern recognition and types of MFRs
+# analyses HELCATS ICMECAT for predicting labels of CME MFRs
 # Author: C. Moestl, Space Research Institute IWF Graz, Austria
 # last update: May 2018
 
@@ -20,9 +20,14 @@ import seaborn as sns
 import pandas as pd
 
 import warnings
-
 warnings.filterwarnings('ignore')
 
+sns.set_context("talk")     
+sns.set_style("darkgrid")  
+
+plt.close('all')
+
+######## functions
 
 def getcat(filename):
   print('reading CAT')
@@ -101,19 +106,18 @@ def dynamic_pressure(density, speed):
 
 
 #####################################################################################
-#################### main program ###############################################
+######################## main program ###############################################
 
 plt.close('all')
-print('Start cme_stats_v1.py main program. ICME parameters at all 4 planets.')
+print('MFR classify.')
 
 #-------------------------------------------------------- get cats
-
 
 #solar radius
 Rs_in_AU=7e5/149.5e6
 
 
-filename_icmecat='ALLCATS/HELCATS_ICMECAT_v20_SCEQ.sav'
+filename_icmecat='../catpy/ALLCATS/HELCATS_ICMECAT_v20_SCEQ.sav'
 i=getcat(filename_icmecat)
 
 #now this is a scipy structured array  
@@ -262,230 +266,8 @@ print( 'read data done.')
 
 
 
-#wind Data: win_time win.bx win.by ... win.vtot win.vy etc.
-#MFR times: icme_start_time_num[iwinind] mo_start_time[iwinind]  mo_end_time[iwinind]
 
 
-############ List of features - go through each MFR and extract values characterising them
-# 
-# winmfrbzmean=np.zeros(np.size(iwinind))
-# winmfrbzstd=np.zeros(np.size(iwinind))
-# winmfrbymean=np.zeros(np.size(iwinind))
-# winmfrbystd=np.zeros(np.size(iwinind))
-# winmfrbxmean=np.zeros(np.size(iwinind))
-# winmfrbxstd=np.zeros(np.size(iwinind))
-# winmfrbtotmean=np.zeros(np.size(iwinind))
-# winmfrbtotstd=np.zeros(np.size(iwinind))
-# 
-# 
-# winmfrvtotmean=np.zeros(np.size(iwinind))
-# winmfrvtotstd=np.zeros(np.size(iwinind))
-# 
-# for p in np.arange(0,np.size(iwinind)):
-# 
-#     #extract values from MFR data    
-#     winmfrbz=win.bz[np.where(np.logical_and(win_time > mo_start_time_num[iwinind[0][p]],win_time < mo_end_time_num[iwinind[0][p]]) )] 
-#     winmfrbzmean[p]=np.nanmean(winmfrbz)
-#     winmfrbzstd[p]=np.nanstd(winmfrbz)
-# 
-#     winmfrby=win.by[np.where(np.logical_and(win_time > mo_start_time_num[iwinind[0][p]],win_time < mo_end_time_num[iwinind[0][p]]) )] 
-#     winmfrbymean[p]=np.nanmean(winmfrby)
-#     winmfrbystd[p]=np.nanstd(winmfrby)
-#     
-#     winmfrbx=win.bx[np.where(np.logical_and(win_time > mo_start_time_num[iwinind[0][p]],win_time < mo_end_time_num[iwinind[0][p]]) )] 
-#     winmfrbxmean[p]=np.nanmean(winmfrbx)
-#     winmfrbxstd[p]=np.nanstd(winmfrbx)
-#     
-#     winmfrbtot=win.btot[np.where(np.logical_and(win_time > mo_start_time_num[iwinind[0][p]],win_time < mo_end_time_num[iwinind[0][p]]) )] 
-#     winmfrbtotmean[p]=np.nanmean(winmfrbtot)
-#     winmfrbtotstd[p]=np.nanstd(winmfrbtot)
-# 
-#     winmfrvtot=win.vtot[np.where(np.logical_and(win_time > mo_start_time_num[iwinind[0][p]],win_time < mo_end_time_num[iwinind[0][p]]) )] 
-#     winmfrvtotmean[p]=np.nanmean(winmfrvtot)
-#     winmfrvtotstd[p]=np.nanstd(winmfrvtot)
-#     
-#     #more values from fits? if Bz is ascending, descending, what are other features to derive?
-#  
-#   
-#collect all derived features in pandas dataframe  
-
-#d = {'btot_mean': winmfrbtotmean, 'btot_std': winmfrbtotstd, 'bx_mean': winmfrbxmean, 'bx_std': winmfrbxstd,'by_mean': winmfrbymean, 'by_std': winmfrbystd,'bz_mean': winmfrbzmean, 'bz_std': winmfrbzstd,'vtot_mean': winmfrvtotmean, 'vtot_std': winmfrvtotstd}
-#df = pd.DataFrame(data=d)
-#print(df.describe())
-
-#plt.figure(1)
-#df.hist()
-
-#plt.figure(2)
-#sns.jointplot(df['btot_mean'],df['vtot_mean'])
-
-#plt.figure(5)
-#corrmat=df.corr()
-#sns.heatmap(corrmat, annot=True)
-
-######################################################################################
-
-
-
-############# Version (1)  - prediction of scalar labels with a linear model
-
-############### X define features of first 6 hours
-
-
-#first 6 hours of each MFR
-
-print('extract features and labels')
-
-feature_hours=4
-
-bzmeanfeature=np.zeros(np.size(iwinind))
-bzmeanlabel=np.zeros(np.size(iwinind))
-
-btotmeanfeature=np.zeros(np.size(iwinind))
-btotmeanlabel=np.zeros(np.size(iwinind))
-
-
-#derive features and labels
-for p in np.arange(0,np.size(iwinind)):
-
-    #extract values from MFR data   for first 6 hours
-    feature_bz=win.bz[np.where(np.logical_and(win_time > mo_start_time_num[iwinind[0][p]],
-                                            win_time < mo_start_time_num[iwinind[0][p]]+feature_hours/24.0) )] 
-    bzmeanfeature[p]=np.nanmean(feature_bz)
-    
-    feature_btot=win.btot[np.where(np.logical_and(win_time > mo_start_time_num[iwinind[0][p]],
-                                            win_time < mo_start_time_num[iwinind[0][p]]+feature_hours/24.0) )] 
-    btotmeanfeature[p]=np.nanmean(feature_btot)
-
-    #time is extracted from 6 hours to end of MFR
-    label_bz=win.bz[np.where(np.logical_and(win_time > mo_start_time_num[iwinind[0][p]]+feature_hours/24.0,
-                                            win_time < mo_end_time_num[iwinind[0][p]]))] 
-    bzmeanlabel[p]=np.nanmean(label_bz)
-
-    label_btot=win.btot[np.where(np.logical_and(win_time > mo_start_time_num[iwinind[0][p]]+feature_hours/24.0,
-                                            win_time < mo_end_time_num[iwinind[0][p]]))] 
-
-    btotmeanlabel[p]=np.nanmean(label_btot)
-
-
-#correct nans with mean of array
-nans=np.where(np.isnan(bzmeanlabel) == True)
-bzmeanlabel[nans]=np.nanmean(bzmeanlabel)
-
-nans=np.where(np.isnan(btotmeanlabel) == True)
-btotmeanlabel[nans]=np.nanmean(btotmeanlabel)
-
-nans=np.where(np.isnan(bzmeanfeature) == True)
-bzmeanfeature[nans]=np.nanmean(bzmeanfeature)
-
-nans=np.where(np.isnan(btotmeanfeature) == True)
-btotmeanfeature[nans]=np.nanmean(btotmeanfeature)
-
-
-
-#fl feature labels
-fl = {'bzmeanfeature': bzmeanfeature, 'btotmeanfeature': btotmeanfeature, 'bzmeanlabel': bzmeanlabel, 'btotmeanlabel': btotmeanlabel}
-#fl frame
-flf = pd.DataFrame(data=fl)
-print(flf.describe())
-
-#features
-#convert to correct format
-X1=btotmeanfeature
-X1=X1.reshape(-1,1)
-
-X=flf['btotmeanfeature']
-#labels
-y=flf['btotmeanlabel']
-
-
-#check data
-
-plt.figure(1)
-flf.hist()
-
-
-plt.figure(5)
-corrmat=flf.corr()
-sns.heatmap(corrmat, annot=True)
-
-
-
-import sklearn.linear_model as lm
-lr=lm.LinearRegression()
-lr.fit(X1,y)
-
-
-print('R**2 score')
-print(lr.score(X1,y))
-
-
-
-y_pred = lr.predict(X1)
-
-print('mean absolute error ')
-from sklearn.metrics import  mean_absolute_error
-print(mean_absolute_error(y_pred,y))
-
-
-
-plt.figure(2)
-sns.jointplot(X,y,kind='reg')
-
-
-plt.figure(3)
-plt.plot(X,y,'bo')
-plt.plot(X1,y_pred,'k-')
-
-
-
-
-
-sys.exit()
-
-###################same for Bz
-
-#features
-#convert to correct format
-X1=bzmeanfeature
-X1=X1.reshape(-1,1)
-
-X=flf['bzmeanfeature']
-#labels
-y=flf['bzmeanlabel']
-
-
-
-
-import sklearn.linear_model as lm
-lr=lm.LinearRegression()
-lr.fit(X1,y)
-
-
-print('R**2 score')
-print(lr.score(X1,y))
-
-
-
-
-
-#split in training and test data does not work ...
-
-#from sklearn.model_selection import train_test_split
-#X_train, X_test, y_train, y_test = train_test_split(X1, y, test_size=0.3, random_state=8, stratify=y)
-
-
-
-
-
-
-sys.exit()
-
-
-
-
-
-############# Version (2)  - prediction of vector timeseries label with a neural network
 
 
 
@@ -498,8 +280,6 @@ sys.exit()
 
 #split into training and test data
 
-#2 how to predict the rest of the MFR if first 10, 20, 30, 40, 50% are seen?
-#everything should be automatically with a deep learning method
 
 #wie image recognition - aus einem Teil-Bild (Zeitserie der MFR + features sind ein 2D array)
 #das Rest Bild vorhersagen
@@ -510,7 +290,433 @@ sys.exit()
 
 #die feature sind die Zeitserien über die ersten 20% und die parameter - label ist die gesamte Zeitserie
 
-#aufteilen in training und 
+
+
+
+
+
+
+##################### (1) classify background wind, sheath, MFR based on 4 features in hourly data
+
+
+#go through all wind data and check for each hour whether this is inside a MFR or sheath or background wind
+
+#3 labels: background wind, sheath, MFR
+#data: about 1e5 training instances (without test data) with 4 features: average btot, std btot, vtot, vstd
+
+#get the features and labels for ICME classification
+
+get_fl_classify=False
+#get_fl_classify=True
+
+interval_hours=2
+
+#takes 22 minutes for full data
+if get_fl_classify:
+  
+  start = time.time()
+  print('extract features for classification')
+
+  #test CME extraction April 2010
+  #win=win[1690000:1720000]
+  #win_time=win_time[1690000:1720000]
+
+  win=win[1500000:2000000]
+  win_time=win_time[1500000:2000000]
+
+  #win=win[0:2500000]
+  #win_time=win_time[0:2500000]
+
+
+  hour_int_size=round(np.size(win)/(60*interval_hours))-1
+
+  btot_ave_hour=np.zeros(hour_int_size)
+  btot_std_hour=np.zeros(hour_int_size)
+  bmax_hour=np.zeros(hour_int_size)
+
+  bz_ave_hour=np.zeros(hour_int_size)
+  bz_std_hour=np.zeros(hour_int_size)
+
+  by_ave_hour=np.zeros(hour_int_size)
+  by_std_hour=np.zeros(hour_int_size)
+
+  bx_ave_hour=np.zeros(hour_int_size)
+  bx_std_hour=np.zeros(hour_int_size)
+  
+  vtot_ave_hour=np.zeros(hour_int_size)
+  vtot_std_hour=np.zeros(hour_int_size)
+  vmax_hour=np.zeros(hour_int_size)
+
+  t_ave_hour=np.zeros(hour_int_size)
+  t_std_hour=np.zeros(hour_int_size)
+  n_ave_hour=np.zeros(hour_int_size)
+  n_std_hour=np.zeros(hour_int_size)
+  
+  time_hour=np.zeros(hour_int_size)
+  
+
+  #get features for 1 hour steps
+  for p in np.arange(hour_int_size):
+
+     
+    #extract index for current hour 
+    indexrange=np.where(np.logical_and(win_time > win_time[0]+p*interval_hours/24.0,win_time < win_time[0]+p*interval_hours/24.0+interval_hours/24.0))
+
+    btot_ave_hour[p]=np.mean(win.btot[indexrange] )
+    btot_std_hour[p]=np.std(win.btot[indexrange] )	
+    bmax_hour[p]=np.max(win.btot[indexrange] )
+
+    bx_ave_hour[p]=np.mean(win.btot[indexrange] )
+    bx_std_hour[p]=np.std(win.btot[indexrange] )	
+
+    by_ave_hour[p]=np.mean(win.btot[indexrange] )
+    by_std_hour[p]=np.std(win.btot[indexrange] )	
+
+    bz_ave_hour[p]=np.mean(win.btot[indexrange] )
+    bz_std_hour[p]=np.std(win.btot[indexrange] )	
+																																										
+    vtot_ave_hour[p]=np.mean(win.vtot[indexrange] )
+    vtot_std_hour[p]=np.std(win.vtot[indexrange] )
+    vmax_hour[p]=np.max(win.vtot[indexrange] )
+																																														
+																																														
+				#add temperature, density		
+				
+    t_ave_hour[p]=np.mean(win.temperature[indexrange] )
+    t_std_hour[p]=np.std(win.temperature[indexrange] )
+    n_ave_hour[p]=np.mean(win.density[indexrange] )
+    n_std_hour[p]=np.std(win.density[indexrange] )
+
+    time_hour[p]=win_time[0]+p*interval_hours/24+0.5*interval_hours/24 
+  
+  print('extract features done.')																																														
+
+  #plot features over original time series
+
+  ############# 
+  #plt.figure(1)
+  #plt.plot_date(win_time, win.btot,'k-', alpha=0.4)
+  #plt.plot_date(time_hour, btot_std_hour)
+  #plt.plot_date(time_hour, btot_ave_hour)
+  #plt.tight_layout()
+  
+  
+  #plt.figure(2)
+  #plt.plot_date(win_time, win.vtot,'k-', alpha=0.4)
+  #plt.plot_date(time_hour, vtot_std_hour)
+  #plt.plot_date(time_hour, vtot_ave_hour)
+  #plt.tight_layout()
+
+
+  print('extract label for each hour interval with ICMECAT')
+
+  #old try
+  #1 if fully inside a sheath, 0 otherwise, same for others
+  #sheath=np.zeros(hour_int_size)
+  #mfr=np.zeros(hour_int_size)
+  #bwind=np.zeros(hour_int_size)+1
+  
+  
+  #classify: bwind =0, sheath=1, mfr=2
+  sw_label=np.zeros(hour_int_size)
+
+  for p in np.arange(hour_int_size):
+  
+  
+    #icme_start_time_num[iwinind], mo_start_time_num[iwinind], mo_end_time_num[iwinind]
+  
+    #first try: check all ICMECAT events for each hour timestep
+  
+    for i in np.arange(np.size(iwinind)):
+         #when current time is between ICME_START_TIME and MO_START_TIME, its a sheath    
+         if np.logical_and(time_hour[p] > icme_start_time_num[iwinind][i],time_hour[p] < mo_start_time_num[iwinind][i]):
+                sw_label[p]=1
+         #this is a MFR       
+         elif np.logical_and(time_hour[p] > mo_start_time_num[iwinind][i],time_hour[p] < mo_end_time_num[iwinind][i]):
+                sw_label[p]=2
+
+     
+
+
+  #make nans to averages ***maybe better interpolation?
+  nans=np.where(np.isnan(btot_ave_hour) == True)
+  btot_ave_hour[nans]=np.nanmean(btot_ave_hour)
+
+  nans=np.where(np.isnan(btot_std_hour) == True)
+  btot_std_hour[nans]=np.nanmean(btot_std_hour)
+
+  nans=np.where(np.isnan(bmax_hour) == True)
+  bmax_hour[nans]=np.nanmean(bmax_hour)
+
+  nans=np.where(np.isnan(bx_ave_hour) == True)
+  bx_ave_hour[nans]=np.nanmean(bx_ave_hour)
+
+  nans=np.where(np.isnan(bx_std_hour) == True)
+  bx_std_hour[nans]=np.nanmean(bx_std_hour)
+
+  nans=np.where(np.isnan(by_ave_hour) == True)
+  by_ave_hour[nans]=np.nanmean(by_ave_hour)
+
+  nans=np.where(np.isnan(by_std_hour) == True)
+  by_std_hour[nans]=np.nanmean(by_std_hour)
+
+  np.where(np.isnan(bz_ave_hour) == True)
+  bz_ave_hour[nans]=np.nanmean(bz_ave_hour)
+
+  nans=np.where(np.isnan(bz_std_hour) == True)
+  bz_std_hour[nans]=np.nanmean(bz_std_hour)
+
+  nans=np.where(np.isnan(vtot_ave_hour) == True)
+  vtot_ave_hour[nans]=np.nanmean(vtot_ave_hour)
+
+  nans=np.where(np.isnan(vtot_std_hour) == True)
+  vtot_std_hour[nans]=np.nanmean(vtot_std_hour)
+  
+  nans=np.where(np.isnan(vmax_hour) == True)
+  vmax_hour[nans]=np.nanmean(vmax_hour)
+
+ 
+  nans=np.where(np.isnan(t_ave_hour) == True)
+  t_ave_hour[nans]=np.nanmean(t_ave_hour)
+  nans=np.where(np.isnan(t_std_hour) == True)
+  t_std_hour[nans]=np.nanmean(t_std_hour)
+  
+  nans=np.where(np.isnan(n_ave_hour) == True)
+  n_ave_hour[nans]=np.nanmean(n_ave_hour)
+  nans=np.where(np.isnan(n_std_hour) == True)
+  n_std_hour[nans]=np.nanmean(n_std_hour)
+
+
+  # #save features and labels
+#   #fl feature labels pandas dataframe
+#   fl = {'B_ave': btot_ave_hour, 'B_std': btot_std_hour,'Bmax': bmax_hour, 
+#         'Bx_ave': bx_ave_hour, 'Bx_std': bx_std_hour,
+#         'By_ave': by_ave_hour, 'By_std': by_std_hour,
+#         'Bz_ave': bz_ave_hour, 'Bz_std': bz_std_hour,        
+#         'V_ave': vtot_ave_hour, 'V_std': vtot_std_hour,'Vmax': vmax_hour,
+#         'T_ave': t_ave_hour,  'T_std': t_std_hour,
+#         'N_ave': n_ave_hour,  'N_std': n_std_hour, 'sw_label': sw_label}
+#   flf = pd.DataFrame(data=fl)
+#   
+#   #features: right format for sklearn, deeplearning, ...
+#   
+#   
+#   #all features
+#   X=np.zeros([hour_int_size,16])  
+#   X[:,0]=btot_ave_hour
+#   X[:,1]=btot_std_hour
+#   X[:,2]=bmax_hour
+#   X[:,3]=bx_ave_hour
+#   X[:,4]=bx_std_hour
+#   X[:,5]=by_ave_hour
+#   X[:,6]=by_std_hour
+#   X[:,7]=bz_ave_hour
+#   X[:,8]=bz_std_hour
+#   X[:,9]=vtot_ave_hour
+#   X[:,10]=vtot_std_hour
+#   X[:,11]=vmax_hour
+#   X[:,12]=t_ave_hour
+#   X[:,13]=t_std_hour
+#   X[:,14]=n_ave_hour
+#   X[:,15]=n_std_hour
+# 
+
+  #camporeale 2017 Xu 2015 : design features that allow discrimination
+  
+   
+    
+  alfv=np.sqrt(btot_ave_hour**2)/n_ave_hour  
+  texp=((vtot_ave_hour/258)**3.113)/t_ave_hour
+    
+  fl = {'V_tot': vtot_ave_hour, 'T_ave': t_ave_hour,  'T_std': t_std_hour,
+        'Alfven speed': alfv, 'T_exp':texp,'sw_label': sw_label}
+
+  flf = pd.DataFrame(data=fl)
+  
+  X=np.zeros([hour_int_size,5])  
+  
+  X[:,0]=vtot_ave_hour
+  X[:,1]=t_ave_hour
+  X[:,2]=t_std_hour
+  X[:,3]=alfv #alfven speed
+  X[:,4]=texp #texp/t
+
+  
+
+  #X[:,1]=bmax_hour
+  #X[:,2]=vtot_ave_hour
+  #X[:,3]=vmax_hour
+  #X[:,5]=n_ave_hour
+
+
+  
+  #labels: make one hot encoding for label array
+  from keras.utils.np_utils import to_categorical
+  y = to_categorical(sw_label, 3) #3 means number of categories
+ 
+  #split into training and test data  
+  from sklearn.model_selection import train_test_split
+  X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, random_state=42, stratify=y)
+
+  
+  
+  #pickle.dump([btot_ave_hour, btot_std_hour, vtot_ave_hour, vtot_std_hour, time_hour,sheath, mfr, bwind], open( "mfr_classify/mfr_classify_features_labels_save_50p.p", "wb" ) ) 
+  #pickle.dump([flf,X,y, X_train, X_test, y_train, y_test, sw_label], open( "mfr_classify/mfr_classify_features_labels_all_new.p", "wb" ) ) 
+  #pickle.dump([flf,X,y, X_train, X_test, y_train, y_test,sw_label], open( "mfr_classify/mfr_classify_features_labels_small.p", "wb" ) ) 
+  pickle.dump([flf,X,y, X_train, X_test, y_train, y_test,sw_label], open( "mfr_classify/mfr_classify_features_labels_small_campo.p", "wb" ) ) 
+
+
+  print('labels extracted and saved. time in minutes:')
+  end = time.time()
+  print((end - start)/60)
+########################################################
+
+if get_fl_classify == False:
+    #[btot_ave_hour, btot_std_hour, vtot_ave_hour, vtot_std_hour, time_hour,sheath, mfr, bwind]= pickle.load( open( "mfr_classify/mfr_features_labels_save_50p.p", "rb" ) )
+    #[flf,X,y, X_train, X_test, y_train, y_test,sw_label]=pickle.load( open( "mfr_classify/mfr_classify_features_labels_all_new.p", "rb" ) )
+    [flf,X,y, X_train, X_test, y_train, y_test,sw_label]=pickle.load( open( "mfr_classify/mfr_classify_features_labels_small_campo.p", "rb" ) )
+
+
+    #[flf,X,y, X_train, X_test, y_train, y_test]=pickle.load( open( "mfr_classify/mfr_classify_features_labels_small.p", "rb" ) )
+
+    print('loaded features for classification')
+
+
+
+#check data histograms
+flf.hist(bins=20,figsize=(10,10))
+plt.tight_layout()
+filename='mfr_classify/classify_hist.png'
+plt.savefig(filename)
+
+
+pd.plotting.scatter_matrix(flf,figsize=(10,10))
+plt.tight_layout()
+filename='mfr_classify/classify_scatter_matrix.png'
+plt.savefig(filename)
+
+
+
+
+
+
+
+
+
+###################### use a SVM
+
+#use here the original sw_label
+
+print()
+
+from sklearn.model_selection import train_test_split
+X_trains, X_tests, y_trains, y_tests = train_test_split(X, sw_label, test_size=0.20, random_state=42, stratify=y)
+
+from sklearn.svm import SVC
+
+svc = SVC(kernel='rbf', C=1e6, gamma=1e-5,verbose=True)
+clf=svc.fit(X_trains, y_trains)
+
+
+#for c in [ 1e-2, 1e-1,1,1e1,1e2,1e3,1e4,1e5,1e6,1e7]:
+#  print(c)
+#for gam in [1e-5, 1e-4, 1e-3, 1e-2, 1e-1,1,1e1,1e2,1e3,1e4,1e5,1e6,1e7]:
+#  print(gam)
+#  svc = SVC(kernel='rbf', C=1,gamma=gam)#,verbose=True)
+
+#svc = SVC(kernel='linear', C=1, gamma=1,verbose=True)
+
+
+y_preds = clf.predict(X_test)
+print()
+print('Test score')
+print(svc.score(X_tests, y_tests))
+
+from sklearn.metrics import accuracy_score
+print(accuracy_score(y_tests, y_preds))
+
+from sklearn.metrics import confusion_matrix
+print(confusion_matrix(y_tests, y_preds))
+
+#print('ypreds')
+#print(y_preds.tolist())
+
+
+#model2 = SVC(kernel='rbf', C=1E6, gamma=1.)
+#model2.fit(X, sw_label)
+#print(model2.score(X,sw_label))
+
+
+
+
+
+######################## ANN
+
+#ANN with 1 hidden layer
+
+from keras.layers import Input
+from keras.layers import Dense
+from keras.models import Model
+
+#input layer
+inputs = Input(shape=(5, ))
+#fully connected hidden layer
+fc = Dense(5)(inputs)
+#output
+predictions = Dense(3, activation='softmax')(fc)
+
+model = Model(input=inputs, output=predictions)
+
+model.summary()
+
+
+model.compile(loss='categorical_crossentropy',
+              optimizer='adam',
+              metrics=['accuracy'])
+
+model.fit(X_train, y_train, epochs=100)
+
+#loss_and_metrics = model.evaluate(X_test, y_test, batch_size=128) 
+#print(loss_and_metrics)
+
+y_pred = model.predict(X_test)#, batch_size=128) 
+
+
+y_testlab=np.zeros(len(y_test))
+y_predlab=np.zeros(len(y_test))
+
+for q in np.arange(len(y_test)):
+    if y_test[q][0]==1: y_testlab[q]=0
+    if y_test[q][1]==1: y_testlab[q]=1
+    if y_test[q][2]==1: y_testlab[q]=2
+
+    if y_pred[q][0]==1: y_predlab[q]=0
+    if y_pred[q][1]==1: y_predlab[q]=1
+    if y_pred[q][2]==1: y_predlab[q]=2
+
+
+
+from sklearn.metrics import confusion_matrix
+print(confusion_matrix(y_testlab, y_predlab))
+
+#from sklearn.metrics import accuracy_score
+#print(accuracy_score(y_test, y_pred))
+
+################ train model
+
+
+
+
+
+
+
+
+
+sys.exit()
+
+
+
+
 
 
 
