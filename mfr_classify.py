@@ -309,7 +309,7 @@ print( 'read data done.')
 get_fl_classify=False
 #get_fl_classify=True
 
-interval_hours=2
+interval_hours=1
 
 #takes 22 minutes for full data
 if get_fl_classify:
@@ -321,8 +321,8 @@ if get_fl_classify:
   #win=win[1690000:1720000]
   #win_time=win_time[1690000:1720000]
 
-  win=win[1500000:2000000]
-  win_time=win_time[1500000:2000000]
+  #win=win[1500000:2000000]
+  #win_time=win_time[1500000:2000000]
 
   #win=win[0:2500000]
   #win_time=win_time[0:2500000]
@@ -417,7 +417,7 @@ if get_fl_classify:
   #bwind=np.zeros(hour_int_size)+1
   
   
-  #classify: bwind =0, sheath=1, mfr=2
+  #classify: bwind =0, mfr=1 #leave for now: sheath=2
   sw_label=np.zeros(hour_int_size)
 
   for p in np.arange(hour_int_size):
@@ -429,11 +429,12 @@ if get_fl_classify:
   
     for i in np.arange(np.size(iwinind)):
          #when current time is between ICME_START_TIME and MO_START_TIME, its a sheath    
-         if np.logical_and(time_hour[p] > icme_start_time_num[iwinind][i],time_hour[p] < mo_start_time_num[iwinind][i]):
-                sw_label[p]=1
+         #if np.logical_and(time_hour[p] > icme_start_time_num[iwinind][i],time_hour[p] < mo_start_time_num[iwinind][i]):
+         #       sw_label[p]=1
          #this is a MFR       
-         elif np.logical_and(time_hour[p] > mo_start_time_num[iwinind][i],time_hour[p] < mo_end_time_num[iwinind][i]):
-                sw_label[p]=2
+         #elif 
+         if np.logical_and(time_hour[p] > mo_start_time_num[iwinind][i],time_hour[p] < mo_end_time_num[iwinind][i]):
+                sw_label[p]=1
 
      
 
@@ -523,23 +524,37 @@ if get_fl_classify:
 
   #camporeale 2017 Xu 2015 : design features that allow discrimination
   
-   
-    
-  alfv=np.sqrt(btot_ave_hour**2)/n_ave_hour  
+  
+  #alfven speed  
+  alfv=btot_ave_hour*1e-9/np.sqrt(4*np.pi*1e-7*n_ave_hour*1.6726219*1e-27*1e6)/1000 #result in km/s
+  #entropy
+  entropy=(t_ave_hour)/(n_ave_hour*1e6)**(2/3)
+  #Texp/Tp
   texp=((vtot_ave_hour/258)**3.113)/t_ave_hour
+  
+
+
+  #classify: bwind =0, mfr=1 no sheath
+  bwind=np.where(sw_label==0)
+  #sheath=np.where(sw_label==1)
+  mfr=np.where(sw_label==1)
+  
+  
     
-  fl = {'V_tot': vtot_ave_hour, 'T_ave': t_ave_hour,  'T_std': t_std_hour,
-        'Alfven speed': alfv, 'T_exp':texp,'sw_label': sw_label}
+  fl = {'B_tot': btot_ave_hour,'V_tot': vtot_ave_hour, 'T_ave': t_ave_hour,  'T_std': t_std_hour,
+        'Entropy': entropy,'Alfven speed': alfv, 'T_exp': texp, 'sw_label': sw_label}
 
   flf = pd.DataFrame(data=fl)
   
-  X=np.zeros([hour_int_size,5])  
+  X=np.zeros([hour_int_size,7])  
   
-  X[:,0]=vtot_ave_hour
-  X[:,1]=t_ave_hour
-  X[:,2]=t_std_hour
-  X[:,3]=alfv #alfven speed
-  X[:,4]=texp #texp/t
+  X[:,0]=btot_ave_hour
+  X[:,1]=vtot_ave_hour
+  X[:,2]=t_ave_hour
+  X[:,3]=t_std_hour
+  X[:,4]=entropy
+  X[:,5]=alfv #alfven speed
+  X[:,6]=texp #texp/t
 
   
 
@@ -552,9 +567,9 @@ if get_fl_classify:
   
   #labels: make one hot encoding for label array
   from keras.utils.np_utils import to_categorical
-  y = to_categorical(sw_label, 3) #3 means number of categories
+  y = to_categorical(sw_label, 2) #3 means number of categories
  
-  #split into training and test data  
+  #split into training and test data  this has one hot encoding
   from sklearn.model_selection import train_test_split
   X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, random_state=42, stratify=y)
 
@@ -563,7 +578,8 @@ if get_fl_classify:
   #pickle.dump([btot_ave_hour, btot_std_hour, vtot_ave_hour, vtot_std_hour, time_hour,sheath, mfr, bwind], open( "mfr_classify/mfr_classify_features_labels_save_50p.p", "wb" ) ) 
   #pickle.dump([flf,X,y, X_train, X_test, y_train, y_test, sw_label], open( "mfr_classify/mfr_classify_features_labels_all_new.p", "wb" ) ) 
   #pickle.dump([flf,X,y, X_train, X_test, y_train, y_test,sw_label], open( "mfr_classify/mfr_classify_features_labels_small.p", "wb" ) ) 
-  pickle.dump([flf,X,y, X_train, X_test, y_train, y_test,sw_label], open( "mfr_classify/mfr_classify_features_labels_small_campo.p", "wb" ) ) 
+  #pickle.dump([flf,X,y, X_train, X_test, y_train, y_test,sw_label], open( "mfr_classify/mfr_classify_features_labels_small_campo.p", "wb" ) ) 
+  pickle.dump([flf,X,y, X_train, X_test, y_train, y_test,sw_label], open( "mfr_classify/mfr_classify_features_labels_large_campoxu.p", "wb" ) ) 
 
 
   print('labels extracted and saved. time in minutes:')
@@ -574,7 +590,8 @@ if get_fl_classify:
 if get_fl_classify == False:
     #[btot_ave_hour, btot_std_hour, vtot_ave_hour, vtot_std_hour, time_hour,sheath, mfr, bwind]= pickle.load( open( "mfr_classify/mfr_features_labels_save_50p.p", "rb" ) )
     #[flf,X,y, X_train, X_test, y_train, y_test,sw_label]=pickle.load( open( "mfr_classify/mfr_classify_features_labels_all_new.p", "rb" ) )
-    [flf,X,y, X_train, X_test, y_train, y_test,sw_label]=pickle.load( open( "mfr_classify/mfr_classify_features_labels_small_campo.p", "rb" ) )
+ #   [flf,X,y, X_train, X_test, y_train, y_test,sw_label]=pickle.load( open( "mfr_classify/mfr_classify_features_labels_small_campo.p", "rb" ) )
+    [flf,X,y, X_train, X_test, y_train, y_test,sw_label]=pickle.load( open( "mfr_classify/mfr_classify_features_labels_large_campoxu.p", "rb" ) )
 
 
     #[flf,X,y, X_train, X_test, y_train, y_test]=pickle.load( open( "mfr_classify/mfr_classify_features_labels_small.p", "rb" ) )
@@ -584,23 +601,47 @@ if get_fl_classify == False:
 
 
 #check data histograms
-flf.hist(bins=20,figsize=(10,10))
-plt.tight_layout()
-filename='mfr_classify/classify_hist.png'
-plt.savefig(filename)
+#flf.hist(bins=20,figsize=(10,10))
+#plt.tight_layout()
+#filename='mfr_classify/classify_hist.png'
+#plt.savefig(filename)
 
 
-pd.plotting.scatter_matrix(flf,figsize=(10,10))
-plt.tight_layout()
-filename='mfr_classify/classify_scatter_matrix.png'
-plt.savefig(filename)
+#pd.plotting.scatter_matrix(flf,figsize=(10,10))
+#plt.tight_layout()
+#filename='mfr_classify/classify_scatter_matrix.png'
+#plt.savefig(filename)
+
+#classify: bwind =0, mfr=1 no sheath
+bwind=np.where(sw_label==0)
+#sheath=np.where(sw_label==1)
+mfr=np.where(sw_label==1)
+
+
+#fig=plt.figure(3)
+#ax = fig.add_subplot(111, projection='3d')
+#ax.scatter(X[mfr,0],X[mfr,1],X[mfr,2],'bo')
+#ax.scatter(X[bwind,0],X[bwind,1],X[bwind,2],'ko')
+
+
+#  X[:,0]=entropy
+#  X[:,1]=alfv #alfven speed
+#  X[:,2]=texp #texp/t
 
 
 
+#plt.figure(4)
+#plt.plot(X[bwind,1],X[bwind,2],'ko')
+#plt.plot(X[mfr,1],X[mfr,2],'bo')
+
+
+#plt.figure(5)
+#plt.plot(X[mfr,0],X[mfr,2],'bo')
+#plt.plot(X[bwind,0],X[bwind,2],'ko')
 
 
 
-
+#plt.plot(X[bwind,0],X[bwind,1],'bo')
 
 
 ###################### use a SVM
@@ -610,12 +651,86 @@ plt.savefig(filename)
 print()
 
 from sklearn.model_selection import train_test_split
-X_trains, X_tests, y_trains, y_tests = train_test_split(X, sw_label, test_size=0.20, random_state=42, stratify=y)
-
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.svm import LinearSVC
 from sklearn.svm import SVC
 
-svc = SVC(kernel='rbf', C=1e6, gamma=1e-5,verbose=True)
-clf=svc.fit(X_trains, y_trains)
+#normalize
+#X[:,2]=X[:,2]*1e5
+#X[:,1]=X[:,1]/10
+X_trains, X_tests, y_trains, y_tests = train_test_split(X, sw_label, test_size=0.30, random_state=42,stratify=y)
+
+from sklearn import preprocessing  
+X_trains=preprocessing.scale(X_trains)
+X_tests=preprocessing.scale(X_tests)
+
+
+from sklearn.metrics import confusion_matrix
+
+#clf=Pipeline([
+#             ("scaler", StandardScaler()),
+#             ("linear_svc", LinearSVC(C=1e2,loss="hinge")),
+#             ])
+
+
+#SVM
+#clf=Pipeline([
+#             ("scaler", StandardScaler()),
+#             ("svm_clf", SVC(kernel="rbf",C=100,gamma=2)),
+#             ])
+             
+from sklearn.tree import DecisionTreeClassifier            
+           
+             
+clf=DecisionTreeClassifier(max_depth=25)             
+clf.fit(X_trains, y_trains)
+#clf.fit(X_trains, y_trains)
+
+y_preds = clf.predict(X_tests)
+print(confusion_matrix(clf.predict(X_trains), y_trains))
+
+print('all MFR intervals: ', np.size(np.where(y_trains==1)))
+print('ratio: ', confusion_matrix(clf.predict(X_trains), y_trains)[1,1]/np.size(np.where(y_trains==1)))
+
+print(confusion_matrix(y_tests, y_preds))
+
+print('all MFR intervals: ', np.size(np.where(y_tests==1)))
+print('ratio: ', confusion_matrix(y_preds, y_tests)[1,1]/np.size(np.where(y_tests==1)))
+
+
+#sys.exit()
+
+#plt.figure(3)
+#plt.plot(X[mfr,0],X[mfr,1],'bo',markersize=3)
+#plt.plot(X[bwind,0],X[bwind,1],'ko',markersize=3)
+
+
+
+
+
+# 
+# xlim = [0,50]
+# ylim = [0,200]
+# NBINS = 25
+# xg = np.linspace(xlim[0], xlim[1], NBINS)
+# yg = np.linspace(ylim[0], ylim[1], NBINS)
+# Yg, Xg = np.meshgrid(yg, xg)
+# xy = np.vstack([Xg.ravel(), Yg.ravel()]).T
+# P1 = clf.decision_function(xy).reshape(Xg.shape)
+# cont = plt.contour(Xg, Yg, P1, colors='k',linewidth=9,
+#                 levels=[-1,0,1], alpha=0.7,
+#                 linestyles=['--','-','--'])
+print()
+print('Test score')
+print(clf.score(X_tests, y_tests))
+
+from sklearn.metrics import accuracy_score
+print(accuracy_score(y_tests, y_preds))
+
+
+#from sklearn.svm import SVC
+#svc = SVC(kernel='linear', C=1, gamma=1,verbose=True)
 
 
 #for c in [ 1e-2, 1e-1,1,1e1,1e2,1e3,1e4,1e5,1e6,1e7]:
@@ -627,16 +742,8 @@ clf=svc.fit(X_trains, y_trains)
 #svc = SVC(kernel='linear', C=1, gamma=1,verbose=True)
 
 
-y_preds = clf.predict(X_test)
-print()
-print('Test score')
-print(svc.score(X_tests, y_tests))
 
-from sklearn.metrics import accuracy_score
-print(accuracy_score(y_tests, y_preds))
 
-from sklearn.metrics import confusion_matrix
-print(confusion_matrix(y_tests, y_preds))
 
 #print('ypreds')
 #print(y_preds.tolist())
@@ -645,6 +752,10 @@ print(confusion_matrix(y_tests, y_preds))
 #model2 = SVC(kernel='rbf', C=1E6, gamma=1.)
 #model2.fit(X, sw_label)
 #print(model2.score(X,sw_label))
+
+
+
+sys.exit()
 
 
 
@@ -658,12 +769,17 @@ from keras.layers import Input
 from keras.layers import Dense
 from keras.models import Model
 
+
+
 #input layer
-inputs = Input(shape=(5, ))
+inputs = Input(shape=(7, ))
 #fully connected hidden layer
-fc = Dense(5)(inputs)
+fc = Dense(10)(inputs)
+fc2 = Dense(10)(fc)
+fc3 = Dense(10)(fc2)
+
 #output
-predictions = Dense(3, activation='softmax')(fc)
+predictions = Dense(2, activation='softmax')(fc3)
 
 model = Model(input=inputs, output=predictions)
 
@@ -674,7 +790,10 @@ model.compile(loss='categorical_crossentropy',
               optimizer='adam',
               metrics=['accuracy'])
 
-model.fit(X_train, y_train, epochs=100)
+
+from sklearn import preprocessing
+
+model.fit(preprocessing.scale(X_train), y_train, epochs=5)
 
 #loss_and_metrics = model.evaluate(X_test, y_test, batch_size=128) 
 #print(loss_and_metrics)
@@ -688,11 +807,11 @@ y_predlab=np.zeros(len(y_test))
 for q in np.arange(len(y_test)):
     if y_test[q][0]==1: y_testlab[q]=0
     if y_test[q][1]==1: y_testlab[q]=1
-    if y_test[q][2]==1: y_testlab[q]=2
+    #if y_test[q][2]==1: y_testlab[q]=2
 
     if y_pred[q][0]==1: y_predlab[q]=0
     if y_pred[q][1]==1: y_predlab[q]=1
-    if y_pred[q][2]==1: y_predlab[q]=2
+    #if y_pred[q][2]==1: y_predlab[q]=2
 
 
 

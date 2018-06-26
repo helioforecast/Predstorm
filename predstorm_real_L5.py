@@ -964,6 +964,7 @@ print('STEREO-A HEEQ longitude to Earth is ', round(sta_long_heeq,1),' degree.')
 print('This is ', round(abs(sta_long_heeq)/60,2),' times the location of L5.') 
 print('STEREO-A HEEQ latitude is ', round(sta_lat_heeq,1),' degree.') 
 print('Earth L1 HEEQ latitude is ',round(pos.earth_l1[2][pos_time_now_ind]*180/np.pi,1),' degree')
+print('Difference HEEQ latitude is ',abs(round(sta_lat_heeq,1)-round(pos.earth_l1[2][pos_time_now_ind]*180/np.pi,1)),' degree')
 print('STEREO-A heliocentric distance is ', round(sta_r,3),' AU.') 
 print('The Sun rotation period with respect to Earth is ', sun_syn,' days') 
 print('This is a time lag of ', round(timelag_sta_l1,2), ' days.') 
@@ -1356,8 +1357,9 @@ plt.xlim([np.ceil(rbtime_num)[0],rbtime_num[-1]+realtime_plot_timeadd])
 #plt.plot_date(rtimes7, rpv7,'-ko', label='B7',linewidth=weite)
 
 
-#plot STEREO-A data with timeshift	
-plt.plot_date(sta_ptime_lag[sta_pindex_future], sta_vr[sta_pindex_future],'-r', linewidth=weite, label='speed STEREO-Ahead')
+#plot STEREO-A data with timeshift	and savgol filter
+from scipy.signal import savgol_filter
+plt.plot_date(sta_ptime_lag[sta_pindex_future], savgol_filter(sta_vr[sta_pindex_future],5,1),'-r', linewidth=weite, label='speed STEREO-Ahead')
 
 #now vertical line
 plt.plot_date([timenowb,timenowb],[0,4000],'-k', linewidth=2)
@@ -1373,8 +1375,8 @@ ax5.legend(loc=2,fontsize=fsize-2,ncol=2)
 plt.xlim([np.ceil(rbtime_num)[0]+realtime_plot_leftadd,rbtime_num[-1]+realtime_plot_timeadd])
 
 #for y limits check where the maximum and minimum are for DSCOVR and STEREO taken together
-vplotmax=np.nanmax(np.concatenate((rpv,sta_vr[sta_pindex_future])))+100
-plt.ylim(np.nanmin(np.concatenate((rpv,sta_vr[sta_pindex_future]))-50), vplotmax)
+vplotmax=np.nanmax(np.concatenate((rpv,savgol_filter(sta_vr[sta_pindex_future],5,1))))+100
+plt.ylim(np.nanmin(np.concatenate((rpv,savgol_filter(sta_vr[sta_pindex_future],5,1)))-50), vplotmax)
 
 plt.annotate('now',xy=(timenowb,vplotmax-100),xytext=(timenowb+0.05,vplotmax-100),color='k', fontsize=11)
 #plt.annotate('observation',xy=(timenowb,bplotmax-3),xytext=(timenowb-0.55,bplotmax-3),color='k', fontsize=15)
@@ -1393,7 +1395,7 @@ if showinterpolated > 0:  plt.plot_date(rptimes24, rpn24,'ro', label='N interpol
 
 
 #plot STEREO-A data with timeshift	
-plt.plot_date(sta_ptime_lag[sta_pindex_future], sta_den[sta_pindex_future],'-r', linewidth=weite, label='density STEREO-Ahead')
+plt.plot_date(sta_ptime_lag[sta_pindex_future], savgol_filter(sta_den[sta_pindex_future],5,1),'-r', linewidth=weite, label='density STEREO-Ahead')
 
 #now vertical line
 plt.plot_date([timenowb,timenowb],[0,500],'-k', linewidth=2)
