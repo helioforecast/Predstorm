@@ -13,8 +13,6 @@
 #14 days prior to current time, tested for correctly handling missing PLASTIC files
 
 # things to add: 
-# - add input parameters from txt file
-# - make beacon directory if not exists
 # - add error bars for the Temerin/Li Dst model with 1 and 2 sigma, 
 #   based on a thorough assessment of errors with the ... stereob_errors program
 # - add timeshifts from L1 to Earth
@@ -76,42 +74,63 @@ from predstorm_module import convert_RTN_to_GSE_sta_l1
 
 ############################## INPUT PARAMETERS ######################################
 
+
+inputfilename='predstorm_L5_input.txt'
+
+#reads all lines as strings
+lines = open(inputfilename).read().splitlines()
+
 #whether to show interpolated data points on the DSCOVR input plot
-showinterpolated=0
+showinterpolated=int(lines[3])
 
 #read in data from omni file -> 1 , from save_file -> 0
-data_from_omni_file = 0 #
+data_from_omni_file = int(lines[6]) #
 
 #the time interval for both the observed and predicted wind (** could be longer for predicted wind)
 #Delta T in hours, start with 24 hours here (covers 1 night of aurora)
-deltat=24
+deltat=int(lines[9])
 
 #take 4 solar minimum years as training data for 2018
-trainstart='2006-Jan-01 00:00'
-trainend='2010-Jan-01 00:00'
+trainstart=lines[12]
+trainend=lines[13]
 
-#synodic solar rotation 
-sun_syn=26.24 #days
+#synodic solar rotation sun_syn=26.24 #days
 #use other values for equatorial coronal holes?
-sun_syn=25.5 #days
+sun_syn=float(lines[16]) #days
 
 #how far to see in the future with STEREO-A data to the right of the current time
-realtime_plot_timeadd=7
+realtime_plot_timeadd=int(lines[19])
 
 #to shift the left beginning of the plot
-realtime_plot_leftadd=3
+realtime_plot_leftadd=int(lines[22])
 
 
 #to get older data for plotting Burton/OBrien Dst for verification
-verification_mode=0
+verification_mode=int(lines[25])
 #verify_filename='real/savefiles/predstorm_realtime_stereo_l1_save_v1_2018-05-04-10_00.p'
 #verify_filename='real/savefiles/predstorm_realtime_stereo_l1_save_v1_2018-05-29-12_32.p'
 #verify_filename='real/savefiles/predstorm_realtime_stereo_l1_save_v1_2018-06-16-07_13.p'
-verify_filename='real/savefiles/predstorm_realtime_stereo_l1_save_v1_2018-09-10-10_02.p'
+verify_filename=lines[27]
 
 #intervals for verification
-verify_int_start=mdates.date2num(sunpy.time.parse_time('2018-09-09 12:00:00'))
-verify_int_end=mdates.date2num(sunpy.time.parse_time('2018-09-12 23:00:00'))
+verify_int_start=lines[30]
+verify_int_end=lines[31]
+
+
+outputdirectory='real'
+
+#check if directory for output exists
+os.path.isdir(outputdirectory)
+#if not make new directory
+if os.path.isdir(outputdirectory) == False: os.mkdir(outputdirectory)
+#also make directory for movie
+if os.path.isdir(outputdirectory+'/savefiles') == False: os.mkdir(outputdirectory+'/savefiles')
+
+#check if directory for beacon data exists
+os.path.isdir('beacon')
+#if not make new directory
+if os.path.isdir('beacon') == False: os.mkdir(outputdirectory)
+
 
 
 
@@ -1042,9 +1061,9 @@ print()
 sys.exit()
 
 
-#########################################################################################
-################################# PROGRAM STOP ##########################################
-#########################################################################################
+##########################################################################################
+################################# CODE STOP ##############################################
+##########################################################################################
 
 
 

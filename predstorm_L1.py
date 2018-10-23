@@ -32,6 +32,11 @@
 #take mean of ensemble forecast for final blue line forecast or only best match?
 
 
+##############################################################################
+############################# CODE START
+##############################################################################
+
+
 
 ################################## INPUT PARAMETERS ######################################
 
@@ -51,9 +56,6 @@ trainend='2010-Jan-01 00:00'
 
 
 #######################################################
-
-
-
 
 
 
@@ -81,8 +83,6 @@ import sunpy.time
 from predstorm_module import make_dst_from_wind
 from predstorm_module import sunriseset
 from predstorm_module import getdata
-
-
 
 
 ######################## initialize
@@ -1116,4 +1116,8 @@ plt.savefig(filename)
 filename_save='real/savefiles/predstorm_realtime_pattern_save_v1_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.p'
 print('All variables for plot saved in ', filename_save, ' for later verification usage.')
 pickle.dump([timenowb, rbtime_num, rbtot, rbygsm, rbzgsm, rtimes7, rbtot7, rbygsm7, rbzgsm7, rbtimes24, rbtot24,rbygsm24,rbzgsm24, rptime_num, rpv, rpn, rtimes7, rpv7, rpn7, rptimes24, rpn24, rpv24,rdst_time, rdst, timesdst, pdst_burton, pdst_obrien], open(filename_save, "wb" ) )
+
+##########################################################################################
+################################# CODE STOP ##############################################
+##########################################################################################
 
