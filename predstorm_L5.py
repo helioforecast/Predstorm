@@ -647,20 +647,16 @@ if sum(np.isnan(cdst_vr)) >0:
 print('calculate Dst prediction from L1 and STEREO-A beacon data')
 
 
-
-
 #not used currently
-
 #################################  get OMNI training data ##############################
-
 #download from  ftp://nssdcftp.gsfc.nasa.gov/pub/data/omni/low_res_omni/omni2_all_years.dat
 
 data_from_omni_file=0
 if data_from_omni_file == 1:
  getdata()
  converttime()
- pickle.dump([spot,btot,bx,by,bz,bygsm,bzgsm,speed,speedx, dst,kp, den,pdyn,year,day,hour,times1], open( "/Users/chris/python/savefiles/omni2save_april2018.p", "wb" ) ) 
-else: [spot,btot,bx,by,bz,bygsm, bzgsm,speed,speedx, dst,kp,den,pdyn,year,day,hour,times1]= pickle.load( open( "/Users/chris/python/savefiles/omni2save_april2018.p", "rb" ) )
+ pickle.dump([spot,btot,bx,by,bz,bygsm,bzgsm,speed,speedx, dst,kp, den,pdyn,year,day,hour,times1], open( "cats/omni2save_april2018.p", "wb" ) ) 
+else: [spot,btot,bx,by,bz,bygsm, bzgsm,speed,speedx, dst,kp,den,pdyn,year,day,hour,times1]= pickle.load( open( "cats/omni2save_april2018.p", "rb" ) )
 
 
 
@@ -891,12 +887,31 @@ plt.savefig(filename)
 #filename='real/predstorm_realtime_input_1_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.eps'
 #plt.savefig(filename)
 
-filename_save='real/savefiles/predstorm_realtime_stereo_l1_save_v1_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.p'
+filename_save='real/savefiles/variables_predstorm_l5_save_v1_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.p'
 print('All variables for plot saved in ', filename_save, ' for later verification usage.')
 
 pickle.dump([timenowb, sta_ptime, sta_vr, sta_btime, sta_btot, sta_br,sta_bt, sta_bn, rbtime_num, rbtot, rbzgsm, rptime_num, rpv, rpn, rdst_time, rdst, cdst_time, dst_burton, dst_obrien,dst_temerin_li], open(filename_save, "wb" ) )
 #load with
 #[sta_ptime, sta_vr, rdst_time, rdst, cdst_time, dst_burton, dst_obrien]=pickle.load(open(f,'rb') )
+
+
+
+
+
+
+
+
+
+
+
+
+
+####################### #open file for logging results
+logfile='real/savefiles/results_predstorm_l5_save_v1_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.txt'
+
+filename_save='real/savefiles/variables_realtime_stereo_l1_save_v1_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.p'
+print('All results saved in ', filename_save)
+
 
 
 print()
@@ -914,8 +929,6 @@ print()
 
 #check future times in combined Dst 
 future_times=np.where(cdst_time > timenowb)
-
-
 
 
 
@@ -981,15 +994,21 @@ if verification_mode > 0:
   
   sys.exit()
 
-print('PREDSTORM L1 + STEREO-A prediction results:')
+
+
+
+print('PREDSTORM L5 (STEREO-A) prediction results:')
 print()
 print('Current time: ', rbtime_str[-1], ' UT')
+
 print()
 print('Predicted minimum of Dst Burton/OBrien:')
 print(int(round(np.nanmin(dst_burton[future_times]))), ' / ', int(round(np.nanmin(dst_obrien[future_times]))),'  nT')
 
 mindst_time=cdst_time[future_times[0][0]+np.nanargmin(dst_burton[future_times])]
 print('at time:')
+
+
 #add 1 minute manually because of rounding errors in time 19:59:9999 etc.
 print(str(mdates.num2date(mindst_time+1/(24*60)))[0:16])
 
@@ -1056,7 +1075,18 @@ if len(storm_times_ind) >0:
 print()
 print()
 
+log=open(logfile,'w')
 
+log.write('')
+log.write('PREDSTORM L5 v1 results')
+log.write('')
+log.write('')
+log.write('Current time: '+ rbtime_str[-1]+ ' UT')
+log.write('')
+log.write('Predicted minimum of Dst Burton/OBrien:')
+log.write(str(int(round(np.nanmin(dst_burton[future_times])))) + '/' + str(int(round(np.nanmin(dst_obrien[future_times]))))+'  nT')
+log.write('at time:')
+log.close() 
 
 sys.exit()
 

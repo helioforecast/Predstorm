@@ -457,12 +457,11 @@ plt.savefig(filename)
 
 #download from  ftp://nssdcftp.gsfc.nasa.gov/pub/data/omni/low_res_omni/omni2_all_years.dat
 
-
 if data_from_omni_file == 1:
  getdata()
  converttime()
- pickle.dump([spot,btot,bx,by,bz,bygsm,bzgsm,speed,speedx, dst,kp, den,pdyn,year,day,hour,times1], open( "/Users/chris/python/savefiles/omni2save_april2018.p", "wb" ) ) 
-else: [spot,btot,bx,by,bz,bygsm, bzgsm,speed,speedx, dst,kp,den,pdyn,year,day,hour,times1]= pickle.load( open( "/Users/chris/python/savefiles/omni2save_april2018.p", "rb" ) )
+ pickle.dump([spot,btot,bx,by,bz,bygsm,bzgsm,speed,speedx, dst,kp, den,pdyn,year,day,hour,times1], open( "cats/omni2save_april2018.p", "wb" ) ) 
+else: [spot,btot,bx,by,bz,bygsm, bzgsm,speed,speedx, dst,kp,den,pdyn,year,day,hour,times1]= pickle.load( open( "cats/omni2save_april2018.p", "rb" ) )
 
 
 ### slice data for comparison of solar wind to Dst conversion
