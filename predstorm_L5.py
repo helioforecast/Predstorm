@@ -1,9 +1,10 @@
-#PREDSTORM real time solar wind forecasting with 
-# data from a spacecraft east of the Sun-Earth line 
-# here STEREO-A; also suited for data from a 
+#PREDSTORM real time solar wind and magnetic storm forecasting with 
+# time-shifted data from a spacecraft east of the Sun-Earth line 
+# here STEREO-A is used, also suited for data from a 
 # possible future L5 mission or interplanetary CubeSats
 
-#Author: C. Moestl, IWF Graz, Austria, twitter @chrisoutofspace, https://github.com/cmoestl
+#Author: C. Moestl, IWF Graz, Austria
+#twitter @chrisoutofspace, https://github.com/cmoestl
 #started April 2018, last update October 2018
 
 #python 3.5.2 with sunpy and seaborn, ipython 4.2.0
@@ -13,24 +14,26 @@
 #14 days prior to current time, tested for correctly handling missing PLASTIC files
 
 # things to add: 
+
+# - write prediction variables as txt and pickle file and variables as pickle
+# - make a logfile for the predictions with the main results 
+
 # - add error bars for the Temerin/Li Dst model with 1 and 2 sigma, 
 #   based on a thorough assessment of errors with the ... stereob_errors program
 # - add timeshifts from L1 to Earth
 # - add approximate levels of Dst for each location to see the aurora (depends on season)
 #   taken from correlations of ovation prime, SuomiNPP data in NASA worldview and Dst 
-# - **check write prediction variables as txt and pickle file and variables as pickle
 # - check coordinate conversions, GSE to GSM is ok
-# - make a logfile for the predictions with the main results 
 # - deal with CMEs at STEREO, because systematically degrades prediction results
 # - add metrics ROC etc.
 
 # future larger steps:
-# (1) add the semi-supervised learning algorithm from the L1 program; e.g. with older
+# (1) add the semi-supervised learning algorithm from the predstorm_L1 program; e.g. with older
 # 	STEREO data additionally, so a #combined L1/L5 forecast
 # 	most important: implement pattern recognition for STEREO-A streams, 
 # 	and link this to the most probably outcome days later at L1
 # 	train with STB data around the location where STA is at the moment
-# (2) fundamental issue: how much is Bz stable for HSS from L5 to L1? are there big changes?
+# (2) fundamental issue: by what amount is Bz stable for HSS from L5 to L1? are there big changes?
 # is Bz higher for specific locations with respect to the HCS and the solar equator? 
 # temporal and spatial coherence of Bz
 # (3) probabilities for magnetic storm magnitude, probabilities for aurora for many locations
@@ -59,8 +62,6 @@ import pickle
 import sunpy.time
 import seaborn as sns
 from pycdf import pycdf
-import warnings
-warnings.filterwarnings('ignore')
 
 from predstorm_module import time_to_num_cat
 from predstorm_module import converttime
@@ -70,6 +71,9 @@ from predstorm_module import convert_GSE_to_GSM
 from predstorm_module import sphere2cart
 from predstorm_module import convert_RTN_to_GSE_sta_l1
 
+#ignore warnings
+import warnings
+warnings.filterwarnings('ignore')
 
 
 ############################## INPUT PARAMETERS ######################################
@@ -134,7 +138,7 @@ if os.path.isdir('beacon') == False: os.mkdir(outputdirectory)
 
 
 
-#######################################################
+###################################################################################
 ## VARIABLES
 
 #initialize
@@ -178,29 +182,22 @@ times1=np.zeros(dataset) #datetime time
 ######################################## MAIN PROGRAM ####################################
 ########################################################################################## 
 
-
 #get current directory
 os.system('pwd')
 #closes all plots
 plt.close('all')
 
-print('Christian Moestl, IWF Graz, last update May 2018.')
+print('-------------------------------------------------')
 print()
-print('PREDSTORM -method for geomagnetic storm and aurora forecasting. ')
-print('Pattern recognition is based on Riley et al. 2017 Space Weather, and')
-print('Owens, Riley and Horbury 2017 Solar Physics. ')
+print('PREDSTORM L5 v1 method for geomagnetic storm and aurora forecasting. ')
+print('Christian Moestl, IWF Graz, last update October 2018.')
 print()
-print('Method extended for use of magnetic field and plasma data from STEREO, ')
-print('or from an L5 mission or interplanetary CubeSats.')
-print()
-print('This is a pattern recognition technique that searches ')
-print('for similar intervals in historic data as the current solar wind.')
-print()
-print('It is currently an unsupervised learning method.')
+print('Time shifting magnetic field and plasma data from STEREO-A, ')
+print('or from an L5 mission or interplanetary CubeSats, to predict')
+print('the solar wind at Earth and the Dst index for magnetic storm strength.')
 print()
 print()
 print('-------------------------------------------------')
-
 
 
 
@@ -319,6 +316,23 @@ rpn7=np.interp(rtimes7,rptime_num,rpn)
 
 
 
+#########################################################################################
+######################## open file for logging results
+logfile='real/results_predstorm_l5_save_v1_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.txt'
+
+
+
+
+log=open(logfile,'wt')
+
+log.write('')
+log.write('PREDSTORM L5 v1 results \n')
+log.write('For UT time: \n')
+log.write(timenowstr)
+log.write('\n')
+
+
+
 
 ###################### (1b) get real time STEREO-A beacon data
 print()
@@ -344,6 +358,18 @@ arrival_time_l1_sta_str=str(mdates.num2date(arrival_time_l1_sta))
 #arrival_feature_sta_str=str(mdates.num2date(feature_sta+timelag_sta_l1))
 
 
+
+
+
+print('STEREO-A HEEQ longitude to Earth is ', round(sta_long_heeq,1),' degree.   \
+        \nThis is ', round(abs(sta_long_heeq)/60,2),' times the location of L5.')
+        
+log.write('STEREO-A HEEQ longitude to Earth is '+ str(round(sta_long_heeq,1))+' degree.   \
+        \nThis is '+ str(round(abs(sta_long_heeq)/60,2))+' times the location of L5.')
+
+
+
+
 print('STEREO-A HEEQ longitude to Earth is ', round(sta_long_heeq,1),' degree.') 
 print('This is ', round(abs(sta_long_heeq)/60,2),' times the location of L5.') 
 print('STEREO-A HEEQ latitude is ', round(sta_lat_heeq,1),' degree.') 
@@ -354,11 +380,23 @@ print('The Sun rotation period with respect to Earth is ', sun_syn,' days')
 print('This is a time lag of ', round(timelag_sta_l1,2), ' days.') 
 print('Arrival time of now STEREO-A wind at L1:',arrival_time_l1_sta_str[0:16])
 
+#log.write('STEREO-A HEEQ longitude to Earth is ', round(sta_long_heeq,1),' degree.\n') 
+#log.write('This is ', round(abs(sta_long_heeq)/60,2),' times the location of L5.\n') 
+#log.write('STEREO-A HEEQ latitude is ', round(sta_lat_heeq,1),' degree.\n') 
+#log.write('Earth L1 HEEQ latitude is ',round(pos.earth_l1[2][pos_time_now_ind]*180/np.pi,1),' degree'\n)
+#log.write('Difference HEEQ latitude is ',abs(round(sta_lat_heeq,1)-round(pos.earth_l1[2][pos_time_now_ind]*180/np.pi,1)),' degree'\n)
+#log.write('STEREO-A heliocentric distance is ', round(sta_r,3),' AU.') 
+#log.write('The Sun rotation period with respect to Earth is ', sun_syn,' days') 
+#log.write('This is a time lag of ', round(timelag_sta_l1,2), ' days.') 
+#log.write('Arrival time of now STEREO-A wind at L1:',arrival_time_l1_sta_str[0:16])
+
+
+
+
+
 
 print()
 print('get STEREO-A beacon data from STEREO SCIENCE CENTER')
-
-
 
 #only last 2 hours here at NOAA
 #http://legacy-www.swpc.noaa.gov/ftpdir/lists/stereo/
@@ -904,16 +942,6 @@ pickle.dump([timenowb, sta_ptime, sta_vr, sta_btime, sta_btot, sta_br,sta_bt, st
 
 
 
-
-
-####################### #open file for logging results
-logfile='real/savefiles/results_predstorm_l5_save_v1_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.txt'
-
-filename_save='real/savefiles/variables_realtime_stereo_l1_save_v1_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.p'
-print('All results saved in ', filename_save)
-
-
-
 print()
 print()
 print('-------------------------------------------------')
@@ -1075,19 +1103,20 @@ if len(storm_times_ind) >0:
 print()
 print()
 
-log=open(logfile,'w')
 
-log.write('')
-log.write('PREDSTORM L5 v1 results')
-log.write('')
-log.write('')
+
 log.write('Current time: '+ rbtime_str[-1]+ ' UT')
 log.write('')
 log.write('Predicted minimum of Dst Burton/OBrien:')
 log.write(str(int(round(np.nanmin(dst_burton[future_times])))) + '/' + str(int(round(np.nanmin(dst_obrien[future_times]))))+'  nT')
 log.write('at time:')
+
+
+
 log.close() 
 
+filename_save='real/savefiles/variables_realtime_stereo_l1_save_v1_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.p'
+print('All results saved in ', filename_save)
 sys.exit()
 
 
