@@ -123,60 +123,18 @@ verify_int_end=lines[31]
 
 outputdirectory='real'
 
-#check if directory for output exists
-os.path.isdir(outputdirectory)
+#check if directory for output exists (for plots and txt files)
 #if not make new directory
 if os.path.isdir(outputdirectory) == False: os.mkdir(outputdirectory)
-#also make directory for movie
+#also make directory for savefiles
 if os.path.isdir(outputdirectory+'/savefiles') == False: os.mkdir(outputdirectory+'/savefiles')
 
 #check if directory for beacon data exists
 os.path.isdir('beacon')
 #if not make new directory
-if os.path.isdir('beacon') == False: os.mkdir(outputdirectory)
+if os.path.isdir('beacon') == False: os.mkdir('beacon')
 
 
-
-
-###################################################################################
-## VARIABLES
-
-#initialize
-#define global variables from OMNI2 hourly dataset
-#see http://omniweb.gsfc.nasa.gov/html/ow_data.html
-#dataset=473376; # for save file july 2016 
-#use this to check on size of OMNI2 hourly data min(np.where(times1==0))
-dataset=482136;
-
-#global Variables
-spot=np.zeros(dataset) 
-btot=np.zeros(dataset) #floating points
-bx=np.zeros(dataset) #floating points
-by=np.zeros(dataset) #floating points
-bz=np.zeros(dataset) #floating points
-bzgsm=np.zeros(dataset) #floating points
-bygsm=np.zeros(dataset) #floating points
-
-speed=np.zeros(dataset) #floating points
-speedx=np.zeros(dataset) #floating points
-speed_phi=np.zeros(dataset) #floating points
-speed_theta=np.zeros(dataset) #floating points
-
-dst=np.zeros(dataset) #float
-kp=np.zeros(dataset) #float
-
-den=np.zeros(dataset) #float
-pdyn=np.zeros(dataset) #float
-year=np.zeros(dataset)
-day=np.zeros(dataset)
-hour=np.zeros(dataset)
-t=np.zeros(dataset) #index time
-times1=np.zeros(dataset) #datetime time
-
-  
-  
-  
-  
 
 ########################################################################################## 
 ######################################## MAIN PROGRAM ####################################
@@ -187,7 +145,7 @@ os.system('pwd')
 #closes all plots
 plt.close('all')
 
-print('-------------------------------------------------')
+print('------------------------------------------------------------------------')
 print()
 print('PREDSTORM L5 v1 method for geomagnetic storm and aurora forecasting. ')
 print('Christian Moestl, IWF Graz, last update October 2018.')
@@ -197,11 +155,7 @@ print('or from an L5 mission or interplanetary CubeSats, to predict')
 print('the solar wind at Earth and the Dst index for magnetic storm strength.')
 print()
 print()
-print('-------------------------------------------------')
-
-
-
-
+print('------------------------------------------------------------------------')
 
 ######################### (1) get real time DSCOVR data ##################################
 
@@ -211,7 +165,6 @@ print('-------------------------------------------------')
 #get 3 or 7 day data
 #url_plasma='http://services.swpc.noaa.gov/products/solar-wind/plasma-3-day.json'
 #url_mag='http://services.swpc.noaa.gov/products/solar-wind/mag-3-day.json'
-
 
 url_plasma='http://services.swpc.noaa.gov/products/solar-wind/plasma-7-day.json'
 url_mag='http://services.swpc.noaa.gov/products/solar-wind/mag-7-day.json'
@@ -317,14 +270,9 @@ rpn7=np.interp(rtimes7,rptime_num,rpn)
 
 
 #########################################################################################
-######################## open file for logging results
-logfile='real/results_predstorm_l5_save_v1_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.txt'
-
-
-
-
+# open file for logging results
+logfile='real/predstorm_v1_realtime_stereo_a_results_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.txt'
 log=open(logfile,'wt')
-
 log.write('')
 log.write('PREDSTORM L5 v1 results \n')
 log.write('For UT time: \n')
@@ -358,41 +306,29 @@ arrival_time_l1_sta_str=str(mdates.num2date(arrival_time_l1_sta))
 #arrival_feature_sta_str=str(mdates.num2date(feature_sta+timelag_sta_l1))
 
 
-
-
-
-print('STEREO-A HEEQ longitude to Earth is ', round(sta_long_heeq,1),' degree.   \
-        \nThis is ', round(abs(sta_long_heeq)/60,2),' times the location of L5.')
-        
-log.write('STEREO-A HEEQ longitude to Earth is '+ str(round(sta_long_heeq,1))+' degree.   \
-        \nThis is '+ str(round(abs(sta_long_heeq)/60,2))+' times the location of L5.')
-
-
-
-
 print('STEREO-A HEEQ longitude to Earth is ', round(sta_long_heeq,1),' degree.') 
 print('This is ', round(abs(sta_long_heeq)/60,2),' times the location of L5.') 
 print('STEREO-A HEEQ latitude is ', round(sta_lat_heeq,1),' degree.') 
 print('Earth L1 HEEQ latitude is ',round(pos.earth_l1[2][pos_time_now_ind]*180/np.pi,1),' degree')
-print('Difference HEEQ latitude is ',abs(round(sta_lat_heeq,1)-round(pos.earth_l1[2][pos_time_now_ind]*180/np.pi,1)),' degree')
+print('Difference HEEQ latitude is ',abs(round(sta_lat_heeq-pos.earth_l1[2][pos_time_now_ind]*180/np.pi,1)),' degree')
 print('STEREO-A heliocentric distance is ', round(sta_r,3),' AU.') 
-print('The Sun rotation period with respect to Earth is ', sun_syn,' days') 
+print('The Sun rotation period with respect to Earth is chosen as ', sun_syn,' days') 
 print('This is a time lag of ', round(timelag_sta_l1,2), ' days.') 
 print('Arrival time of now STEREO-A wind at L1:',arrival_time_l1_sta_str[0:16])
 
-#log.write('STEREO-A HEEQ longitude to Earth is ', round(sta_long_heeq,1),' degree.\n') 
-#log.write('This is ', round(abs(sta_long_heeq)/60,2),' times the location of L5.\n') 
-#log.write('STEREO-A HEEQ latitude is ', round(sta_lat_heeq,1),' degree.\n') 
-#log.write('Earth L1 HEEQ latitude is ',round(pos.earth_l1[2][pos_time_now_ind]*180/np.pi,1),' degree'\n)
-#log.write('Difference HEEQ latitude is ',abs(round(sta_lat_heeq,1)-round(pos.earth_l1[2][pos_time_now_ind]*180/np.pi,1)),' degree'\n)
-#log.write('STEREO-A heliocentric distance is ', round(sta_r,3),' AU.') 
-#log.write('The Sun rotation period with respect to Earth is ', sun_syn,' days') 
-#log.write('This is a time lag of ', round(timelag_sta_l1,2), ' days.') 
-#log.write('Arrival time of now STEREO-A wind at L1:',arrival_time_l1_sta_str[0:16])
-
-
-
-
+log.write('\n')
+log.write('\n')
+log.write('STEREO-A HEEQ longitude to Earth is '+ str(round(sta_long_heeq,1))+' degree.   \
+           \nThis is '+ str(round(abs(sta_long_heeq)/60,2))+' times the location of L5.   \
+           \nSTEREO-A HEEQ latitude is '+str( round(sta_lat_heeq,1))+' degree.                 \
+           \nEarth L1 HEEQ latitude is '+str(round(pos.earth_l1[2][pos_time_now_ind]*180/np.pi,1))+' degree. \
+           \nDifference HEEQ latitude is '+str(abs(round(sta_lat_heeq-pos.earth_l1[2][pos_time_now_ind]*180/np.pi,1)))+' degree. \
+           \nSTEREO-A heliocentric distance is '+ str(round(sta_r,3))+' AU. \
+           \nThe Sun rotation period with respect to Earth is chosen as '+ str(sun_syn)+' days. \
+           \nThis is a time lag of '+str( round(timelag_sta_l1,2))+ ' days. \
+           \nArrival time of now STEREO-A wind at L1: '+str(arrival_time_l1_sta_str[0:16]))
+log.write('\n')
+log.write('\n')
 
 
 print()
@@ -408,9 +344,11 @@ print('get STEREO-A beacon data from STEREO SCIENCE CENTER')
 #original data, ~1 MB
 #https://stereo-ssc.nascom.nasa.gov/data/beacon/ahead/plastic/2018/05/STA_LB_PLA_20180502_V12.cdf	
 
+######
+#if os.path.isdir(outputdirectory+'/movie') == False: os.mkdir(outputdirectory+'/movie')
+
 
 #make file lists for the last 14 days and download data if not already here
-
 daynowstr=['']*14
 sta_pla_file_str=['']*14
 sta_mag_file_str=['']*14
@@ -504,7 +442,8 @@ for p in np.arange(0,14):
 sta_btime=np.zeros(0)  
 sta_br=np.zeros(0)  
 sta_bt=np.zeros(0)  
-sta_bn=np.zeros(0)  
+sta_bn=np.zeros(0) 
+ 
 for p in np.arange(0,14):
   sta =  pycdf.CDF('/Users/chris/python/predstorm/beacon/'+sta_mag_file_str[p])
   #variables Epoch_MAG: CDF_EPOCH [8640]
@@ -545,23 +484,25 @@ sta_bn=sta_bn*(earth_r/sta_r)**-2
 sta_den=sta_den*(earth_r/sta_r)**-2
 print()
 print('correction 1 to STEREO-A data: decline of B and N by factor ',round(((earth_r/sta_r)**-2),3))
-
+log.write('\n')
+log.write('correction 1 to STEREO-A data: decline of B and N by factor '+str(round(((earth_r/sta_r)**-2),3)))
+log.write('\n')
 
 #(2) correction for timing for the Parker spiral 
 #1st approximation - because parker spiral at 1 AU is at a 45deg angle, the shift in distance in longitude
 #is similar to the shift in radial distance
 #*** this may be calculated more exactly with the Parker spiral equations, but will give little difference
+#****+ check if equivalent to Simunac et al. 2009 and Thomas et al. 2018
 #difference in heliocentric distance STEREO-A to Earth
 diff_r=earth_r-sta_r
 #difference in degree along 1 AU circle
 diff_r_deg=diff_r/(2*np.pi*1)*360
 #time lag due to the parker spiral near 1 AU	- this is positive because the spiral leads 
-#to a later arrival at larger heliocentric distances
+#to a later arrival at larger heliocentric distances (reverse for STEREO-B!)
 time_lag_diff_r=round(diff_r_deg/(360/sun_syn),2)
 print('correction 2 to STEREO-A data: approximate Parker spiral time lag in hours: ', round(time_lag_diff_r*24,1))
-
-
-
+log.write('correction 2 to STEREO-A data: approximate Parker spiral time lag in hours: '+ str(round(time_lag_diff_r*24,1)))
+log.write('\n')
 
 
 
@@ -577,47 +518,26 @@ sta_bn7=np.interp(sta_time7,sta_btime+timelag_sta_l1+time_lag_diff_r,sta_bn)
 sta_vr7=np.interp(sta_time7,sta_ptime+timelag_sta_l1+time_lag_diff_r,sta_vr)
 sta_den7=np.interp(sta_time7,sta_ptime+timelag_sta_l1+time_lag_diff_r,sta_den)
 
-
-
 #(3) conversion from RTN to HEEQ to GSE to GSM - but as if STA was along the Sun-Earth line
-print('correction 3 to STEREO-A hourly interpolated data: B RTN to HEEQ to GSE to GSM, as if STEREO-A along the Sun-Earth line.')
-
 #convert STEREO-A RTN data to GSE as if STEREO-A was along the Sun-Earth line
 [dbr,dbt,dbn]=convert_RTN_to_GSE_sta_l1(sta_br7,sta_bt7,sta_bn7,sta_time7, pos.sta, pos_time_num)
 #GSE to GSM
 [sta_br7,sta_bt7,sta_bn7]=convert_GSE_to_GSM(dbr,dbt,dbn,sta_time7)
-
 sta_btot7=np.sqrt(sta_br**2+sta_bt**2+sta_bn**2)
 
+print('correction 3 to STEREO-A hourly interpolated data: B RTN to HEEQ to GSE to GSM, as if STEREO-A along the Sun-Earth line.')
+print()
+print()
 
-print()
-print()
+log.write('correction 3 to STEREO-A hourly interpolated data: B RTN to HEEQ to GSE to GSM, as if STEREO-A along the Sun-Earth line.')
+log.write('\n')
+log.write('\n')
+
+
 
 
 
 ############### calculate Dst for DSCOVR and STEREO-A for last 7 day data with Burton and OBrien
-
-#first try
-#the Dst from AER does not seem to be reliable
-#http://swe.aer.com/static/DMSPgc/Dst_10day.txt
-#dsturl='http://swe.aer.com/static/DMSPgc/Dst_10day.txt'
-#rdst_str = urllib.request.urlopen(dsturl).read().decode()
-#rdst_size=int(np.round(len(rdst_str)/33))-4
-#rdst_time=np.zeros(rdst_size)
-#rdst=np.zeros(rdst_size)
-#go through each line of the txt file and extract time and Dst value
-#for i in np.arange(0,rdst_size):
-#  rdst_slice=rdst_str[146+33*i:176+33*i]
-  #print(rdst_slice)
-  #make a usable string of the time
-#  rdst_time_str=rdst_slice[0:10]+' '+rdst_slice[12:17]
-  #convert to mdates number
-#  rdst_time[i]=mdates.date2num(sunpy.time.parse_time(rdst_time_str))
-#  rdst[i]=float(rdst_slice[22:30])
-#interpolate to hourly data
-#rdst7=np.interp(rtimes7,rdst_time,rdst)
-#---------
-
 
 print('load real time Dst from Kyoto via NOAA')
 url_dst='http://services.swpc.noaa.gov/products/kyoto-dst.json'
@@ -642,11 +562,8 @@ for k in np.arange(0,len(dr),1):
 #rdst7=np.interp(rtimes7,rdst_time,rdst)
 
 
-
-
-#combined array of rtimes7 and sta_time7 times and values rbtot7 sta_btot7 rbzgsm7 sta_bn7 rpv7 sta_vr7  rpn7 sta_den7
-
-
+#combined array of rtimes7 and sta_time7 times and values 
+#rbtot7 sta_btot7 rbzgsm7 sta_bn7 rpv7 sta_vr7  rpn7 sta_den7
 #combined dst time
 cdst_time=np.concatenate((rtimes7, sta_time7))
 cdst_btot=np.concatenate((rbtot7, sta_btot7))
@@ -666,43 +583,14 @@ if sum(np.isnan(cdst_vr)) >0:
  good= np.where(np.isfinite(cdst_vr)) 
  cdst_vr=np.interp(cdst_time,cdst_time[good],cdst_vr[good])
  
-
-
-
-
-
-
-#make Dst index from L1 and STEREO-A solar wind data
-#[rdst_burton, rdst_obrien]=make_predstorm_dst(rbtot7, rbzgsm7, rpv7, rpn7, rtimes7)
-#[dst_burton, dst_obrien]=make_predstorm_dst(cdst_btot, cdst_bz, cdst_vr, cdst_den, cdst_time)
-
-
-#make_dst_from_wind(btot_in,bx_in, by_in,bz_in,v_in,vx_in,density_in,time_in):#
-[dst_burton, dst_obrien, dst_temerin_li]=make_dst_from_wind(cdst_btot, cdst_bx,cdst_by,cdst_bz, cdst_vr,cdst_vr, cdst_den, cdst_time)
-
-
-
+####################################################################################
 print('calculate Dst prediction from L1 and STEREO-A beacon data')
-
-
-#not used currently
-#################################  get OMNI training data ##############################
-#download from  ftp://nssdcftp.gsfc.nasa.gov/pub/data/omni/low_res_omni/omni2_all_years.dat
-
-data_from_omni_file=0
-if data_from_omni_file == 1:
- getdata()
- converttime()
- pickle.dump([spot,btot,bx,by,bz,bygsm,bzgsm,speed,speedx, dst,kp, den,pdyn,year,day,hour,times1], open( "cats/omni2save_april2018.p", "wb" ) ) 
-else: [spot,btot,bx,by,bz,bygsm, bzgsm,speed,speedx, dst,kp,den,pdyn,year,day,hour,times1]= pickle.load( open( "cats/omni2save_april2018.p", "rb" ) )
-
+#make_dst_from_wind(btot_in,bx_in, by_in,bz_in,v_in,vx_in,density_in,time_in):#
+[dst_burton, dst_obrien, dst_temerin_li]=make_dst_from_wind(cdst_btot, cdst_bx,cdst_by, \
+cdst_bz, cdst_vr,cdst_vr, cdst_den, cdst_time)
 
 
 ################################################## plot DSCOVR and STEREO-A data ##################################
-
-
-
-
 
 #check which parts of the array begin after time now rbtime_num[-1] and rptime_num[-1] and end with plot end
 #for plasma add both timeshifts for longitude and parker spiral
@@ -886,10 +774,9 @@ plt.yticks(fontsize=fsize)
 
 
 
-#for verification
+###################################### for verification
 
 if verification_mode > 0:
-  
   #load saved data l prefix is for loaded 
   [timenowb, sta_ptime, sta_vr, sta_btime, sta_btot, sta_br,sta_bt, sta_bn, rbtime_num, rbtot, rbzgsm, rptime_num, rpv, rpn, lrdst_time, lrdst, lcdst_time, ldst_burton, ldst_obrien,ldst_temerin_li]=pickle.load(open(verify_filename,'rb') )  
   plt.plot_date(lcdst_time+1/24, ldst_burton,'-b', label='Forecast Dst Burton et al. 1975',markersize=3, linewidth=1)
@@ -914,18 +801,19 @@ plt.tight_layout()
 #save plot 
 
 if verification_mode == 0:
- filename='real/predstorm_realtime_stereo_l1_plot_v1_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.jpg'
+ filename='real/predstorm_v1_realtime_stereo_a_plot_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.jpg'
+ print('Plot saved in ', filename)
 
 #flag if verification_mode is used
 if verification_mode > 0:
- filename='real/verify_predstorm_realtime_stereo_l1_plot_v1_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.jpg'
+ filename='real/predstorm_v1_verify_stereo_a_plot_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.jpg'
+ print('Plot saved in ', filename)
 
- 
 plt.savefig(filename)
 #filename='real/predstorm_realtime_input_1_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.eps'
 #plt.savefig(filename)
 
-filename_save='real/savefiles/variables_predstorm_l5_save_v1_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.p'
+filename_save='real/savefiles/predstorm_v1_realtime_stereo_a_save_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.p'
 print('All variables for plot saved in ', filename_save, ' for later verification usage.')
 
 pickle.dump([timenowb, sta_ptime, sta_vr, sta_btime, sta_btot, sta_br,sta_bt, sta_bn, rbtime_num, rbtot, rbzgsm, rptime_num, rpv, rpn, rdst_time, rdst, cdst_time, dst_burton, dst_obrien,dst_temerin_li], open(filename_save, "wb" ) )
@@ -933,14 +821,7 @@ pickle.dump([timenowb, sta_ptime, sta_vr, sta_btime, sta_btot, sta_br,sta_bt, st
 #[sta_ptime, sta_vr, rdst_time, rdst, cdst_time, dst_burton, dst_obrien]=pickle.load(open(f,'rb') )
 
 
-
-
-
-
-
-
-
-
+############################### CALCULATE RESULTS ########################################
 
 print()
 print()
@@ -1105,18 +986,12 @@ print()
 
 
 
-log.write('Current time: '+ rbtime_str[-1]+ ' UT')
-log.write('')
-log.write('Predicted minimum of Dst Burton/OBrien:')
+log.write('\n')
+log.write('Predicted minimum of Dst Burton/OBrien:\n')
 log.write(str(int(round(np.nanmin(dst_burton[future_times])))) + '/' + str(int(round(np.nanmin(dst_obrien[future_times]))))+'  nT')
-log.write('at time:')
-
-
-
 log.close() 
 
-filename_save='real/savefiles/variables_realtime_stereo_l1_save_v1_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.p'
-print('All results saved in ', filename_save)
+
 sys.exit()
 
 
@@ -1126,3 +1001,58 @@ sys.exit()
 
 
 
+
+
+###################################################################################
+## UNUSED CODE
+
+
+####################### GET OMNI DATA
+
+#initialize
+#define global variables from OMNI2 hourly dataset
+#see http://omniweb.gsfc.nasa.gov/html/ow_data.html
+#dataset=473376; # for save file july 2016 
+#use this to check on size of OMNI2 hourly data min(np.where(times1==0))
+# dataset=482136;
+# 
+# #global Variables
+# spot=np.zeros(dataset) 
+# btot=np.zeros(dataset) #floating points
+# bx=np.zeros(dataset) #floating points
+# by=np.zeros(dataset) #floating points
+# bz=np.zeros(dataset) #floating points
+# bzgsm=np.zeros(dataset) #floating points
+# bygsm=np.zeros(dataset) #floating points
+# 
+# speed=np.zeros(dataset) #floating points
+# speedx=np.zeros(dataset) #floating points
+# speed_phi=np.zeros(dataset) #floating points
+# speed_theta=np.zeros(dataset) #floating points
+# 
+# dst=np.zeros(dataset) #float
+# kp=np.zeros(dataset) #float
+# 
+# den=np.zeros(dataset) #float
+# pdyn=np.zeros(dataset) #float
+# year=np.zeros(dataset)
+# day=np.zeros(dataset)
+# hour=np.zeros(dataset)
+# t=np.zeros(dataset) #index time
+# times1=np.zeros(dataset) #datetime time
+# 
+#   #not used currently
+#################################  get OMNI training data ##############################
+#download from  ftp://nssdcftp.gsfc.nasa.gov/pub/data/omni/low_res_omni/omni2_all_years.dat
+
+#data_from_omni_file=0
+#if data_from_omni_file == 1:
+# getdata()
+# converttime()
+# pickle.dump([spot,btot,bx,by,bz,bygsm,bzgsm,speed,speedx, dst,kp, den,pdyn,year,day,hour,times1], open( "cats/omni2save_april2018.p", "wb" ) ) 
+#else: [spot,btot,bx,by,bz,bygsm, bzgsm,speed,speedx, dst,kp,den,pdyn,year,day,hour,times1]= pickle.load( open( "cats/omni2save_april2018.p", "rb" ) )
+
+
+
+#   
+  
