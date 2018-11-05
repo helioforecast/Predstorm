@@ -1,4 +1,4 @@
-#PREDSTORM real time solar wind and magnetic storm forecasting with 
+# PREDSTORM real time solar wind and magnetic storm forecasting with 
 # time-shifted data from a spacecraft east of the Sun-Earth line 
 # here STEREO-A is used, also suited for data from a 
 # possible future L5 mission or interplanetary CubeSats
@@ -6,6 +6,14 @@
 #Author: C. Moestl, IWF Graz, Austria
 #twitter @chrisoutofspace, https://github.com/cmoestl
 #started April 2018, last update October 2018
+
+#This work is published under the MIT LICENSE
+#THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
+#INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR 
+#PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE 
+#FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, 
+#TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR 
+#OTHER DEALINGS IN THE SOFTWARE.
 
 #python 3.5.2 with sunpy and seaborn, ipython 4.2.0
 
@@ -76,6 +84,8 @@ import warnings
 warnings.filterwarnings('ignore')
 
 
+
+
 ############################## INPUT PARAMETERS ######################################
 
 
@@ -99,6 +109,7 @@ trainstart=lines[12]
 trainend=lines[13]
 
 #synodic solar rotation sun_syn=26.24 #days
+#carrington rotation 26 deg latitude: 27.28 days
 #use other values for equatorial coronal holes?
 sun_syn=float(lines[16]) #days
 
@@ -474,8 +485,9 @@ print(' ')
 
 
 ####################################### APPLY CORRECTIONS TO STEREO-A data 
-#(1) make correction for heliocentric distance of 0.95 AU to L1 position - take position of Earth and STEREO-A from file 
-#for B and N, makes a difference of about -5 nT in Dst
+# (1) make correction for heliocentric distance of STEREO-A to L1 position
+# take position of Earth and STEREO-A from file 
+# for B and N, makes a difference of about -5 nT in Dst
 earth_r=pos.earth_l1[0][pos_time_now_ind]
 sta_btot=sta_btot*(earth_r/sta_r)**-2
 sta_br=sta_br*(earth_r/sta_r)**-2
@@ -483,27 +495,25 @@ sta_bt=sta_bt*(earth_r/sta_r)**-2
 sta_bn=sta_bn*(earth_r/sta_r)**-2
 sta_den=sta_den*(earth_r/sta_r)**-2
 print()
-print('correction 1 to STEREO-A data: decline of B and N by factor ',round(((earth_r/sta_r)**-2),3))
+print('corrections to STEREO-A data:')
+print('1: decline of B and N by factor ',round(((earth_r/sta_r)**-2),3))
+
+log.write('corrections to STEREO-A data:')
 log.write('\n')
-log.write('correction 1 to STEREO-A data: decline of B and N by factor '+str(round(((earth_r/sta_r)**-2),3)))
+log.write('1: decline of B and N by factor '+str(round(((earth_r/sta_r)**-2),3)))
 log.write('\n')
 
-#(2) correction for timing for the Parker spiral 
-#1st approximation - because parker spiral at 1 AU is at a 45deg angle, the shift in distance in longitude
-#is similar to the shift in radial distance
-#*** this may be calculated more exactly with the Parker spiral equations, but will give little difference
-#****+ check if equivalent to Simunac et al. 2009 and Thomas et al. 2018
-#difference in heliocentric distance STEREO-A to Earth
-diff_r=earth_r-sta_r
-#difference in degree along 1 AU circle
-diff_r_deg=diff_r/(2*np.pi*1)*360
-#time lag due to the parker spiral near 1 AU	- this is positive because the spiral leads 
-#to a later arrival at larger heliocentric distances (reverse for STEREO-B!)
+#(2) correction for timing for the Parker spiral see Simunac et al. 2009 Ann. Geophys. equation 1
+#difference in heliocentric distance STEREO-A to Earth, actually different for every point so take average of solar wind speed
+#Omega is 360 deg/sun_syn in days, convert to seconds; sta_r in AU to m to km; convert to degrees
+#minus sign: from STEREO-A to Earth the diff_r_deg needs to be positive  
+#because the spiral leads to a later arrival of the solar wind at larger heliocentric distances (this is reverse for STEREO-B!)
+AU=149597870.700 #AU in km
+diff_r_deg=-(360/(sun_syn*86400))*((sta_r-earth_r)*AU)/np.nanmean(sta_vr)
 time_lag_diff_r=round(diff_r_deg/(360/sun_syn),2)
-print('correction 2 to STEREO-A data: approximate Parker spiral time lag in hours: ', round(time_lag_diff_r*24,1))
-log.write('correction 2 to STEREO-A data: approximate Parker spiral time lag in hours: '+ str(round(time_lag_diff_r*24,1)))
+print('2: time lag due to Parker spiral in hours: ', round(time_lag_diff_r*24,1))
+log.write('2: time lag due to Parker spiral in hours: '+ str(round(time_lag_diff_r*24,1)))
 log.write('\n')
-
 
 
 ############################ interpolate STEREO-A to 1 hour times for Dst prediction starting with the last full hour of observations + 1 hour
@@ -525,21 +535,21 @@ sta_den7=np.interp(sta_time7,sta_ptime+timelag_sta_l1+time_lag_diff_r,sta_den)
 [sta_br7,sta_bt7,sta_bn7]=convert_GSE_to_GSM(dbr,dbt,dbn,sta_time7)
 sta_btot7=np.sqrt(sta_br**2+sta_bt**2+sta_bn**2)
 
-print('correction 3 to STEREO-A hourly interpolated data: B RTN to HEEQ to GSE to GSM, as if STEREO-A along the Sun-Earth line.')
+print('3: coordinate conversion of magnetic field components RTN > HEEQ > GSE > GSM.')
 print()
 print()
-
-log.write('correction 3 to STEREO-A hourly interpolated data: B RTN to HEEQ to GSE to GSM, as if STEREO-A along the Sun-Earth line.')
+log.write('3: coordinate conversion of magnetic field components RTN > HEEQ > GSE > GSM.')
 log.write('\n')
 log.write('\n')
 
 
 
 
+#########****************************
 
-############### calculate Dst for DSCOVR and STEREO-A for last 7 day data with Burton and OBrien
+############### calculate Dst for DSCOVR and STEREO-A for last 7 day data with Temerin and Li 2002
 
-print('load real time Dst from Kyoto via NOAA')
+#print('loaded real time Dst from Kyoto via NOAA')
 url_dst='http://services.swpc.noaa.gov/products/kyoto-dst.json'
 with urllib.request.urlopen(url_dst) as url:
     dr = json.loads	(url.read().decode())
@@ -583,11 +593,14 @@ if sum(np.isnan(cdst_vr)) >0:
  good= np.where(np.isfinite(cdst_vr)) 
  cdst_vr=np.interp(cdst_time,cdst_time[good],cdst_vr[good])
  
-####################################################################################
-print('calculate Dst prediction from L1 and STEREO-A beacon data')
+##################################################################################################
+print('Dst prediction for L1 calculated from time-shifted STEREO-A beacon data.')
+log.write('\n')
+log.write('Dst prediction for L1 calculated from time-shifted STEREO-A beacon data.')
+log.write('\n')
 #make_dst_from_wind(btot_in,bx_in, by_in,bz_in,v_in,vx_in,density_in,time_in):#
 [dst_burton, dst_obrien, dst_temerin_li]=make_dst_from_wind(cdst_btot, cdst_bx,cdst_by, \
-cdst_bz, cdst_vr,cdst_vr, cdst_den, cdst_time)
+                                         cdst_bz, cdst_vr,cdst_vr, cdst_den, cdst_time)
 
 
 ################################################## plot DSCOVR and STEREO-A data ##################################
@@ -802,23 +815,29 @@ plt.tight_layout()
 
 if verification_mode == 0:
  filename='real/predstorm_v1_realtime_stereo_a_plot_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.jpg'
- print('Plot saved in ', filename)
+ print('Plot saved as: \n', filename)
+ log.write('\n')
+ log.write('Plot saved as: \n'+ filename)
 
 #flag if verification_mode is used
 if verification_mode > 0:
  filename='real/predstorm_v1_verify_stereo_a_plot_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.jpg'
- print('Plot saved in ', filename)
+ print('Plot saved as: \n', filename)
+ log.write('\n')
+ log.write('Plot saved as: \n'+ filename)
+
 
 plt.savefig(filename)
 #filename='real/predstorm_realtime_input_1_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.eps'
 #plt.savefig(filename)
 
 filename_save='real/savefiles/predstorm_v1_realtime_stereo_a_save_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.p'
-print('All variables for plot saved in ', filename_save, ' for later verification usage.')
-
-pickle.dump([timenowb, sta_ptime, sta_vr, sta_btime, sta_btot, sta_br,sta_bt, sta_bn, rbtime_num, rbtot, rbzgsm, rptime_num, rpv, rpn, rdst_time, rdst, cdst_time, dst_burton, dst_obrien,dst_temerin_li], open(filename_save, "wb" ) )
-#load with
-#[sta_ptime, sta_vr, rdst_time, rdst, cdst_time, dst_burton, dst_obrien]=pickle.load(open(f,'rb') )
+pickle.dump([timenowb, sta_ptime, sta_vr, sta_btime, sta_btot, sta_br,sta_bt, sta_bn, \
+             rbtime_num, rbtot, rbzgsm, rptime_num, rpv, rpn, rdst_time, rdst, cdst_time, \
+             dst_burton, dst_obrien,dst_temerin_li], open(filename_save, "wb" ) )
+print('Variables saved as: \n', filename_save, ' \n(pickle) for later verification usage.')
+log.write('\n')
+log.write('Variables saved as: \n'+ filename_save+ '\n(pickle) for later verification usage.')
 
 
 ############################### CALCULATE RESULTS ########################################
@@ -827,6 +846,14 @@ print()
 print()
 print('-------------------------------------------------')
 print()
+
+
+log.write('\n')
+log.write('\n')
+log.write('-------------------------------------------------')
+log.write('\n')
+
+
 
 print()
 #print('Predicted maximum of B total in next 24 hours:')
@@ -838,8 +865,6 @@ print()
 
 #check future times in combined Dst 
 future_times=np.where(cdst_time > timenowb)
-
-
 
 if verification_mode > 0:
   print('Verification results for interval:')
@@ -906,89 +931,73 @@ if verification_mode > 0:
 
 
 
-print('PREDSTORM L5 (STEREO-A) prediction results:')
-print()
+################################# WRITE PREDICTION RESULTS TO COMMAND LINE AND LOGFILE
+
+print('PREDSTORM L5 (STEREO-A) prediction results: \n')
 print('Current time: ', rbtime_str[-1], ' UT')
 
-print()
-print('Predicted minimum of Dst Burton/OBrien:')
-print(int(round(np.nanmin(dst_burton[future_times]))), ' / ', int(round(np.nanmin(dst_obrien[future_times]))),'  nT')
-
-mindst_time=cdst_time[future_times[0][0]+np.nanargmin(dst_burton[future_times])]
-print('at time:')
-
-
-#add 1 minute manually because of rounding errors in time 19:59:9999 etc.
-print(str(mdates.num2date(mindst_time+1/(24*60)))[0:16])
-
-print()
-print()
-
-#write out times of storm levels
-print('times of moderate storm level in prediction')
-print()
-
-storm_times_ind=np.where(dst_burton[future_times] < -50)[0]
-#when there are storm times above this level, indicate:
-if len(storm_times_ind) >0:   
- for i in np.arange(0,len(storm_times_ind),1):
-  print(str(mdates.num2date(cdst_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16])
- print('Burton model:')
-
-print()
-storm_times_ind=np.where(dst_obrien[future_times] < -50)[0]
-if len(storm_times_ind) >0:   
- for i in np.arange(0,len(storm_times_ind),1):
-  print(str(mdates.num2date(cdst_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16])
- print('OBrien model:')
-
-
-
-print()
-print()
-
-print('times of intense storm level')
-storm_times_ind=np.where(dst_burton[future_times] < -100)[0]
-
-#when there are storm times above this level, indicate:
-if len(storm_times_ind) >0:   
-  for i in np.arange(0,len(storm_times_ind),1):
-   print(str(mdates.num2date(cdst_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16])
-  print('Burton model:')
-
-storm_times_ind=np.where(dst_obrien[future_times] < -100)[0]
-if len(storm_times_ind) >0:   
-  for i in np.arange(0,len(storm_times_ind),1):
-   print(str(mdates.num2date(cdst_time[future_times][storm_times_ind][i]))[0:16])
-  print('OBrien model:')
- 
-
-
-print()
-print()
-print('times of super storm level')
-storm_times_ind=np.where(dst_burton[future_times] < -200)[0]
-
-#when there are storm times above this level, indicate:
-if len(storm_times_ind) >0:   
-  for i in np.arange(0,len(storm_times_ind),1):
-   print(str(mdates.num2date(cdst_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16])
-  print('Burton model:')
-
-storm_times_ind=np.where(dst_obrien[future_times] < -200)[0]
-if len(storm_times_ind) >0:   
-  for i in np.arange(0,len(storm_times_ind),1):
-   print(str(mdates.num2date(cdst_time[future_times][storm_times_ind][i]))[0:16])
-  print('OBrien model:')
-
-print()
-print()
-
-
-
+log.write('PREDSTORM L5 (STEREO-A) prediction results:')
 log.write('\n')
-log.write('Predicted minimum of Dst Burton/OBrien:\n')
-log.write(str(int(round(np.nanmin(dst_burton[future_times])))) + '/' + str(int(round(np.nanmin(dst_obrien[future_times]))))+'  nT')
+log.write('Current time: '+ rbtime_str[-1]+ ' UT')
+
+print()
+print('Predicted minimum of Dst (future times):')
+print(int(round(np.nanmin(dst_temerin_li[future_times]))), 'nT')
+mindst_time=cdst_time[future_times[0][0]+np.nanargmin(dst_temerin_li[future_times])]
+print('at time: ', str(mdates.num2date(mindst_time+1/(24*60)))[0:16])
+#added 1 minute manually because of rounding errors in time 19:59:9999 etc.
+log.write('\n')
+log.write('Predicted minimum of Dst (future times):\n')
+log.write(str(int(round(np.nanmin(dst_temerin_li[future_times])))) + ' nT \n')
+log.write('at time: '+str(mdates.num2date(mindst_time+1/(24*60)))[0:16])
+log.write('\n')
+
+print()
+print('Predicted times of moderate storm levels (-50 to -100 nT):')
+log.write('\n')
+log.write('Predicted times of moderate storm levels (-50 to -100 nT):\n')
+storm_times_ind=np.where(np.logical_and(dst_temerin_li[future_times] < -50, dst_temerin_li[future_times] > -100))[0]
+#when there are storm times above this level, indicate:
+if len(storm_times_ind) >0:   
+ for i in np.arange(0,len(storm_times_ind),1):
+  print(str(mdates.num2date(cdst_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16])
+  log.write(str(mdates.num2date(cdst_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16]+'\n')
+print()
+log.write('\n')
+
+print()
+print('Predicted times of intense storm levels (-100 to -200 nT):')
+log.write('\n')
+log.write('Predicted times of intense storm levels (-100 to -200 nT):\n')
+storm_times_ind=np.where(np.logical_and(dst_temerin_li[future_times] < -100, dst_temerin_li[future_times] > -200))[0]
+#when there are storm times above this level, indicate:
+if len(storm_times_ind) >0:   
+  for i in np.arange(0,len(storm_times_ind),1):
+   print(str(mdates.num2date(cdst_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16])
+   log.write(str(mdates.num2date(cdst_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16]+'\n')
+else: 
+  print('None')
+  log.write('None')
+print()
+log.write('\n')
+
+print()
+print('Predicted times of super storm levels (< -200 nT):')
+log.write('\n')
+log.write('Predicted times of super storm levels (< -200 nT):\n')
+storm_times_ind=np.where(dst_temerin_li[future_times] < -200)[0]
+#when there are storm times above this level, indicate:
+if len(storm_times_ind) >0:   
+  for i in np.arange(0,len(storm_times_ind),1):
+   print(str(mdates.num2date(cdst_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16])
+   log.write(str(mdates.num2date(cdst_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16]+'\n')
+else: 
+  print('None')
+  log.write('None')
+
+print()
+log.write('\n')
+
 log.close() 
 
 

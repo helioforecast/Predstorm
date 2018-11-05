@@ -13,10 +13,10 @@
 2006-Jan-01 00:00
 2010-Jan-01 00:00
 
-#synodic solar rotation sun_syn=26.24 days, use other values for equatorial coronal holes? 
-25.5 
+#synodic solar rotation sun_syn=26.24 days (equator), 27.28 days (Carrington rotation, 26 deg latitude)
+26.24
 
-#how far to see in the future with STEREO-A data to the right of the current time realtime_plot_timeadd=
+#how far to see in the future with STEREO-A data to the right of the current time
 7
 
 #to shift the left beginning of the plot

@@ -7,7 +7,8 @@ import sunpy
 import matplotlib.dates as mdates
 import ephem
 
-# use import importlib
+# use
+# import importlib
 # importlib.reload(predstorm_module)
 # to update module while working in command line 
 
@@ -19,6 +20,12 @@ import ephem
 #
 
 #
+
+
+#
+
+# CONSTANTS
+
 
 
 #
