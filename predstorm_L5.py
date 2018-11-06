@@ -5,7 +5,7 @@
 
 #Author: C. Moestl, IWF Graz, Austria
 #twitter @chrisoutofspace, https://github.com/cmoestl
-#started April 2018, last update October 2018
+#started April 2018, last update November 2018
 
 #This work is published under the MIT LICENSE
 #THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
@@ -24,7 +24,7 @@
 # things to add: 
 
 # - write prediction variables as txt and pickle file and variables as pickle
-# - make a logfile for the predictions with the main results 
+# - verification tests
 
 # - add error bars for the Temerin/Li Dst model with 1 and 2 sigma, 
 #   based on a thorough assessment of errors with the ... stereob_errors program
@@ -33,7 +33,7 @@
 #   taken from correlations of ovation prime, SuomiNPP data in NASA worldview and Dst 
 # - check coordinate conversions, GSE to GSM is ok
 # - deal with CMEs at STEREO, because systematically degrades prediction results
-# - add metrics ROC etc.
+# - add metrics ROC for verification etc.
 
 # future larger steps:
 # (1) add the semi-supervised learning algorithm from the predstorm_L1 program; e.g. with older
@@ -48,7 +48,7 @@
 
 
 ##############################################################################
-############################# CODE START
+############################# CODE START #####################################
 ##############################################################################
 
 import scipy
@@ -533,7 +533,6 @@ sta_den7=np.interp(sta_time7,sta_ptime+timelag_sta_l1+time_lag_diff_r,sta_den)
 [dbr,dbt,dbn]=convert_RTN_to_GSE_sta_l1(sta_br7,sta_bt7,sta_bn7,sta_time7, pos.sta, pos_time_num)
 #GSE to GSM
 [sta_br7,sta_bt7,sta_bn7]=convert_GSE_to_GSM(dbr,dbt,dbn,sta_time7)
-sta_btot7=np.sqrt(sta_br**2+sta_bt**2+sta_bn**2)
 
 print('3: coordinate conversion of magnetic field components RTN > HEEQ > GSE > GSM.')
 print()
@@ -831,6 +830,9 @@ plt.savefig(filename)
 #filename='real/predstorm_realtime_input_1_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.eps'
 #plt.savefig(filename)
 
+
+
+############# write prediction variables as pickle and txt file
 filename_save='real/savefiles/predstorm_v1_realtime_stereo_a_save_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.p'
 pickle.dump([timenowb, sta_ptime, sta_vr, sta_btime, sta_btot, sta_br,sta_bt, sta_bn, \
              rbtime_num, rbtot, rbzgsm, rptime_num, rpv, rpn, rdst_time, rdst, cdst_time, \
@@ -839,32 +841,27 @@ print('Variables saved as: \n', filename_save, ' \n(pickle) for later verificati
 log.write('\n')
 log.write('Variables saved as: \n'+ filename_save+ '\n(pickle) for later verification usage.')
 
+filename_save='real/savefiles/predstorm_v1_realtime_stereo_a_save_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.txt'
+vartxtout=np.zeros([np.size(cdst_bx),8])
+vartxtout[:,0]=cdst_time
+vartxtout[:,1]=dst_temerin_li
+vartxtout[:,2]=cdst_btot
+vartxtout[:,3]=cdst_bx
+vartxtout[:,4]=cdst_by
+vartxtout[:,5]=cdst_bz
+vartxtout[:,6]=cdst_den
+vartxtout[:,7]=cdst_vr
+np.savetxt(filename_save, vartxtout, delimiter='',fmt='%8.6f %5.0i %5.1f %5.1f %5.1f %5.1f %5.1f %5.0i') 
 
-############################### CALCULATE RESULTS ########################################
-
-print()
-print()
-print('-------------------------------------------------')
-print()
-
-
+print('Variables saved as: \n', filename_save, ' \n(ascii) for later verification usage.')
 log.write('\n')
-log.write('\n')
-log.write('-------------------------------------------------')
-log.write('\n')
+log.write('Variables saved as: \n'+ filename_save+ '\n(ascii) for later verification usage.')
 
 
 
-print()
-#print('Predicted maximum of B total in next 24 hours:')
-#print(np.nanmax(sta_btot),' nT')
-#print('Predicted minimum of Bz GSM in next 24 hours:')
-#print(np.nanmin(bzp),' nT')
-#print('Predicted maximum V in next 24 hours:')
-#print(int(round(np.nanmax(speedp,0))),' km/s')
 
-#check future times in combined Dst 
-future_times=np.where(cdst_time > timenowb)
+###################### VERIFICATION MODE BRANCH ##########################################
+
 
 if verification_mode > 0:
   print('Verification results for interval:')
@@ -931,14 +928,52 @@ if verification_mode > 0:
 
 
 
+
+############################### CALCULATE FORECAST RESULTS ########################################
+
+print()
+print()
+print('-------------------------------------------------')
+print()
+
+
+log.write('\n')
+log.write('\n')
+log.write('-------------------------------------------------')
+log.write('\n')
+
+
+#check future times in combined Dst 
+future_times=np.where(cdst_time > timenowb)
+
+#past times in combined dst
+past_times=np.where(cdst_time < timenowb)
+
+
 ################################# WRITE PREDICTION RESULTS TO COMMAND LINE AND LOGFILE
 
 print('PREDSTORM L5 (STEREO-A) prediction results: \n')
 print('Current time: ', rbtime_str[-1], ' UT')
+print()
 
 log.write('PREDSTORM L5 (STEREO-A) prediction results:')
 log.write('\n')
 log.write('Current time: '+ rbtime_str[-1]+ ' UT')
+
+
+
+print('Minimum of Dst (past times):')
+print(int(round(np.nanmin(dst_temerin_li[past_times]))), 'nT')
+mindst_time=cdst_time[past_times[0][0]+np.nanargmin(dst_temerin_li[past_times])]
+print('at time: ', str(mdates.num2date(mindst_time+1/(24*60)))[0:16])
+#added 1 minute manually because of rounding errors in time 19:59:9999 etc.
+
+log.write('\n')
+log.write('Minimum of Dst (past times):\n')
+log.write(str(int(round(np.nanmin(dst_temerin_li[past_times])))) + ' nT \n')
+log.write('at time: '+str(mdates.num2date(mindst_time+1/(24*60)))[0:16])
+log.write('\n')
+
 
 print()
 print('Predicted minimum of Dst (future times):')
@@ -946,6 +981,7 @@ print(int(round(np.nanmin(dst_temerin_li[future_times]))), 'nT')
 mindst_time=cdst_time[future_times[0][0]+np.nanargmin(dst_temerin_li[future_times])]
 print('at time: ', str(mdates.num2date(mindst_time+1/(24*60)))[0:16])
 #added 1 minute manually because of rounding errors in time 19:59:9999 etc.
+
 log.write('\n')
 log.write('Predicted minimum of Dst (future times):\n')
 log.write(str(int(round(np.nanmin(dst_temerin_li[future_times])))) + ' nT \n')
@@ -962,6 +998,9 @@ if len(storm_times_ind) >0:
  for i in np.arange(0,len(storm_times_ind),1):
   print(str(mdates.num2date(cdst_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16])
   log.write(str(mdates.num2date(cdst_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16]+'\n')
+else: 
+  print('None')
+  log.write('None')
 print()
 log.write('\n')
 
@@ -998,10 +1037,91 @@ else:
 print()
 log.write('\n')
 
+
+
+
+print()
+print('------ Other parameters')
+print()
+
+log.write('\n')
+log.write('------ Other parameters')
+log.write('\n \n')
+
+
+### speed
+
+print('Maximum speed (past times):')
+maxvr_time=cdst_time[past_times[0][0]+np.nanargmax(cdst_vr[past_times])]
+print(int(round(np.nanmax(cdst_vr[past_times]))), 'km/s at', \
+      str(mdates.num2date(maxvr_time+1/(24*60)))[0:16])
+print()
+log.write('Maximum speed (past times):\n')
+log.write(str(int(round(np.nanmax(cdst_vr[past_times]))))+ ' km/s at '+ \
+      str(mdates.num2date(maxvr_time+1/(24*60)))[0:16])
+log.write('\n \n')
+
+
+print('Maximum speed (future times):')
+maxvr_time=cdst_time[future_times[0][0]+np.nanargmax(cdst_vr[future_times])]
+print(int(round(np.nanmax(cdst_vr[future_times]))), 'km/s at', \
+      str(mdates.num2date(maxvr_time+1/(24*60)))[0:16])
+print()
+log.write('Maximum speed (future times):\n')
+log.write(str(int(round(np.nanmax(cdst_vr[future_times]))))+ ' km/s at '+ \
+      str(mdates.num2date(maxvr_time+1/(24*60)))[0:16])
+log.write('\n \n')
+
+
+### btot
+
+print('Maximum Btot (past times):')
+maxb_time=cdst_time[past_times[0][0]+np.nanargmax(cdst_btot[past_times])]
+print(round(np.nanmax(cdst_btot[past_times]),1), 'nT at', \
+      str(mdates.num2date(maxb_time+1/(24*60)))[0:16])
+print()
+log.write('Maximum Btot (past times):\n')
+log.write(str(round(np.nanmax(cdst_btot[past_times]),1))+ ' nT at '+ \
+      str(mdates.num2date(maxb_time+1/(24*60)))[0:16])
+log.write('\n \n')
+
+
+print('Maximum Btot (future times):')
+maxb_time=cdst_time[future_times[0][0]+np.nanargmax(cdst_btot[future_times])]
+print(round(np.nanmax(cdst_btot[future_times]),1), 'nT at', \
+      str(mdates.num2date(maxb_time+1/(24*60)))[0:16])
+print()
+log.write('Maximum Btot (future times):\n')
+log.write(str(round(np.nanmax(cdst_btot[future_times]),1))+ ' nT at '+ \
+      str(mdates.num2date(maxb_time+1/(24*60)))[0:16])
+log.write('\n \n')
+
+
+### bz
+
+print('Minimum Bz (past times):')
+minbz_time=cdst_time[past_times[0][0]+np.nanargmin(cdst_bz[past_times])]
+print(round(np.nanmin(cdst_bz[past_times]),1), 'nT at', \
+      str(mdates.num2date(minbz_time+1/(24*60)))[0:16])
+print()
+log.write('Minimum Bz (past times):\n')
+log.write(str(round(np.nanmin(cdst_bz[past_times]),1))+ ' nT at '+ \
+      str(mdates.num2date(minbz_time+1/(24*60)))[0:16])
+log.write('\n \n')
+
+
+print('Minimum Bz (future times):')
+minbz_time=cdst_time[future_times[0][0]+np.nanargmin(cdst_bz[future_times])]
+print(round(np.nanmin(cdst_bz[future_times]),1), 'nT at', \
+      str(mdates.num2date(minbz_time+1/(24*60)))[0:16])
+print()
+log.write('Minimum Bz (future times):\n')
+log.write(str(round(np.nanmin(cdst_bz[future_times]),1))+ ' nT at '+ \
+      str(mdates.num2date(minbz_time+1/(24*60)))[0:16])
+log.write('\n \n')
+
 log.close() 
 
-
-sys.exit()
 
 
 ##########################################################################################
@@ -1009,59 +1129,8 @@ sys.exit()
 ##########################################################################################
 
 
-
-
-
 ###################################################################################
 ## UNUSED CODE
 
 
-####################### GET OMNI DATA
-
-#initialize
-#define global variables from OMNI2 hourly dataset
-#see http://omniweb.gsfc.nasa.gov/html/ow_data.html
-#dataset=473376; # for save file july 2016 
-#use this to check on size of OMNI2 hourly data min(np.where(times1==0))
-# dataset=482136;
-# 
-# #global Variables
-# spot=np.zeros(dataset) 
-# btot=np.zeros(dataset) #floating points
-# bx=np.zeros(dataset) #floating points
-# by=np.zeros(dataset) #floating points
-# bz=np.zeros(dataset) #floating points
-# bzgsm=np.zeros(dataset) #floating points
-# bygsm=np.zeros(dataset) #floating points
-# 
-# speed=np.zeros(dataset) #floating points
-# speedx=np.zeros(dataset) #floating points
-# speed_phi=np.zeros(dataset) #floating points
-# speed_theta=np.zeros(dataset) #floating points
-# 
-# dst=np.zeros(dataset) #float
-# kp=np.zeros(dataset) #float
-# 
-# den=np.zeros(dataset) #float
-# pdyn=np.zeros(dataset) #float
-# year=np.zeros(dataset)
-# day=np.zeros(dataset)
-# hour=np.zeros(dataset)
-# t=np.zeros(dataset) #index time
-# times1=np.zeros(dataset) #datetime time
-# 
-#   #not used currently
-#################################  get OMNI training data ##############################
-#download from  ftp://nssdcftp.gsfc.nasa.gov/pub/data/omni/low_res_omni/omni2_all_years.dat
-
-#data_from_omni_file=0
-#if data_from_omni_file == 1:
-# getdata()
-# converttime()
-# pickle.dump([spot,btot,bx,by,bz,bygsm,bzgsm,speed,speedx, dst,kp, den,pdyn,year,day,hour,times1], open( "cats/omni2save_april2018.p", "wb" ) ) 
-#else: [spot,btot,bx,by,bz,bygsm, bzgsm,speed,speedx, dst,kp,den,pdyn,year,day,hour,times1]= pickle.load( open( "cats/omni2save_april2018.p", "rb" ) )
-
-
-
-#   
   
