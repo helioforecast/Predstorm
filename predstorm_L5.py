@@ -7,31 +7,23 @@
 #twitter @chrisoutofspace, https://github.com/cmoestl
 #started April 2018, last update November 2018
 
-#This work is published under the MIT LICENSE
-#THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
-#INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR 
-#PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE 
-#FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, 
-#TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR 
-#OTHER DEALINGS IN THE SOFTWARE.
-
 #python 3.5.2 with sunpy and seaborn, ipython 4.2.0
 
 #current status:
-#The code works with STEREO-A data and downloads STEREO-A beacon files 
-#14 days prior to current time, tested for correctly handling missing PLASTIC files
+# The code works with STEREO-A beacon and DSCOVR data and downloads STEREO-A beacon files 
+# into the sta_beacon directory 14 days prior to current time 
+# tested for correctly handling missing PLASTIC files
 
 # things to add: 
 
-# - write prediction variables as txt and pickle file and variables as pickle
-# - verification tests
-
-# - add error bars for the Temerin/Li Dst model with 1 and 2 sigma, 
+# - make verification mode new, add manual dst offset
+# - add error bars for the Temerin/Li Dst model with 1 and 2 sigma
+# - fill data gaps from STEREO-A beacon data with reasonable Bz fluctuations etc.
 #   based on a thorough assessment of errors with the ... stereob_errors program
 # - add timeshifts from L1 to Earth
 # - add approximate levels of Dst for each location to see the aurora (depends on season)
 #   taken from correlations of ovation prime, SuomiNPP data in NASA worldview and Dst 
-# - check coordinate conversions, GSE to GSM is ok
+# - check coordinate conversions again, GSE to GSM is ok
 # - deal with CMEs at STEREO, because systematically degrades prediction results
 # - add metrics ROC for verification etc.
 
@@ -47,9 +39,32 @@
 # (3) probabilities for magnetic storm magnitude, probabilities for aurora for many locations
 
 
-##############################################################################
-############################# CODE START #####################################
-##############################################################################
+## MIT LICENSE
+## Copyright 2018, Christian Moestl 
+## Permission is hereby granted, free of charge, to any person obtaining a copy of this 
+## software and associated documentation files (the "Software"), to deal in the Software
+## without restriction, including without limitation the rights to use, copy, modify, 
+## merge, publish, distribute, sublicense, and/or sell copies of the Software, and to 
+## permit persons to whom the Software is furnished to do so, subject to the following 
+## conditions:
+## The above copyright notice and this permission notice shall be included in all copies 
+## or substantial portions of the Software.
+## THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
+## INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+## PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT 
+## HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF 
+## CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE 
+## OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+
+
+
+
+
+##########################################################################################
+######################################### CODE START #####################################
+##########################################################################################
 
 import scipy
 import scipy.io
@@ -71,6 +86,9 @@ import sunpy.time
 import seaborn as sns
 from pycdf import pycdf
 
+import predstorm_module
+from predstorm_module import get_dscovr_data_real
+from predstorm_module import get_stereoa_data_beacon
 from predstorm_module import time_to_num_cat
 from predstorm_module import converttime
 from predstorm_module import make_dst_from_wind
@@ -78,10 +96,20 @@ from predstorm_module import getpositions
 from predstorm_module import convert_GSE_to_GSM
 from predstorm_module import sphere2cart
 from predstorm_module import convert_RTN_to_GSE_sta_l1
+from predstorm_module import get_noaa_dst
 
 #ignore warnings
 import warnings
 warnings.filterwarnings('ignore')
+
+
+
+
+
+
+
+
+
 
 
 
@@ -97,10 +125,8 @@ lines = open(inputfilename).read().splitlines()
 #whether to show interpolated data points on the DSCOVR input plot
 showinterpolated=int(lines[3])
 
-#read in data from omni file -> 1 , from save_file -> 0
-data_from_omni_file = int(lines[6]) #
 
-#the time interval for both the observed and predicted wind (** could be longer for predicted wind)
+#the time interval for both the observed and predicted wind 
 #Delta T in hours, start with 24 hours here (covers 1 night of aurora)
 deltat=int(lines[9])
 
@@ -131,25 +157,33 @@ verify_filename=lines[27]
 verify_int_start=lines[30]
 verify_int_end=lines[31]
 
+##################*******************
+dst_offset=-15
 
-outputdirectory='real'
+
+outputdirectory='results'
 
 #check if directory for output exists (for plots and txt files)
 #if not make new directory
 if os.path.isdir(outputdirectory) == False: os.mkdir(outputdirectory)
 #also make directory for savefiles
-if os.path.isdir(outputdirectory+'/savefiles') == False: os.mkdir(outputdirectory+'/savefiles')
+if os.path.isdir(outputdirectory+'/savefiles') == False: \
+   os.mkdir(outputdirectory+'/savefiles')
 
-#check if directory for beacon data exists
-os.path.isdir('beacon')
-#if not make new directory
-if os.path.isdir('beacon') == False: os.mkdir('beacon')
-
+#check if directory for beacon data exists, if not make new directory
+if os.path.isdir('sta_beacon') == False: os.mkdir('sta_beacon')
 
 
-########################################################################################## 
+
+
+
+
+
+
+
+
+
 ######################################## MAIN PROGRAM ####################################
-########################################################################################## 
 
 #get current directory
 os.system('pwd')
@@ -159,7 +193,7 @@ plt.close('all')
 print('------------------------------------------------------------------------')
 print()
 print('PREDSTORM L5 v1 method for geomagnetic storm and aurora forecasting. ')
-print('Christian Moestl, IWF Graz, last update October 2018.')
+print('Christian Moestl, IWF Graz, last update November 2018.')
 print()
 print('Time shifting magnetic field and plasma data from STEREO-A, ')
 print('or from an L5 mission or interplanetary CubeSats, to predict')
@@ -168,121 +202,45 @@ print()
 print()
 print('------------------------------------------------------------------------')
 
-######################### (1) get real time DSCOVR data ##################################
-
-#data from http://services.swpc.noaa.gov/products/solar-wind/
-#if needed replace with ACE
-#http://legacy-www.swpc.noaa.gov/ftpdir/lists/ace/
-#get 3 or 7 day data
-#url_plasma='http://services.swpc.noaa.gov/products/solar-wind/plasma-3-day.json'
-#url_mag='http://services.swpc.noaa.gov/products/solar-wind/mag-3-day.json'
-
-url_plasma='http://services.swpc.noaa.gov/products/solar-wind/plasma-7-day.json'
-url_mag='http://services.swpc.noaa.gov/products/solar-wind/mag-7-day.json'
-
-#download, see URLLIB https://docs.python.org/3/howto/urllib2.html
-with urllib.request.urlopen(url_plasma) as url:
-    pr = json.loads	(url.read().decode())
-with urllib.request.urlopen(url_mag) as url:
-    mr = json.loads(url.read().decode())
-print('DSCOVR plasma data available')
-print(pr[0])
-print('DSCOVR MAG data available')
-print(mr[0])
-#kill first row which stems from the description part
-pr=pr[1:]
-mr=mr[1:]
-
-#define variables 
-#plasma
-rptime_str=['']*len(pr)
-rptime_num=np.zeros(len(pr))
-rpv=np.zeros(len(pr))
-rpn=np.zeros(len(pr))
-rpt=np.zeros(len(pr))
-
-#mag
-rbtime_str=['']*len(mr)
-rbtime_num=np.zeros(len(mr))
-rbtot=np.zeros(len(mr))
-rbzgsm=np.zeros(len(mr))
-rbygsm=np.zeros(len(mr))
-rbxgsm=np.zeros(len(mr))
-
-#convert variables to numpy arrays
-#mag
-for k in np.arange(0,len(mr),1):
-
- #handle missing data, they show up as None from the JSON data file
- if mr[k][6] is None: mr[k][6]=np.nan
- if mr[k][3] is None: mr[k][3]=np.nan
- if mr[k][2] is None: mr[k][2]=np.nan
- if mr[k][1] is None: mr[k][1]=np.nan
-
- rbtot[k]=float(mr[k][6])
- rbzgsm[k]=float(mr[k][3])
- rbygsm[k]=float(mr[k][2])
- rbxgsm[k]=float(mr[k][1])
-
- #convert time from string to datenumber
- rbtime_str[k]=mr[k][0][0:16]
- rbtime_num[k]=mdates.date2num(sunpy.time.parse_time(rbtime_str[k]))
- 
-#plasma
-for k in np.arange(0,len(pr),1):
- if pr[k][2] is None: pr[k][2]=np.nan
- rpv[k]=float(pr[k][2]) #speed
- rptime_str[k]=pr[k][0][0:16]
- rptime_num[k]=mdates.date2num(sunpy.time.parse_time(rptime_str[k]))
- if pr[k][1] is None: pr[k][1]=np.nan
- rpn[k]=float(pr[k][1]) #density
- if pr[k][3] is None: pr[k][3]=np.nan
- rpt[k]=float(pr[k][3]) #temperature
-
-#interpolate to 1 hour steps: make an array from last time in hour steps backwards for 24 hours, then interpolate
-
-#this is the last 24 hours in 1 hour timesteps, 25 data points
-#for field
-rbtimes24=np.arange(rbtime_num[-1]-1,rbtime_num[-1]+1/24,1/24) 
-rbtot24=np.interp(rbtimes24,rbtime_num,rbtot)
-rbzgsm24=np.interp(rbtimes24,rbtime_num,rbzgsm)
-rbygsm24=np.interp(rbtimes24,rbtime_num,rbygsm)
-rbxgsm24=np.interp(rbtimes24,rbtime_num,rbxgsm)
-
-#for plasma
-rptimes24=np.arange(rptime_num[-1]-1,rptime_num[-1]+1/24,1/24) 
-rpv24=np.interp(rptimes24,rptime_num,rpv)
-rpn24=np.interp(rptimes24,rptime_num,rpn)
-
-#define times of the future wind, deltat hours after current time
-timesfp=np.arange(rptimes24[-1],rptimes24[-1]+1+1/24,1/24)
-timesfb=np.arange(rbtimes24[-1],rbtimes24[-1]+1+1/24,1/24)
-
-#set time now 
-#for plasma current time
-timenowp=rptime_num[-1]
-#for B field current time
-timenowb=rbtime_num[-1]
-timenowstr=str(mdates.num2date(timenowb))[0:16]
-
-#for Dst calculation, interpolate to hourly data
-#this is the last 24 hours in 1 hour timesteps, 25 data points
-#start on next day 0 UT, so rbtimes7 contains values at every full hour like the real Dst
-rtimes7=np.arange(np.ceil(rbtime_num)[0],rbtime_num[-1],1.0000/24)
-rbtot7=np.interp(rtimes7,rbtime_num,rbtot)
-rbzgsm7=np.interp(rtimes7,rbtime_num,rbzgsm)
-rbygsm7=np.interp(rtimes7,rbtime_num,rbygsm)
-rbxgsm7=np.interp(rtimes7,rbtime_num,rbxgsm)
-rpv7=np.interp(rtimes7,rptime_num,rpv)
-rpn7=np.interp(rtimes7,rptime_num,rpn)
-
-#******interpolate NaN values in the hourly interpolated data ******* to add 
 
 
 
-#########################################################################################
-# open file for logging results
-logfile='real/predstorm_v1_realtime_stereo_a_results_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.txt'
+
+
+
+################################ (1) GET DATA ############################################
+
+
+######################### (1a) get real time DSCOVR data #################################
+
+#get real time DSCOVR data with minute/hourly time resolution as recarray
+[dism,dis]=get_dscovr_data_real()
+
+#get time of the last entry in the DSCOVR data
+timenow=dism.time[-1]
+timenowstr=str(mdates.num2date(timenow))[0:16]
+
+#get UTC time now
+timeutc=mdates.date2num(datetime.datetime.utcnow())
+timeutcstr=str(datetime.datetime.utcnow())[0:16]
+
+print()
+print()
+print('Current time UTC')
+print(timeutcstr)
+print('UTC Time of last datapoint in real time DSCOVR data')
+print(timenowstr)
+print('Time lag in minutes:', int(round((timeutc-timenow)*24*60)))
+print()
+
+
+
+########################## (1b) open file for logging results
+logfile=outputdirectory+'/predstorm_v1_realtime_stereo_a_results_'+timeutcstr[0:10]+'-' \
+         +timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.txt'
+print('Logfile for results is: ',logfile)
+print()
+
 log=open(logfile,'wt')
 log.write('')
 log.write('PREDSTORM L5 v1 results \n')
@@ -291,37 +249,65 @@ log.write(timenowstr)
 log.write('\n')
 
 
+########################### (1c) get real time STEREO-A beacon data
 
+#get real time STEREO-A data with minute/hourly time resolution as recarray
+[stam,sta]=get_stereoa_data_beacon()
+#use hourly interpolated data - the 'sta' recarray for further calculations, 
+#'stam' for plotting
 
-###################### (1b) get real time STEREO-A beacon data
-print()
-
+#get spacecraft position
 print('load spacecraft and planetary positions')
 pos=getpositions('cats/positions_2007_2023_HEEQ_6hours.sav')
 pos_time_num=time_to_num_cat(pos.time)
-
-#take position of STEREO-A now
-pos_time_now_ind=np.where(timenowb < pos_time_num)[0][0]
-
+#take position of STEREO-A for time now from position file
+pos_time_now_ind=np.where(timenow < pos_time_num)[0][0]
 sta_r=pos.sta[0][pos_time_now_ind]
 #get longitude and latitude
 sta_long_heeq=pos.sta[1][pos_time_now_ind]*180/np.pi
 sta_lat_heeq=pos.sta[2][pos_time_now_ind]*180/np.pi
 
 
+print()
+laststa=stam.time[-1]
+laststa_time_str=str(mdates.num2date(laststa))[0:16]
+print('UTC Time of last datapoint in STEREO-A beacon data')
+print(laststa_time_str)
+print('Time lag in hours:', int(round((timeutc-laststa)*24)))
+print()
+
+
+
+
+
+
+
+
+
+
+
+########################### (2) PREDICTION CALCULATIONS ##################################
+
+
+########################### (2a)  Time lag for solar rotation
+
+# define time lag from STEREO-A to Earth 
 timelag_sta_l1=abs(sta_long_heeq)/(360/sun_syn) #days
-arrival_time_l1_sta=rtimes7[-1]+timelag_sta_l1
+arrival_time_l1_sta=dis.time[-1]+timelag_sta_l1
 arrival_time_l1_sta_str=str(mdates.num2date(arrival_time_l1_sta))
+
 
 #feature_sta=mdates.date2num(sunpy.time.parse_time('2018-04-27T01:00:00'))
 #arrival_feature_sta_str=str(mdates.num2date(feature_sta+timelag_sta_l1))
 
-
+#print a few important numbers for current prediction
 print('STEREO-A HEEQ longitude to Earth is ', round(sta_long_heeq,1),' degree.') 
 print('This is ', round(abs(sta_long_heeq)/60,2),' times the location of L5.') 
 print('STEREO-A HEEQ latitude is ', round(sta_lat_heeq,1),' degree.') 
-print('Earth L1 HEEQ latitude is ',round(pos.earth_l1[2][pos_time_now_ind]*180/np.pi,1),' degree')
-print('Difference HEEQ latitude is ',abs(round(sta_lat_heeq-pos.earth_l1[2][pos_time_now_ind]*180/np.pi,1)),' degree')
+print('Earth L1 HEEQ latitude is ', \
+       round(pos.earth_l1[2][pos_time_now_ind]*180/np.pi,1),' degree')
+print('Difference HEEQ latitude is ', \
+       abs(round(sta_lat_heeq-pos.earth_l1[2][pos_time_now_ind]*180/np.pi,1)),' degree')
 print('STEREO-A heliocentric distance is ', round(sta_r,3),' AU.') 
 print('The Sun rotation period with respect to Earth is chosen as ', sun_syn,' days') 
 print('This is a time lag of ', round(timelag_sta_l1,2), ' days.') 
@@ -342,158 +328,18 @@ log.write('\n')
 log.write('\n')
 
 
-print()
-print('get STEREO-A beacon data from STEREO SCIENCE CENTER')
 
-#only last 2 hours here at NOAA
-#http://legacy-www.swpc.noaa.gov/ftpdir/lists/stereo/
-#http://legacy-www.swpc.noaa.gov/stereo/STEREO_data.html
+################################# (2b) Further corrections to time-shifted STEREO-A data 
 
-#at the STEREO SCIENCE CENTER these are the cdf files for the beacon data, daily
-#browse data, ~ 200kb
-#https://stereo-ssc.nascom.nasa.gov/data/beacon/ahead/plastic/2018/05/STA_LB_PLA_BROWSE_20180502_V12.cdf	
-#original data, ~1 MB
-#https://stereo-ssc.nascom.nasa.gov/data/beacon/ahead/plastic/2018/05/STA_LB_PLA_20180502_V12.cdf	
-
-######
-#if os.path.isdir(outputdirectory+'/movie') == False: os.mkdir(outputdirectory+'/movie')
-
-
-#make file lists for the last 14 days and download data if not already here
-daynowstr=['']*14
-sta_pla_file_str=['']*14
-sta_mag_file_str=['']*14
-http_sta_pla_file_str=['']*14
-http_sta_mag_file_str=['']*14
-
-plastic_location='https://stereo-ssc.nascom.nasa.gov/data/beacon/ahead/plastic'
-impact_location='https://stereo-ssc.nascom.nasa.gov/data/beacon/ahead/impact'
-
-#download cdf files if needed
-for p in np.arange(0,14):
- stayear=str(mdates.num2date(rtimes7[-1]-14+p))[0:4]
- stamonth=str(mdates.num2date(rtimes7[-1]-14+p))[5:7]
- staday=str(mdates.num2date(rtimes7[-1]-14+p))[8:10]
- daynowstr[p]=stayear+stamonth+staday
- 
-
- #filename convention is
- #https://stereo-ssc.nascom.nasa.gov/data/beacon/ahead/impact/2018/05/STA_LB_IMPACT_20180502_V02.cdf
-
- #filenames
- #plastic
- sta_pla_file_str[p]='STA_LB_PLASTIC_'+daynowstr[p]+'_V12.cdf'
- #impact
- sta_mag_file_str[p]='STA_LB_IMPACT_'+daynowstr[p]+'_V02.cdf' 
- 
- #check if file is already there, otherwise download
-  
- if not os.path.exists('beacon/'+sta_pla_file_str[p]):
-  #download files if they are not here
- 
-  http_sta_pla_file_str[p]=plastic_location+'/'+stayear+'/'+stamonth+'/'+sta_pla_file_str[p]
-  #check if url exists, if not state reason  
-  try: urllib.request.urlretrieve(http_sta_pla_file_str[p], 'beacon/'+sta_pla_file_str[p])
-  except urllib.error.URLError as e:
-   print(' ', http_sta_pla_file_str[p],' ',e.reason)
-  
- if not os.path.exists('beacon/'+sta_mag_file_str[p]):
-  http_sta_mag_file_str[p]=impact_location+'/'+stayear+'/'+stamonth+'/'+sta_mag_file_str[p]
-  try: urllib.request.urlretrieve(http_sta_mag_file_str[p], 'beacon/'+sta_mag_file_str[p])
-  except urllib.error.URLError as e:
-   print(' ', http_sta_pla_file_str[p],' ',e.reason)
- 
-################################### 
-#now read in all CDF files and stitch to one array
-#access cdfs in python works as:
-#https://pythonhosted.org/SpacePy/pycdf.html#read-a-cdf
-  
-#define stereo-a variables with open size, cut 0 later
-sta_ptime=np.zeros(0)  
-sta_vr=np.zeros(0)  
-sta_den=np.zeros(0)  
-
-
-for p in np.arange(0,14):
-
-  if os.path.exists('beacon/'+sta_pla_file_str[p]):
-     sta =  pycdf.CDF('beacon/'+sta_pla_file_str[p])
-  #variables Epoch_MAG: Epoch1: CDF_EPOCH [1875]
-  #MAGBField: CDF_REAL4 [8640, 3]
-  sta_time=mdates.date2num(sta['Epoch1'][...])
-  
-  sta_dvr=sta['Velocity_RTN'][...][:,0]
-  #sta_dvt=sta['Velocity_RTN'][...][:,1]
-  #sta_dvn=sta['Velocity_RTN'][...][:,2]
-  
-  sta_dden=sta['Density'][...]
-  
-  #missing data are < -1e30
-  mis=np.where(sta_time < -1e30)
-  sta_time[mis]=np.nan
-  mis=np.where(sta_dvr < -1e30)
-  sta_dvr[mis]=np.nan
-  #mis=np.where(sta_dvt < -1e30)
-  #sta_dvt[mis]=np.nan
-  #mis=np.where(sta_dvn < -1e30)
-  #sta_dvn[mis]=np.nan
-  
-  mis=np.where(sta_dden < -1e30)
-  sta_dden[mis]=np.nan
-
-
-  sta_ptime=np.append(sta_ptime, sta_time)
-  sta_vr=np.append(sta_vr,sta_dvr)
-  sta_den=np.append(sta_den,sta_dden)
-
-
-#sum of nan data points
-#sum(np.isnan(sta_ptime))
-#same for magnetic field
-sta_btime=np.zeros(0)  
-sta_br=np.zeros(0)  
-sta_bt=np.zeros(0)  
-sta_bn=np.zeros(0) 
- 
-for p in np.arange(0,14):
-  sta =  pycdf.CDF('/Users/chris/python/predstorm/beacon/'+sta_mag_file_str[p])
-  #variables Epoch_MAG: CDF_EPOCH [8640]
-  #MAGBField: CDF_REAL4 [8640, 3]
-  sta_time=mdates.date2num(sta['Epoch_MAG'][...])
-  #d stands for dummy
-  sta_dbr=sta['MAGBField'][...][:,0]
-  sta_dbt=sta['MAGBField'][...][:,1]
-  sta_dbn=sta['MAGBField'][...][:,2]
-
-  #append data to array
-  sta_btime=np.append(sta_btime, sta_time)
-  sta_br=np.append(sta_br,sta_dbr)
-  sta_bt=np.append(sta_bt,sta_dbt)
-  sta_bn=np.append(sta_bn,sta_dbn)
-##check
-#plt.plot_date(sta_btime,sta_bn)
-#plt.plot_date(sta_ptime,sta_vr)
-
-#make total field variable
-sta_btot=np.sqrt(sta_br**2+sta_bt**2+sta_bn**2)
-
-print('STEREO-A data loaded: speed, density, and magnetic field in RTN. ')
-print(' ')
-
-
-
-
-
-####################################### APPLY CORRECTIONS TO STEREO-A data 
 # (1) make correction for heliocentric distance of STEREO-A to L1 position
-# take position of Earth and STEREO-A from file 
+# take position of Earth and STEREO-A from positions file 
 # for B and N, makes a difference of about -5 nT in Dst
 earth_r=pos.earth_l1[0][pos_time_now_ind]
-sta_btot=sta_btot*(earth_r/sta_r)**-2
-sta_br=sta_br*(earth_r/sta_r)**-2
-sta_bt=sta_bt*(earth_r/sta_r)**-2
-sta_bn=sta_bn*(earth_r/sta_r)**-2
-sta_den=sta_den*(earth_r/sta_r)**-2
+sta.btot=sta.btot*(earth_r/sta_r)**-2
+sta.br=sta.br*(earth_r/sta_r)**-2
+sta.bt=sta.bt*(earth_r/sta_r)**-2
+sta.bn=sta.bn*(earth_r/sta_r)**-2
+sta.den=sta.den*(earth_r/sta_r)**-2
 print()
 print('corrections to STEREO-A data:')
 print('1: decline of B and N by factor ',round(((earth_r/sta_r)**-2),3))
@@ -503,36 +349,35 @@ log.write('\n')
 log.write('1: decline of B and N by factor '+str(round(((earth_r/sta_r)**-2),3)))
 log.write('\n')
 
-#(2) correction for timing for the Parker spiral see Simunac et al. 2009 Ann. Geophys. equation 1
-#difference in heliocentric distance STEREO-A to Earth, actually different for every point so take average of solar wind speed
-#Omega is 360 deg/sun_syn in days, convert to seconds; sta_r in AU to m to km; convert to degrees
-#minus sign: from STEREO-A to Earth the diff_r_deg needs to be positive  
-#because the spiral leads to a later arrival of the solar wind at larger heliocentric distances (this is reverse for STEREO-B!)
+# (2) correction for timing for the Parker spiral see 
+# Simunac et al. 2009 Ann. Geophys. equation 1, see also Thomas et al. 2018 Space Weather
+# difference in heliocentric distance STEREO-A to Earth, 
+# actually different for every point so take average of solar wind speed
+# Omega is 360 deg/sun_syn in days, convert to seconds; sta_r in AU to m to km; 
+# convert to degrees
+# minus sign: from STEREO-A to Earth the diff_r_deg needs to be positive  
+# because the spiral leads to a later arrival of the solar wind at larger 
+# heliocentric distances (this is reverse for STEREO-B!)
+#************** problem -> MEAN IS NOT FULLY CORRECT
 AU=149597870.700 #AU in km
-diff_r_deg=-(360/(sun_syn*86400))*((sta_r-earth_r)*AU)/np.nanmean(sta_vr)
+diff_r_deg=-(360/(sun_syn*86400))*((sta_r-earth_r)*AU)/np.nanmean(sta.speedr)
 time_lag_diff_r=round(diff_r_deg/(360/sun_syn),2)
 print('2: time lag due to Parker spiral in hours: ', round(time_lag_diff_r*24,1))
 log.write('2: time lag due to Parker spiral in hours: '+ str(round(time_lag_diff_r*24,1)))
 log.write('\n')
 
 
-############################ interpolate STEREO-A to 1 hour times for Dst prediction starting with the last full hour of observations + 1 hour
-#so there is a seamless connection from L1 to STEREO-A data
-#until the end of the time lagged STEREO-A data
-#add timelag to stereo-a original times so everything is shifted
-sta_time7=np.arange(rtimes7[-1]+1/24.000,sta_btime[-1]+timelag_sta_l1+time_lag_diff_r,1.000/24.000)
-sta_btot7=np.interp(sta_time7,sta_btime+timelag_sta_l1+time_lag_diff_r,sta_btot)
-sta_br7=np.interp(sta_time7,sta_btime+timelag_sta_l1+time_lag_diff_r,sta_br)
-sta_bt7=np.interp(sta_time7,sta_btime+timelag_sta_l1+time_lag_diff_r,sta_bt)
-sta_bn7=np.interp(sta_time7,sta_btime+timelag_sta_l1+time_lag_diff_r,sta_bn)
-sta_vr7=np.interp(sta_time7,sta_ptime+timelag_sta_l1+time_lag_diff_r,sta_vr)
-sta_den7=np.interp(sta_time7,sta_ptime+timelag_sta_l1+time_lag_diff_r,sta_den)
+## ADD BOTH time shifts to the sta.time
+#for hourly data
+sta.time=sta.time+timelag_sta_l1+time_lag_diff_r
+#for minute data
+stam.time=stam.time+timelag_sta_l1+time_lag_diff_r
 
-#(3) conversion from RTN to HEEQ to GSE to GSM - but as if STA was along the Sun-Earth line
+#(3) conversion from RTN to HEEQ to GSE to GSM - but done as if STA was along the Sun-Earth line
 #convert STEREO-A RTN data to GSE as if STEREO-A was along the Sun-Earth line
-[dbr,dbt,dbn]=convert_RTN_to_GSE_sta_l1(sta_br7,sta_bt7,sta_bn7,sta_time7, pos.sta, pos_time_num)
+[dbr,dbt,dbn]=convert_RTN_to_GSE_sta_l1(sta.br,sta.bt,sta.bn,sta.time, pos.sta, pos_time_num)
 #GSE to GSM
-[sta_br7,sta_bt7,sta_bn7]=convert_GSE_to_GSM(dbr,dbt,dbn,sta_time7)
+[sta.br,sta.bt,sta.bn]=convert_GSE_to_GSM(dbr,dbt,dbn,sta.time)
 
 print('3: coordinate conversion of magnetic field components RTN > HEEQ > GSE > GSM.')
 print()
@@ -542,174 +387,173 @@ log.write('\n')
 log.write('\n')
 
 
+#interpolate one more time after time shifts, so that the time is in full hours
+#and the STEREO-A data now start with the end of the dscovr data +1 hour
+sta_time=np.arange(dis.time[-1]+1.000/24,sta.time[-1],1.0000/(24))
+sta_btot=np.interp(sta_time,sta.time,sta.btot)
+sta_br=np.interp(sta_time,sta.time,sta.br)
+sta_bt=np.interp(sta_time,sta.time,sta.bt)
+sta_bn=np.interp(sta_time,sta.time,sta.bn)
+sta_speedr=np.interp(sta_time,sta.time,sta.speedr)
+sta_den=np.interp(sta_time,sta.time,sta.den)
 
 
-#########****************************
 
-############### calculate Dst for DSCOVR and STEREO-A for last 7 day data with Temerin and Li 2002
+#################### (2c) COMBINE DSCOVR and time-shifted STEREO-A data ################## 
 
-#print('loaded real time Dst from Kyoto via NOAA')
-url_dst='http://services.swpc.noaa.gov/products/kyoto-dst.json'
-with urllib.request.urlopen(url_dst) as url:
-    dr = json.loads	(url.read().decode())
-dr=dr[1:]
-#define variables 
-#plasma
-rdst_time_str=['']*len(dr)
-rdst_time=np.zeros(len(dr))
-rdst=np.zeros(len(dr))
-#convert variables to numpy arrays
-#mag
-for k in np.arange(0,len(dr),1):
- #handle missing data, they show up as None from the JSON data file
- if dr[k][1] is None: dr[k][1]=np.nan
- rdst[k]=float(dr[k][1])
- #convert time from string to datenumber
- rdst_time_str[k]=dr[k][0][0:16]
- rdst_time[k]=mdates.date2num(sunpy.time.parse_time(rdst_time_str[k]))
-#interpolate to rtimes 7 not needed
-#rdst7=np.interp(rtimes7,rdst_time,rdst)
+# make combined array of DSCOVR and STEREO-A data
+com_time=np.concatenate((dis.time, sta_time))
+com_btot=np.concatenate((dis.btot, sta_btot))
+com_bx=np.concatenate((dis.bxgsm, sta_br))
+com_by=np.concatenate((dis.bygsm, sta_bt))
+com_bz=np.concatenate((dis.bzgsm, sta_bn))
+com_vr=np.concatenate((dis.speed, sta_speedr))
+com_den=np.concatenate((dis.den, sta_den))
 
 
-#combined array of rtimes7 and sta_time7 times and values 
-#rbtot7 sta_btot7 rbzgsm7 sta_bn7 rpv7 sta_vr7  rpn7 sta_den7
-#combined dst time
-cdst_time=np.concatenate((rtimes7, sta_time7))
-cdst_btot=np.concatenate((rbtot7, sta_btot7))
-cdst_bx=np.concatenate((rbxgsm7, sta_br7))
-cdst_by=np.concatenate((rbygsm7, sta_bt7))
-cdst_bz=np.concatenate((rbzgsm7, sta_bn7))
-cdst_vr=np.concatenate((rpv7, sta_vr7))
-cdst_den=np.concatenate((rpn7, sta_den7))
+#if there are nans interpolate them (important for Temerin/Li method)
+if sum(np.isnan(com_den)) >0: 
+ good = np.where(np.isfinite(com_den)) 
+ com_den=np.interp(com_time,com_time[good],com_den[good])
+
+if sum(np.isnan(com_vr)) >0: 
+ good = np.where(np.isfinite(com_vr)) 
+ com_vr=np.interp(com_time,com_time[good],com_vr[good])
 
 
-#if there are nans interpolate them again
-if sum(np.isnan(cdst_den)) >0: 
- good= np.where(np.isfinite(cdst_den)) 
- cdst_den=np.interp(cdst_time,cdst_time[good],cdst_den[good])
+##################### (2d) calculate Dst for combined data ###############################
 
-if sum(np.isnan(cdst_vr)) >0: 
- good= np.where(np.isfinite(cdst_vr)) 
- cdst_vr=np.interp(cdst_time,cdst_time[good],cdst_vr[good])
- 
-##################################################################################################
-print('Dst prediction for L1 calculated from time-shifted STEREO-A beacon data.')
+print('Make Dst prediction for L1 calculated from time-shifted STEREO-A beacon data.')
 log.write('\n')
-log.write('Dst prediction for L1 calculated from time-shifted STEREO-A beacon data.')
+log.write('Make Dst prediction for L1 calculated from time-shifted STEREO-A beacon data.')
 log.write('\n')
-#make_dst_from_wind(btot_in,bx_in, by_in,bz_in,v_in,vx_in,density_in,time_in):#
-[dst_burton, dst_obrien, dst_temerin_li]=make_dst_from_wind(cdst_btot, cdst_bx,cdst_by, \
-                                         cdst_bz, cdst_vr,cdst_vr, cdst_den, cdst_time)
+
+#This function works as result=make_dst_from_wind(btot_in,bx_in, by_in,bz_in,v_in,vx_in,density_in,time_in):
+# ******* PROBLEM: USES vr twice (should be V and Vr in Temerin/Li 2002), take V from STEREO-A data too
+[dst_burton, dst_obrien, dst_temerin_li]=make_dst_from_wind(com_btot, com_bx,com_by, \
+                                         com_bz, com_vr,com_vr, com_den, com_time)
+
+#get NOAA Dst for comparison 
+[dst_time,dst]=get_noaa_dst()
+print('Loaded Kyoto Dst from NOAA for last 7 days.')
+log.write('\n')
+log.write('Loaded Kyoto Dst from NOAA for last 7 days.')
+log.write('\n')
 
 
-################################################## plot DSCOVR and STEREO-A data ##################################
-
-#check which parts of the array begin after time now rbtime_num[-1] and rptime_num[-1] and end with plot end
-#for plasma add both timeshifts for longitude and parker spiral
-sta_ptime_lag=sta_ptime+timelag_sta_l1+time_lag_diff_r
-sta_pindex_future=np.where(np.logical_and(sta_ptime_lag > rptime_num[-1],sta_ptime_lag <rptime_num[-1]+realtime_plot_timeadd))
-#for field
-sta_btime_lag=sta_btime+timelag_sta_l1+time_lag_diff_r
-sta_bindex_future=np.where(np.logical_and(sta_btime_lag > rbtime_num[-1],sta_btime_lag <rbtime_num[-1]+realtime_plot_timeadd))
 
 
 
+
+
+
+
+
+
+
+
+################################### (3) PLOT RESULTS  ####################################
+
+#for the minute data, check which are the intervals to show for STEREO-A until end of plot
+sta_index_future=np.where(np.logical_and(stam.time > dism.time[-1], \
+                          stam.time < dism.time[-1]+realtime_plot_timeadd))
+
+#initiate figure
 sns.set_context("talk")     
 sns.set_style("darkgrid")  
 fig=plt.figure(1,figsize=(12,10)) #fig=plt.figure(1,figsize=(14,14))
-weite=1
+wide=1
 fsize=11
 msize=5
 
+plotstart=np.floor(dism.time[-1]-realtime_plot_leftadd)
+plotend=np.floor(dis.time[-1]+realtime_plot_timeadd)
+
+
+
 ################################# panel 1
-ax4 = fig.add_subplot(411)
-plt.plot_date(rbtime_num, rbtot,'-k', label='B total L1', linewidth=weite)
-if showinterpolated > 0: plt.plot_date(rbtimes24, rbtot24,'ro', label='B total interpolated last 24 hours',linewidth=weite,markersize=msize)
-plt.plot_date(rbtime_num, rbzgsm,'-g', label='Bz GSM L1',linewidth=weite)
-if showinterpolated > 0: plt.plot_date(rbtimes24, rbzgsm24,'go', label='Bz GSM interpolated last 24 hours',linewidth=weite,markersize=msize)
+ax1 = fig.add_subplot(411)
+
+#plot DSCOVR with minute resolution
+plt.plot_date(dism.time, dism.btot,'-k', label='B total L1', linewidth=wide)
+plt.plot_date(dism.time, dism.bzgsm,'-g', label='Bz GSM L1',linewidth=wide)
+
+#plot STEREO-A minute resolution data with timeshift	
+plt.plot_date(stam.time[sta_index_future], stam.btot[sta_index_future], \
+              '-r', linewidth=wide, label='B STEREO-Ahead')
+plt.plot_date(stam.time[sta_index_future], stam.bn[sta_index_future], markersize=0, \
+       linestyle='-', color='darkolivegreen', linewidth=wide, label='Bn RTN STEREO-Ahead')
 
 #indicate 0 level for Bz
-plt.plot_date([rtimes7[0], rtimes7[-1]+realtime_plot_timeadd], [0,0],'--k', alpha=0.5, linewidth=1)
+plt.plot_date([plotstart,plotend], [0,0],'--k', alpha=0.5, linewidth=1)
+
+#vertical line and indicator for prediction and observation
+plt.plot_date([timeutc,timeutc],[-100,100],'-k', linewidth=2)
 
 
-#plot STEREO-A data with timeshift	
-plt.plot_date(sta_btime_lag[sta_bindex_future], sta_btot[sta_bindex_future],'-r', linewidth=weite, label='B STEREO-Ahead')
-plt.plot_date(sta_btime_lag[sta_bindex_future], sta_bn[sta_bindex_future],markersize=0,linestyle='-', color='darkolivegreen', linewidth=weite, label='Bn RTN STEREO-Ahead')
-
-
+#if showinterpolated > 0: plt.plot_date(rbtimes24, rbtot24,'ro', label='B total interpolated last 24 hours',linewidth=wide,markersize=msize)
+#if showinterpolated > 0: plt.plot_date(rbtimes24, rbzgsm24,'go', label='Bz GSM interpolated last 24 hours',linewidth=wide,markersize=msize)
 #test hourly interpolation 
-#plt.plot_date(rtimes7, rbtot7,'-ko', label='B7',linewidth=weite,markersize=5)
-#plt.plot_date(rtimes7, rbzgsm7,'-go', label='Bz7',linewidth=weite,markersize=5)
-#plt.plot_date(sta_time7, sta_btot7,'-ko', label='B7',linewidth=weite, markersize=5)
-plt.plot_date(sta_time7, sta_bn7,'-go', label='Bz GSM STEREO-Ahead',linewidth=weite,markersize=5)
-
-#plt.plot_date(sta_time7, dbn,'-bo', label='Bg',linewidth=weite,markersize=5)
-
-
+#plt.plot_date(rtimes7, rbtot7,'-ko', label='B7',linewidth=wide,markersize=5)
+#plt.plot_date(rtimes7, rbzgsm7,'-go', label='Bz7',linewidth=wide,markersize=5)
+#plt.plot_date(sta_time7, sta_btot7,'-ko', label='B7',linewidth=wide, markersize=5)
+#plt.plot_date(sta_time7, sta_bn7,'-go', label='Bz GSM STEREO-Ahead',linewidth=wide,markersize=5)
+#plt.plot_date(sta_time7, dbn,'-bo', label='Bg',linewidth=wide,markersize=5)
 
 
 plt.ylabel('Magnetic field [nT]',  fontsize=fsize+2)
-#myformat = mdates.DateFormatter('%Y %b %d %Hh')
-myformat = mdates.DateFormatter('%b %d %Hh')
+myformat = mdates.DateFormatter('%b %d %Hh') #myformat = mdates.DateFormatter('%Y %b %d %Hh')
+ax1.xaxis.set_major_formatter(myformat)
+ax1.legend(loc='upper left', fontsize=fsize-2,ncol=4)
 
-ax4.xaxis.set_major_formatter(myformat)
-ax4.legend(loc='upper left', fontsize=fsize-2,ncol=4)
-plt.xlim([np.ceil(rbtime_num)[0]+realtime_plot_leftadd,rbtime_num[-1]+realtime_plot_timeadd])
+#for y limits check where the maximum and minimum are for DSCOVR and STEREO in the minute data taken together
+#negative is surely in bz for this plot, positive in btot
+bplotmax=np.nanmax(np.concatenate((dism.btot,stam.btot[sta_index_future])))+5
+bplotmin=np.nanmin(np.concatenate((dism.bzgsm,stam.bn[sta_index_future]))-5)
 
-#for y limits check where the maximum and minimum are for DSCOVR and STEREO taken together
-#negative is surely in bz, positive in btot
+plt.ylim(bplotmin, bplotmax)
+plt.xlim([plotstart,plotend])
 
-bplotmax=np.nanmax(np.concatenate((rbtot,sta_btot[sta_bindex_future])))+5
-plt.ylim(np.nanmin(np.concatenate((rbzgsm,sta_bn[sta_bindex_future]))-5), bplotmax)
-
-plt.title('L1 DSCOVR real time solar wind from NOAA SWPC for '+ str(mdates.num2date(timenowb))[0:16]+ ' UT   STEREO-A beacon', fontsize=16)
+plt.title('L1 DSCOVR real time solar wind from NOAA SWPC for '+ str(mdates.num2date(timeutc))[0:16]+ ' UT   STEREO-A beacon', fontsize=16)
 plt.xticks(fontsize=fsize)
 plt.yticks(fontsize=fsize)
 
 
-#vertical line and indicator for prediction and observation
-plt.plot_date([timenowb,timenowb],[-100,100],'-k', linewidth=2)
 
 
 
 ###################################### panel 2
-ax5 = fig.add_subplot(412)
-#add speed levels
-plt.plot_date([rtimes7[0], rtimes7[-1]+realtime_plot_timeadd], [400,400],'--k', alpha=0.3, linewidth=1)
-plt.annotate('slow',xy=(rtimes7[0]+realtime_plot_leftadd,400),xytext=(rtimes7[0]+realtime_plot_leftadd,400),color='k', fontsize=10)
-plt.plot_date([rtimes7[0], rtimes7[-1]+realtime_plot_timeadd], [800,800],'--k', alpha=0.3, linewidth=1)
-plt.annotate('fast',xy=(rtimes7[0]+realtime_plot_leftadd,800),xytext=(rtimes7[0]+realtime_plot_leftadd,800),color='k', fontsize=10	)
+ax2 = fig.add_subplot(412)
 
-plt.plot_date(rptime_num, rpv,'-k', label='speed L1',linewidth=weite)
-if showinterpolated > 0: plt.plot_date(rptimes24, rpv24,'ro', label='V interpolated last 24 hours',linewidth=weite,markersize=msize)
-plt.xlim([np.ceil(rbtime_num)[0],rbtime_num[-1]+realtime_plot_timeadd])
-#plt.plot_date(rtimes7, rpv7,'-ko', label='B7',linewidth=weite)
-
-
+#DSCOVR
+plt.plot_date(dism.time, dism.speed,'-k', label='speed L1',linewidth=wide)
 #plot STEREO-A data with timeshift	and savgol filter
 from scipy.signal import savgol_filter
-plt.plot_date(sta_ptime_lag[sta_pindex_future], savgol_filter(sta_vr[sta_pindex_future],5,1),'-r', linewidth=weite, label='speed STEREO-Ahead')
+plt.plot_date(stam.time[sta_index_future], savgol_filter(stam.speedr[sta_index_future],5,1),'-r', linewidth=wide, label='speed STEREO-Ahead')
 
-#now vertical line
-plt.plot_date([timenowb,timenowb],[0,4000],'-k', linewidth=2)
+#add speed levels
+plt.plot_date([dis.time[0], dis.time[-1]+realtime_plot_timeadd], [400,400],'--k', alpha=0.3, linewidth=1)
+plt.annotate('slow',xy=(dis.time[0]+realtime_plot_leftadd,400),xytext=(dis.time[0]+realtime_plot_leftadd,400),color='k', fontsize=10)
+plt.plot_date([dis.time[0], dis.time[-1]+realtime_plot_timeadd], [800,800],'--k', alpha=0.3, linewidth=1)
+plt.annotate('fast',xy=(dis.time[0]+realtime_plot_leftadd,800),xytext=(dis.time[0]+realtime_plot_leftadd,800),color='k', fontsize=10	)
 
-#test interpolation
-#plt.plot_date(rtimes7, rpv7,'-ko', label='v7',linewidth=weite,markersize=5)
-#plt.plot_date(sta_time7, sta_vr7,'-go', label='Vr7',linewidth=weite,markersize=5)
-
-
-plt.ylabel('Speed $\mathregular{[km \\ s^{-1}]}$', fontsize=fsize+2)
-ax5.xaxis.set_major_formatter(myformat)
-ax5.legend(loc=2,fontsize=fsize-2,ncol=2)
-plt.xlim([np.ceil(rbtime_num)[0]+realtime_plot_leftadd,rbtime_num[-1]+realtime_plot_timeadd])
 
 #for y limits check where the maximum and minimum are for DSCOVR and STEREO taken together
-vplotmax=np.nanmax(np.concatenate((rpv,savgol_filter(sta_vr[sta_pindex_future],15,1))))+100
-plt.ylim(np.nanmin(np.concatenate((rpv,savgol_filter(sta_vr[sta_pindex_future],15,1)))-50), vplotmax)
+vplotmax=np.nanmax(np.concatenate((dism.speed,savgol_filter(stam.speedr[sta_index_future],15,1))))+100
+vplotmin=np.nanmin(np.concatenate((dism.speed,savgol_filter(stam.speedr[sta_index_future],15,1)))-50)
+plt.ylim(vplotmin, vplotmax)
+plt.xlim([plotstart,plotend])
 
-plt.annotate('now',xy=(timenowb,vplotmax-100),xytext=(timenowb+0.05,vplotmax-100),color='k', fontsize=14)
+#now vertical line for current time
+plt.plot_date([timeutc,timeutc],[0,vplotmax],'-k', linewidth=2)
+plt.annotate('now',xy=(timeutc,vplotmax-100),xytext=(timeutc+0.05,vplotmax-100),color='k', fontsize=14)
 #plt.annotate('observation',xy=(timenowb,bplotmax-3),xytext=(timenowb-0.55,bplotmax-3),color='k', fontsize=15)
 #plt.annotate('prediction',xy=(timenowb,bplotmax-3),xytext=(timenowb+0.45,bplotmax-3),color='b', fontsize=15)
+
+#if showinterpolated > 0: plt.plot_date(rptimes24, rpv24,'ro', label='V interpolated last 24 hours',linewidth=wide,markersize=msize)
+#test interpolation
+#plt.plot_date(dis.time, rpv7,'-ko', label='v7',linewidth=wide,markersize=5)
+#plt.plot_date(sta_time7, sta_vr7,'-go', label='Vr7',linewidth=wide,markersize=5)
 
 
 #plt.ylim([np.nanmin(rpv)-50,np.nanmax(rpv)+100])
@@ -717,160 +561,186 @@ plt.xticks(fontsize=fsize)
 plt.yticks(fontsize=fsize)
 
 
+plt.ylabel('Speed $\mathregular{[km \\ s^{-1}]}$', fontsize=fsize+2)
+ax2.xaxis.set_major_formatter(myformat)
+ax2.legend(loc=2,fontsize=fsize-2,ncol=2)
+
+
+
 ########################################### panel 3 density
-ax6 = fig.add_subplot(413)
-plt.plot_date(rptime_num, rpn,'-k', label='density L1',linewidth=weite)
-if showinterpolated > 0:  plt.plot_date(rptimes24, rpn24,'ro', label='N interpolated last 24 hours',linewidth=weite,markersize=msize)
+ax3 = fig.add_subplot(413)
+plt.plot_date(dism.time, dism.den,'-k', label='density L1',linewidth=wide)
 
-
-#plot STEREO-A data with timeshift	
-plt.plot_date(sta_ptime_lag[sta_pindex_future], savgol_filter(sta_den[sta_pindex_future],5,1),'-r', linewidth=weite, label='density STEREO-Ahead')
+#plot STEREO-A data with timeshift and savgol filter
+plt.plot_date(stam.time[sta_index_future], savgol_filter(stam.den[sta_index_future],5,1),'-r', linewidth=wide, label='density STEREO-Ahead')
 
 #now vertical line
-plt.plot_date([timenowb,timenowb],[0,500],'-k', linewidth=2)
+plt.plot_date([timeutc,timeutc],[0,500],'-k', linewidth=2)
 
-
+#if showinterpolated > 0:  plt.plot_date(rptimes24, rpn24,'ro', label='N interpolated last 24 hours',linewidth=wide,markersize=msize)
 #test interpolation
-#plt.plot_date(rtimes7, rpn7,'-ko', label='n7',linewidth=weite,markersize=5)
-#plt.plot_date(sta_time7, sta_den7,'-go', label='den7',linewidth=weite,markersize=5)
+#plt.plot_date(dis.time, rpn7,'-ko', label='n7',linewidth=wide,markersize=5)
+#plt.plot_date(sta_time7, sta_den7,'-go', label='den7',linewidth=wide,markersize=5)
 
 plt.ylabel('Density $\mathregular{[ccm^{-3}]}$',fontsize=fsize+2)
-ax6.xaxis.set_major_formatter(myformat)
-ax6.legend(loc=2,ncol=2,fontsize=fsize-2)
-
+ax3.xaxis.set_major_formatter(myformat)
+ax3.legend(loc=2,ncol=2,fontsize=fsize-2)
 
 #for y limits check where the maximum and minimum are for DSCOVR and STEREO taken together
-plt.ylim([0,np.nanmax(np.nanmax(np.concatenate((rpn,sta_den[sta_pindex_future])))+10)])
+plt.ylim([0,np.nanmax(np.nanmax(np.concatenate((dism.den,stam.den[sta_index_future])))+10)])
 
-
-plt.xlim([np.ceil(rbtime_num)[0]+realtime_plot_leftadd,rbtime_num[-1]+realtime_plot_timeadd])
+plt.xlim([plotstart,plotend])
 plt.xticks(fontsize=fsize)
 plt.yticks(fontsize=fsize)
 
-########################################### panel 4 Dst
-ax6 = fig.add_subplot(414)
 
-#model Dst for L1 only
-#added timeshift of 1 hour for L1 to Earth! This should be different for each timestep to be exact
-#plt.plot_date(rtimes7+1/24, rdst_burton,'-b', label='Dst Burton et al. 1975',markersize=3, linewidth=1)
-#plt.plot_date(rtimes7+1/24, rdst_obrien,'-r', label='Dst OBrien & McPherron 2000',markersize=3, linewidth=1)
+
+
+########################################### panel 4 Dst
+ax4 = fig.add_subplot(414)
+
+#observed Dst Kyoto
+plt.plot_date(dst_time, dst,'ko', label='Dst observed',markersize=4)
+
+dst_temerin_li=dst_temerin_li+dst_offset
+
+#now vertical line
+plt.plot_date([timeutc,timeutc],[-2000,200],'-k', linewidth=2)
+
+plt.ylabel('Dst [nT]', fontsize=fsize+2)
+ax4.xaxis.set_major_formatter(myformat)
+plt.xlim([plotstart,plotend])
+plt.ylim([np.nanmin(dst_temerin_li)-50,np.nanmax(dst_temerin_li)+20])
+plt.xticks(fontsize=fsize)
+plt.yticks(fontsize=fsize)
 
 #plot Dst made from L1 and STEREO-A
 if verification_mode == 0:
-  #plt.plot_date(cdst_time+1/24, dst_burton,'-b', label='Dst Burton et al. 1975',markersize=3, linewidth=1)
-  #plt.plot_date(cdst_time+1/24, dst_obrien,'-r', label='Dst OBrien & McPherron 2000',markersize=3, linewidth=1)
-  plt.plot_date(cdst_time+1/24, dst_temerin_li,'-r', label='Dst Temerin & Li 2002',markersize=3, linewidth=1)
-  #generic errors of +/-15 nT from test program with STEREO-B data **update with TL
-  error=15.5
-  #plt.fill_between(cdst_time+1/24, dst_burton-error, dst_burton+error, alpha=0.2)
-  #plt.fill_between(cdst_time+1/24, dst_obrien-error, dst_obrien+error, alpha=0.2)
-  plt.fill_between(cdst_time+1/24, dst_temerin_li-error, dst_temerin_li+error, alpha=0.2, label='Error for high speed streams')
-
-
-#real Dst
-#for Kyoto
-plt.plot_date(rdst_time, rdst,'ko', label='Dst observed',markersize=4)
-#for AER
-#plt.plot_date(rtimes7, rdst7,'ko', label='Dst observed',markersize=4)
-
-#now vertical line
-plt.plot_date([timenowb,timenowb],[-2000,200],'-k', linewidth=2)
-
-plt.ylabel('Dst [nT]', fontsize=fsize+2)
-ax6.xaxis.set_major_formatter(myformat)
-plt.xlim([np.ceil(rbtime_num)[0]+realtime_plot_leftadd,rbtime_num[-1]+realtime_plot_timeadd])
-plt.ylim([np.nanmin(dst_temerin_li)-50,50])
-plt.xticks(fontsize=fsize)
-plt.yticks(fontsize=fsize)
+  plt.plot_date(com_time, dst_temerin_li,'-r', label='Dst Temerin & Li 2002',markersize=3, linewidth=1)
+  #generic errors of +/-15 nT from test program with STEREO-B data
+  error=15
+  plt.fill_between(com_time, dst_temerin_li-error, dst_temerin_li+error, alpha=0.2, label='Error for high speed streams')
+  #other methods
+  #plt.plot_date(com_time+1/24, dst_burton,'-b', label='Dst Burton et al. 1975',markersize=3, linewidth=1)
+  #plt.plot_date(com_time+1/24, dst_obrien,'-r', label='Dst OBrien & McPherron 2000',markersize=3, linewidth=1)
+  #plt.fill_between(com_time+1/24, dst_burton-error, dst_burton+error, alpha=0.2)
+  #plt.fill_between(com_time+1/24, dst_obrien-error, dst_obrien+error, alpha=0.2)
 
 
 
-
-###################################### for verification
-
+#####**********************
 if verification_mode > 0:
   #load saved data l prefix is for loaded 
-  [timenowb, sta_ptime, sta_vr, sta_btime, sta_btot, sta_br,sta_bt, sta_bn, rbtime_num, rbtot, rbzgsm, rptime_num, rpv, rpn, lrdst_time, lrdst, lcdst_time, ldst_burton, ldst_obrien,ldst_temerin_li]=pickle.load(open(verify_filename,'rb') )  
-  plt.plot_date(lcdst_time+1/24, ldst_burton,'-b', label='Forecast Dst Burton et al. 1975',markersize=3, linewidth=1)
-  plt.plot_date(lcdst_time+1/24, ldst_obrien,'-r', label='Forecast Dst OBrien & McPherron 2000',markersize=3, linewidth=1)
+  [timenowb, sta_ptime, sta_vr, sta_btime, sta_btot, sta_br,sta_bt, sta_bn, rbtime_num, rbtot, rbzgsm, rptime_num, rpv, rpn, lrdst_time, lrdst, lcom_time, ldst_burton, ldst_obrien,ldst_temerin_li]=pickle.load(open(verify_filename,'rb') )  
+  plt.plot_date(lcom_time, ldst_burton,'-b', label='Forecast Dst Burton et al. 1975',markersize=3, linewidth=1)
+  plt.plot_date(lcom_time, ldst_obrien,'-r', label='Forecast Dst OBrien & McPherron 2000',markersize=3, linewidth=1)
  
-ax6.legend(loc=2,ncol=3,fontsize=fsize-2)
+ax4.legend(loc=2,ncol=3,fontsize=fsize-2)
 
 
 #add geomagnetic storm levels
-plt.plot_date([rtimes7[0], rtimes7[-1]+realtime_plot_timeadd], [0,0],'--k', alpha=0.3, linewidth=1)
-plt.plot_date([rtimes7[0], rtimes7[-1]+realtime_plot_timeadd], [-50,-50],'--k', alpha=0.3, linewidth=1)
-plt.annotate('moderate',xy=(rtimes7[0]+realtime_plot_leftadd,-50+2),xytext=(rtimes7[0]+realtime_plot_leftadd,-50+2),color='k', fontsize=10)
-plt.plot_date([rtimes7[0], rtimes7[-1]+realtime_plot_timeadd], [-100,-100],'--k', alpha=0.3, linewidth=1)
-plt.annotate('intense',xy=(rtimes7[0]+realtime_plot_leftadd,-100+2),xytext=(rtimes7[0]+realtime_plot_leftadd,-100+2),color='k', fontsize=10)
-plt.plot_date([rtimes7[0], rtimes7[-1]+realtime_plot_timeadd], [-250,-250],'--k', alpha=0.3, linewidth=1)
-plt.annotate('super-storm',xy=(rtimes7[0]+realtime_plot_leftadd,-250+2),xytext=(rtimes7[0]+realtime_plot_leftadd,-250+2),color='k', fontsize=10)
-
+plt.plot_date([dis.time[0], dis.time[-1]+realtime_plot_timeadd], [0,0],'--k', alpha=0.3, linewidth=1)
+plt.plot_date([dis.time[0], dis.time[-1]+realtime_plot_timeadd], [-50,-50],'--k', alpha=0.3, linewidth=1)
+plt.annotate('moderate',xy=(dis.time[0]+realtime_plot_leftadd,-50+2),xytext=(dis.time[0]+realtime_plot_leftadd,-50+2),color='k', fontsize=10)
+plt.plot_date([dis.time[0], dis.time[-1]+realtime_plot_timeadd], [-100,-100],'--k', alpha=0.3, linewidth=1)
+plt.annotate('intense',xy=(dis.time[0]+realtime_plot_leftadd,-100+2),xytext=(dis.time[0]+realtime_plot_leftadd,-100+2),color='k', fontsize=10)
+plt.plot_date([dis.time[0], dis.time[-1]+realtime_plot_timeadd], [-250,-250],'--k', alpha=0.3, linewidth=1)
+plt.annotate('super-storm',xy=(dis.time[0]+realtime_plot_leftadd,-250+2),xytext=(dis.time[0]+realtime_plot_leftadd,-250+2),color='k', fontsize=10)
 
 
 plt.tight_layout()
 
-#save plot 
+print()
 
+#save plot 
 if verification_mode == 0:
- filename='real/predstorm_v1_realtime_stereo_a_plot_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.jpg'
- print('Plot saved as: \n', filename)
+ filename=outputdirectory+'/predstorm_v1_realtime_stereo_a_plot_'+timeutcstr[0:10]+'-'+timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.jpg'
+ filenameeps=outputdirectory+'/predstorm_v1_realtime_stereo_a_plot_'+timeutcstr[0:10]+'-'+timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.eps'
+
+ print('Plot saved as jpg and eps:\n', filename)
  log.write('\n')
- log.write('Plot saved as: \n'+ filename)
+ log.write('Plot saved as jpg and eps:\n'+ filename)
 
 #flag if verification_mode is used
 if verification_mode > 0:
- filename='real/predstorm_v1_verify_stereo_a_plot_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.jpg'
- print('Plot saved as: \n', filename)
+ filename=outputdirectory+'/predstorm_v1_verify_stereo_a_plot_'+timeutcstr[0:10]+'-'+timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.jpg'
+ filenameeps=outputdirectory+'/predstorm_v1_verify_stereo_a_plot_'+timeutcstr[0:10]+'-'+timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.eps'
+ print('Plot saved as jpg and eps:\n', filename)
  log.write('\n')
- log.write('Plot saved as: \n'+ filename)
+ log.write('Plot saved as jpg and eps:\n'+ filename)
 
 
 plt.savefig(filename)
-#filename='real/predstorm_realtime_input_1_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.eps'
-#plt.savefig(filename)
+#plt.savefig(filenameeps)
 
 
 
-############# write prediction variables as pickle and txt file
-filename_save='real/savefiles/predstorm_v1_realtime_stereo_a_save_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.p'
-pickle.dump([timenowb, sta_ptime, sta_vr, sta_btime, sta_btot, sta_br,sta_bt, sta_bn, \
-             rbtime_num, rbtot, rbzgsm, rptime_num, rpv, rpn, rdst_time, rdst, cdst_time, \
-             dst_burton, dst_obrien,dst_temerin_li], open(filename_save, "wb" ) )
-print('Variables saved as: \n', filename_save, ' \n(pickle) for later verification usage.')
+
+
+
+
+
+
+
+
+
+
+
+
+###################################### (4) WRITE OUT RESULTS AND VARIABLES ###############
+
+
+############# (4a) write prediction variables (plot) to pickle and txt file
+
+filename_save=outputdirectory+'/savefiles/predstorm_v1_realtime_stereo_a_save_'+ \
+              timeutcstr[0:10]+'-'+timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.p'
+
+#make recarrays
+combined=np.rec.array([com_time,dst_temerin_li,com_btot,com_bx,com_by,com_bz,com_den,com_vr], \
+dtype=[('time','f8'),('dst_temerin_li','f8'),('btot','f8'),\
+        ('bx','f8'),('by','f8'),('bz','f8'),('den','f8'),('vr','f8')])
+        
+pickle.dump(combined, open(filename_save, 'wb') )
+
+print('PICKLE: Variables saved in: \n', filename_save, ' \n')
 log.write('\n')
-log.write('Variables saved as: \n'+ filename_save+ '\n(pickle) for later verification usage.')
+log.write('PICKLE: Variables saved in: \n'+ filename_save+ '\n')
 
-filename_save='real/savefiles/predstorm_v1_realtime_stereo_a_save_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.txt'
-vartxtout=np.zeros([np.size(cdst_bx),8])
-vartxtout[:,0]=cdst_time
+filename_save=outputdirectory+'/savefiles/predstorm_v1_realtime_stereo_a_save_'+ \
+              timenowstr[0:10]+'-'+timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.txt'
+vartxtout=np.zeros([np.size(com_time),8])
+
+#com_time_str= [''  for com_time_str in np.arange(10)]
+#for i in np.arange(size(com_time)):
+#   com_time_str[i]=str(mdates.num2date(com_time[i]))[0:16]
+
+#vartxtout[:,0]=com_time_str
+vartxtout[:,0]=com_time
 vartxtout[:,1]=dst_temerin_li
-vartxtout[:,2]=cdst_btot
-vartxtout[:,3]=cdst_bx
-vartxtout[:,4]=cdst_by
-vartxtout[:,5]=cdst_bz
-vartxtout[:,6]=cdst_den
-vartxtout[:,7]=cdst_vr
+vartxtout[:,2]=com_btot
+vartxtout[:,3]=com_bx
+vartxtout[:,4]=com_by
+vartxtout[:,5]=com_bz
+vartxtout[:,6]=com_den
+vartxtout[:,7]=com_vr
 np.savetxt(filename_save, vartxtout, delimiter='',fmt='%8.6f %5.0i %5.1f %5.1f %5.1f %5.1f %5.1f %5.0i') 
 
-print('Variables saved as: \n', filename_save, ' \n(ascii) for later verification usage.')
-log.write('\n')
-log.write('Variables saved as: \n'+ filename_save+ '\n(ascii) for later verification usage.')
+print('TXT: Variables saved in: \n', filename_save, ' \n ')
+log.write('TXT: Variables saved in: \n'+ filename_save+ '\n')
 
 
 
 
-###################### VERIFICATION MODE BRANCH ##########################################
-
-
+################################# VERIFICATION MODE BRANCH ###############################
+#######**********************
 if verification_mode > 0:
   print('Verification results for interval:')
   
 
   #rdst_time rdst includes the observed Dst of the event
   verify_ind_obs=np.where(np.logical_and(rdst_time > verify_int_start,rdst_time < verify_int_end))
-  #lcdst_time ldst_burton ldst_obrien are the forecasted indices
-  verify_ind_for=np.where(np.logical_and(lcdst_time > verify_int_start,lcdst_time < verify_int_end-1/24))
+  #lcom_time ldst_burton ldst_obrien are the forecasted indices
+  verify_ind_for=np.where(np.logical_and(lcom_time > verify_int_start,lcom_time < verify_int_end-1/24))
  
   print('Scores:')
   print()
@@ -892,11 +762,11 @@ if verification_mode > 0:
   print('How well was the timing?')
 
   print('Time of Dst minimum observed:', str(mdates.num2date(rdst_time[verify_ind_obs][np.argmin(rdst[verify_ind_obs])]))[0:16] )
-  print('Time of Dst minimum Burton:', str(mdates.num2date(lcdst_time[verify_ind_for][np.argmin(ldst_burton[verify_ind_for])]+1/3600))[0:16] )
-  print('Time of Dst minimum OBrien:', str(mdates.num2date(lcdst_time[verify_ind_for][np.argmin(ldst_obrien[verify_ind_for])]+1/3600))[0:16] )
+  print('Time of Dst minimum Burton:', str(mdates.num2date(lcom_time[verify_ind_for][np.argmin(ldst_burton[verify_ind_for])]+1/3600))[0:16] )
+  print('Time of Dst minimum OBrien:', str(mdates.num2date(lcom_time[verify_ind_for][np.argmin(ldst_obrien[verify_ind_for])]+1/3600))[0:16] )
 
-  print('Time difference of Dst minimum Burton:', int( (lcdst_time[verify_ind_for][np.argmin(ldst_burton[verify_ind_for])]-rdst_time[verify_ind_obs][np.argmin(rdst[verify_ind_obs])])*24), ' hours' )
-  print('Time difference of Dst minimum OBrien:', int( (lcdst_time[verify_ind_for][np.argmin(ldst_obrien[verify_ind_for])]-rdst_time[verify_ind_obs][np.argmin(rdst[verify_ind_obs])])*24), ' hours' )
+  print('Time difference of Dst minimum Burton:', int( (lcom_time[verify_ind_for][np.argmin(ldst_burton[verify_ind_for])]-rdst_time[verify_ind_obs][np.argmin(rdst[verify_ind_obs])])*24), ' hours' )
+  print('Time difference of Dst minimum OBrien:', int( (lcom_time[verify_ind_for][np.argmin(ldst_obrien[verify_ind_for])]-rdst_time[verify_ind_obs][np.argmin(rdst[verify_ind_obs])])*24), ' hours' )
 
 
   print('')  
@@ -929,7 +799,9 @@ if verification_mode > 0:
 
 
 
-############################### CALCULATE FORECAST RESULTS ########################################
+############################### (4b) CALCULATE FORECAST RESULTS ########################################
+# WRITE PREDICTION RESULTS TO COMMAND LINE AND LOGFILE
+
 
 print()
 print()
@@ -943,28 +815,24 @@ log.write('-------------------------------------------------')
 log.write('\n')
 
 
-#check future times in combined Dst 
-future_times=np.where(cdst_time > timenowb)
-
+#check future times in combined Dst with respect to the end of DSCOVR data
+future_times=np.where(com_time > timenow)
 #past times in combined dst
-past_times=np.where(cdst_time < timenowb)
+past_times=np.where(com_time < timenow)
 
-
-################################# WRITE PREDICTION RESULTS TO COMMAND LINE AND LOGFILE
 
 print('PREDSTORM L5 (STEREO-A) prediction results: \n')
-print('Current time: ', rbtime_str[-1], ' UT')
+print('Current time: ', timeutcstr, ' UT')
 print()
 
 log.write('PREDSTORM L5 (STEREO-A) prediction results:')
 log.write('\n')
-log.write('Current time: '+ rbtime_str[-1]+ ' UT')
-
+log.write('Current time: '+ timeutcstr+ ' UT')
 
 
 print('Minimum of Dst (past times):')
 print(int(round(np.nanmin(dst_temerin_li[past_times]))), 'nT')
-mindst_time=cdst_time[past_times[0][0]+np.nanargmin(dst_temerin_li[past_times])]
+mindst_time=com_time[past_times[0][0]+np.nanargmin(dst_temerin_li[past_times])]
 print('at time: ', str(mdates.num2date(mindst_time+1/(24*60)))[0:16])
 #added 1 minute manually because of rounding errors in time 19:59:9999 etc.
 
@@ -978,7 +846,7 @@ log.write('\n')
 print()
 print('Predicted minimum of Dst (future times):')
 print(int(round(np.nanmin(dst_temerin_li[future_times]))), 'nT')
-mindst_time=cdst_time[future_times[0][0]+np.nanargmin(dst_temerin_li[future_times])]
+mindst_time=com_time[future_times[0][0]+np.nanargmin(dst_temerin_li[future_times])]
 print('at time: ', str(mdates.num2date(mindst_time+1/(24*60)))[0:16])
 #added 1 minute manually because of rounding errors in time 19:59:9999 etc.
 
@@ -996,8 +864,8 @@ storm_times_ind=np.where(np.logical_and(dst_temerin_li[future_times] < -50, dst_
 #when there are storm times above this level, indicate:
 if len(storm_times_ind) >0:   
  for i in np.arange(0,len(storm_times_ind),1):
-  print(str(mdates.num2date(cdst_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16])
-  log.write(str(mdates.num2date(cdst_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16]+'\n')
+  print(str(mdates.num2date(com_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16])
+  log.write(str(mdates.num2date(com_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16]+'\n')
 else: 
   print('None')
   log.write('None')
@@ -1012,8 +880,8 @@ storm_times_ind=np.where(np.logical_and(dst_temerin_li[future_times] < -100, dst
 #when there are storm times above this level, indicate:
 if len(storm_times_ind) >0:   
   for i in np.arange(0,len(storm_times_ind),1):
-   print(str(mdates.num2date(cdst_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16])
-   log.write(str(mdates.num2date(cdst_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16]+'\n')
+   print(str(mdates.num2date(com_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16])
+   log.write(str(mdates.num2date(com_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16]+'\n')
 else: 
   print('None')
   log.write('None')
@@ -1028,8 +896,8 @@ storm_times_ind=np.where(dst_temerin_li[future_times] < -200)[0]
 #when there are storm times above this level, indicate:
 if len(storm_times_ind) >0:   
   for i in np.arange(0,len(storm_times_ind),1):
-   print(str(mdates.num2date(cdst_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16])
-   log.write(str(mdates.num2date(cdst_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16]+'\n')
+   print(str(mdates.num2date(com_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16])
+   log.write(str(mdates.num2date(com_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16]+'\n')
 else: 
   print('None')
   log.write('None')
@@ -1052,23 +920,23 @@ log.write('\n \n')
 ### speed
 
 print('Maximum speed (past times):')
-maxvr_time=cdst_time[past_times[0][0]+np.nanargmax(cdst_vr[past_times])]
-print(int(round(np.nanmax(cdst_vr[past_times]))), 'km/s at', \
+maxvr_time=com_time[past_times[0][0]+np.nanargmax(com_vr[past_times])]
+print(int(round(np.nanmax(com_vr[past_times]))), 'km/s at', \
       str(mdates.num2date(maxvr_time+1/(24*60)))[0:16])
 print()
 log.write('Maximum speed (past times):\n')
-log.write(str(int(round(np.nanmax(cdst_vr[past_times]))))+ ' km/s at '+ \
+log.write(str(int(round(np.nanmax(com_vr[past_times]))))+ ' km/s at '+ \
       str(mdates.num2date(maxvr_time+1/(24*60)))[0:16])
 log.write('\n \n')
 
 
 print('Maximum speed (future times):')
-maxvr_time=cdst_time[future_times[0][0]+np.nanargmax(cdst_vr[future_times])]
-print(int(round(np.nanmax(cdst_vr[future_times]))), 'km/s at', \
+maxvr_time=com_time[future_times[0][0]+np.nanargmax(com_vr[future_times])]
+print(int(round(np.nanmax(com_vr[future_times]))), 'km/s at', \
       str(mdates.num2date(maxvr_time+1/(24*60)))[0:16])
 print()
 log.write('Maximum speed (future times):\n')
-log.write(str(int(round(np.nanmax(cdst_vr[future_times]))))+ ' km/s at '+ \
+log.write(str(int(round(np.nanmax(com_vr[future_times]))))+ ' km/s at '+ \
       str(mdates.num2date(maxvr_time+1/(24*60)))[0:16])
 log.write('\n \n')
 
@@ -1076,23 +944,23 @@ log.write('\n \n')
 ### btot
 
 print('Maximum Btot (past times):')
-maxb_time=cdst_time[past_times[0][0]+np.nanargmax(cdst_btot[past_times])]
-print(round(np.nanmax(cdst_btot[past_times]),1), 'nT at', \
+maxb_time=com_time[past_times[0][0]+np.nanargmax(com_btot[past_times])]
+print(round(np.nanmax(com_btot[past_times]),1), 'nT at', \
       str(mdates.num2date(maxb_time+1/(24*60)))[0:16])
 print()
 log.write('Maximum Btot (past times):\n')
-log.write(str(round(np.nanmax(cdst_btot[past_times]),1))+ ' nT at '+ \
+log.write(str(round(np.nanmax(com_btot[past_times]),1))+ ' nT at '+ \
       str(mdates.num2date(maxb_time+1/(24*60)))[0:16])
 log.write('\n \n')
 
 
 print('Maximum Btot (future times):')
-maxb_time=cdst_time[future_times[0][0]+np.nanargmax(cdst_btot[future_times])]
-print(round(np.nanmax(cdst_btot[future_times]),1), 'nT at', \
+maxb_time=com_time[future_times[0][0]+np.nanargmax(com_btot[future_times])]
+print(round(np.nanmax(com_btot[future_times]),1), 'nT at', \
       str(mdates.num2date(maxb_time+1/(24*60)))[0:16])
 print()
 log.write('Maximum Btot (future times):\n')
-log.write(str(round(np.nanmax(cdst_btot[future_times]),1))+ ' nT at '+ \
+log.write(str(round(np.nanmax(com_btot[future_times]),1))+ ' nT at '+ \
       str(mdates.num2date(maxb_time+1/(24*60)))[0:16])
 log.write('\n \n')
 
@@ -1100,23 +968,23 @@ log.write('\n \n')
 ### bz
 
 print('Minimum Bz (past times):')
-minbz_time=cdst_time[past_times[0][0]+np.nanargmin(cdst_bz[past_times])]
-print(round(np.nanmin(cdst_bz[past_times]),1), 'nT at', \
+minbz_time=com_time[past_times[0][0]+np.nanargmin(com_bz[past_times])]
+print(round(np.nanmin(com_bz[past_times]),1), 'nT at', \
       str(mdates.num2date(minbz_time+1/(24*60)))[0:16])
 print()
 log.write('Minimum Bz (past times):\n')
-log.write(str(round(np.nanmin(cdst_bz[past_times]),1))+ ' nT at '+ \
+log.write(str(round(np.nanmin(com_bz[past_times]),1))+ ' nT at '+ \
       str(mdates.num2date(minbz_time+1/(24*60)))[0:16])
 log.write('\n \n')
 
 
 print('Minimum Bz (future times):')
-minbz_time=cdst_time[future_times[0][0]+np.nanargmin(cdst_bz[future_times])]
-print(round(np.nanmin(cdst_bz[future_times]),1), 'nT at', \
+minbz_time=com_time[future_times[0][0]+np.nanargmin(com_bz[future_times])]
+print(round(np.nanmin(com_bz[future_times]),1), 'nT at', \
       str(mdates.num2date(minbz_time+1/(24*60)))[0:16])
 print()
 log.write('Minimum Bz (future times):\n')
-log.write(str(round(np.nanmin(cdst_bz[future_times]),1))+ ' nT at '+ \
+log.write(str(round(np.nanmin(com_bz[future_times]),1))+ ' nT at '+ \
       str(mdates.num2date(minbz_time+1/(24*60)))[0:16])
 log.write('\n \n')
 
@@ -1127,10 +995,6 @@ log.close()
 ##########################################################################################
 ################################# CODE STOP ##############################################
 ##########################################################################################
-
-
-###################################################################################
-## UNUSED CODE
 
 
   

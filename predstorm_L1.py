@@ -2,30 +2,22 @@
 
 #predicting the L1 solar wind and Dst index with unsupervised pattern recognition
 #algorithms Riley et al. 2017, Owens et al. 2017
-#soon Möstl et al. 2018 3DCORE, Reiss et al. background wind
-#Author: C. Moestl 
-#started April 2018
 
-#This work is published under the MIT LICENSE
-#THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
-#INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR 
-#PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE 
-#FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, 
-#TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR 
-#OTHER DEALINGS IN THE SOFTWARE.
+#Author: C. Moestl, IWF Graz, Austria
+#twitter @chrisoutofspace, https://github.com/cmoestl
+#started April 2018, last update November 2018
 
-#python 3.5 with sunpy and seaborn
-
-#Things to do:
+#python 3.5.2 with sunpy and seaborn, ipython 4.2.0
 
 #method
 #semi-supervised learning: add known intervals of ICMEs, MFRs and CIRs in the training data
 #helcats lists for ICMEs at Wind since 2007
 #HSS e.g. https://link.springer.com/article/10.1007%2Fs11207-013-0355-z
-#add 3DCORE profiles
-#see https://www.quantamagazine.org/machine-learnings-amazing-ability-to-predict-chaos-20180418/
-#reservoir computing
 #https://en.wikipedia.org/wiki/Pattern_recognition
+
+
+#Things to do:
+#use recarrays!
 
 #DSCOVR data:
 #Nans for missing data should be handled better and interpolated over, OBrien stops with Nans
@@ -40,19 +32,43 @@
 #take mean of ensemble forecast for final blue line forecast or only best match?
 
 
-##############################################################################
-############################# CODE START
-##############################################################################
+
+## MIT LICENSE
+## Copyright 2018, Christian Moestl 
+## Permission is hereby granted, free of charge, to any person obtaining a copy of this 
+## software and associated documentation files (the "Software"), to deal in the Software
+## without restriction, including without limitation the rights to use, copy, modify, 
+## merge, publish, distribute, sublicense, and/or sell copies of the Software, and to 
+## permit persons to whom the Software is furnished to do so, subject to the following 
+## conditions:
+## The above copyright notice and this permission notice shall be included in all copies 
+## or substantial portions of the Software.
+## THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
+## INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+## PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT 
+## HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF 
+## CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE 
+## OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+##########################################################################################
+####################################### CODE START #######################################
+##########################################################################################
 
 
 
 ################################## INPUT PARAMETERS ######################################
 
+
+
+inputfilename='predstorm_L5_input.txt'
+
+#reads all lines as strings
+lines = open(inputfilename).read().splitlines()
+
+
+
 #whether to show interpolated data points on the DSCOVR input plot
 showinterpolated=1
-
-#read in data from omni file -> 1 , from save_file -> 0
-data_from_omni_file = 0 #
 
 #the time interval for both the observed and predicted wind (** could be longer for predicted wind)
 #Delta T in hours, start with 24 hours here (covers 1 night of aurora)
@@ -66,9 +82,7 @@ trainend='2010-Jan-01 00:00'
 #######################################################
 
 
-
 #IMPORT 
-
 import scipy
 from scipy import stats
 import sys
@@ -91,41 +105,7 @@ import sunpy.time
 from predstorm_module import make_dst_from_wind
 from predstorm_module import sunriseset
 from predstorm_module import getdata
-
-
-######################## initialize
-#define global variables from OMNI2 hourly dataset
-#see http://omniweb.gsfc.nasa.gov/html/ow_data.html
-#dataset=473376; # for save file july 2016 
-#use this to check on size of OMNI2 hourly data min(np.where(times1==0))
-dataset=482136;
-
-#global Variables
-spot=np.zeros(dataset) 
-btot=np.zeros(dataset) #floating points
-bx=np.zeros(dataset) #floating points
-by=np.zeros(dataset) #floating points
-bz=np.zeros(dataset) #floating points
-bzgsm=np.zeros(dataset) #floating points
-bygsm=np.zeros(dataset) #floating points
-
-speed=np.zeros(dataset) #floating points
-speedx=np.zeros(dataset) #floating points
-speed_phi=np.zeros(dataset) #floating points
-speed_theta=np.zeros(dataset) #floating points
-
-dst=np.zeros(dataset) #float
-kp=np.zeros(dataset) #float
-
-den=np.zeros(dataset) #float
-pdyn=np.zeros(dataset) #float
-year=np.zeros(dataset)
-day=np.zeros(dataset)
-hour=np.zeros(dataset)
-t=np.zeros(dataset) #index time
-times1=np.zeros(dataset) #datetime time
-
-  
+from predstorm_module import get_omni_data
 
 
 ######################################## MAIN PROGRAM ####################################
@@ -137,7 +117,12 @@ plt.close('all')
 
 print()
 print()
-print('PREDSTORM -method for geomagnetic storm and aurora forecasting. ')
+
+print('------------------------------------------------------------------------')
+print()
+print('PREDSTORM L1 v1 method for geomagnetic storm and aurora forecasting. ')
+print('Christian Moestl, IWF Graz, last update November 2018.')
+print()
 print('Based on results by Riley et al. 2017 Space Weather, and')
 print('Owens, Riley and Horbury 2017 Solar Physics. ')
 print()
@@ -149,10 +134,6 @@ print()
 print('This is the real time version by Christian Moestl, IWF Graz, Austria. Last update: April 2018. ')
 print()
 print('-------------------------------------------------')
-
-
-
-
 
 
 
@@ -267,28 +248,6 @@ rpn7=np.interp(rtimes7,rptime_num,rpn)
 
 #interpolate NaN values in the hourly interpolated data ******* to add 
 
-
-#------ get Dst of last 7 days
-#-------
-#the Dst from AER does not seem to be reliable
-#http://swe.aer.com/static/DMSPgc/Dst_10day.txt
-#dsturl='http://swe.aer.com/static/DMSPgc/Dst_10day.txt'
-#rdst_str = urllib.request.urlopen(dsturl).read().decode()
-#rdst_size=int(np.round(len(rdst_str)/33))-4
-#rdst_time=np.zeros(rdst_size)
-#rdst=np.zeros(rdst_size)
-#go through each line of the txt file and extract time and Dst value
-#for i in np.arange(0,rdst_size):
-#  rdst_slice=rdst_str[146+33*i:176+33*i]
-  #print(rdst_slice)
-  #make a usable string of the time
-#  rdst_time_str=rdst_slice[0:10]+' '+rdst_slice[12:17]
-  #convert to mdates number
-#  rdst_time[i]=mdates.date2num(sunpy.time.parse_time(rdst_time_str))
-#  rdst[i]=float(rdst_slice[22:30])
-#interpolate to hourly data
-#rdst7=np.interp(rtimes7,rdst_time,rdst)
-#---------
 
 
 print('load real time Dst from Kyoto via NOAA')
@@ -465,21 +424,36 @@ plt.savefig(filename)
 
 #download from  ftp://nssdcftp.gsfc.nasa.gov/pub/data/omni/low_res_omni/omni2_all_years.dat
 
-if data_from_omni_file == 1:
- getdata()
- converttime()
- pickle.dump([spot,btot,bx,by,bz,bygsm,bzgsm,speed,speedx, dst,kp, den,pdyn,year,day,hour,times1], open( "cats/omni2save_april2018.p", "wb" ) ) 
-else: [spot,btot,bx,by,bz,bygsm, bzgsm,speed,speedx, dst,kp,den,pdyn,year,day,hour,times1]= pickle.load( open( "cats/omni2save_april2018.p", "rb" ) )
+# if not here download OMNI2 data (only needed first time running the program, currently 155 MB)
+if not os.path.exists('omni2_all_years.dat'):
 
+  #see http://omniweb.gsfc.nasa.gov/html/ow_data.html
+  print('download OMNI2 data from')
+  omni2_url='ftp://nssdcftp.gsfc.nasa.gov/pub/data/omni/low_res_omni/omni2_all_years.dat'
+  print(omni2_url)
+  try: urllib.request.urlretrieve(omni2_url, 'omni2_all_years.dat')
+  except urllib.error.URLError as e:
+      print(' ', omni2_url,' ',e.reason)
 
+#if omni2 hourly data is not yet converted and saved as pickle, do it:
+if not os.path.exists('omni2_all_years_pickle.p'):
+ #load OMNI2 dataset from .dat file with a function from dst_module.py
+ o=get_omni_data()
+ #contains: o. time,day,hour,btot,bx,by,bz,bygsm,bzgsm,speed,speedx,den,pdyn,dst,kp
+ #save for faster loading later
+ pickle.dump(o, open('omni2_all_years_pickle.p', 'wb') )
+
+else:  o=pickle.load(open('omni2_all_years_pickle.p', 'rb') )
+print('loaded OMNI2 data')
+#######################
 ### slice data for comparison of solar wind to Dst conversion
 
 print()
 print()
 
-print('OMNI2 1 hour training data, number of points available: ', np.size(speed))
-print('start date:',str(mdates.num2date(np.min(times1))))
-print('end date:',str(mdates.num2date(np.max(times1))))
+print('OMNI2 1 hour training data, number of points available: ', np.size(o.speed))
+print('start date:',str(mdates.num2date(np.min(o.time))))
+print('end date:',str(mdates.num2date(np.max(o.time))))
 
 trainstartnum=mdates.date2num(sunpy.time.parse_time(trainstart))-deltat/24
 trainendnum=mdates.date2num(sunpy.time.parse_time(trainend))-deltat/24
@@ -508,6 +482,22 @@ print()
 print('-------------------------------------------------')
 print()
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ########################### (3)SLIDING window pattern recognition ##########################
 # search for matches of the now wind with the training data
 
@@ -516,8 +506,8 @@ calculation_start=time.time()
 #---------- sliding window analysis start
 
 #select array from OMNI data as defined by training start and end time
-startindex=np.max(np.where(trainstartnum > times1))+1
-endindex=np.max(np.where(trainendnum > times1))+1
+startindex=np.max(np.where(trainstartnum > o.time))+1
+endindex=np.max(np.where(trainendnum > o.time))+1
 
 trainsize=endindex-startindex
 print('Data points in training data set: ', trainsize)
@@ -553,27 +543,27 @@ for i in np.arange(0,trainsize):
   inds=startindex+i
   
   #for btotal field
-  btots=btot[inds:inds+deltat+1]
+  btots=o.btot[inds:inds+deltat+1]
   #get correlation of training data btots with now-wind btotn
   #corr_count_b[i]=np.corrcoef(btotn,btots)[0][1]
   dist_count_b[i]=np.sqrt(np.sum((btotn-btots)**2))/np.size(btotn)
 
   #same for bzgsm
-  bzgsms=bzgsm[inds:inds+deltat+1]
+  bzgsms=o.bzgsm[inds:inds+deltat+1]
   #corr_count_bz[i]=np.corrcoef(bzgsmn,bzgsms)[0][1]
   dist_count_bz[i]=np.sqrt(np.sum((bzgsmn-bzgsms)**2))/np.size(bzgsmn)
 
   #same for bygsm
-  bygsms=bygsm[inds:inds+deltat+1]
+  bygsms=o.bygsm[inds:inds+deltat+1]
   dist_count_by[i]=np.sqrt(np.sum((bygsmn-bygsms)**2))/np.size(bygsmn)
 
   #same for bx
-  bxs=bx[inds:inds+deltat+1]
+  bxs=o.bx[inds:inds+deltat+1]
   dist_count_bx[i]=np.sqrt(np.sum((bxn-bxs)**2))/np.size(bxn)
   
 
   #same for speed
-  speeds=speed[inds:inds+deltat+1]
+  speeds=o.speed[inds:inds+deltat+1]
   
   #when there is no nan:
   #if np.sum(np.isnan(speeds)) == 0:
@@ -582,9 +572,8 @@ for i in np.arange(0,trainsize):
   #see Riley et al. 2017 equation 1 but divided by size 
   #so this measure is the average rms error
   
-  
   #same for density
-  dens=den[inds:inds+deltat+1]
+  dens=o.den[inds:inds+deltat+1]
   #corr_count_n[i]=np.corrcoef(denn,dens)[0][1]
   dist_count_n[i]=np.sqrt(np.sum((denn-dens)**2))/np.size(denn)
   
@@ -609,7 +598,7 @@ print(round(maxval_b,1), ' nT   index: ',maxpos_b)
 
 indp_b=startindex+maxpos_b+deltat
 #select array from OMNI data for predicted wind - all with p at the end
-btotp=btot[indp_b:indp_b+deltat+1]
+btotp=o.btot[indp_b:indp_b+deltat+1]
 
 
 #for Bx
@@ -625,7 +614,7 @@ print(round(maxval_bx,1), ' nT   index: ',maxpos_bx)
 #(so you take the future part coming after wind where the best match is seen)
 indp_bx=startindex+maxpos_bx+deltat
 #select array from OMNI data for predicted wind - predictions all have a p at the end
-bxp=bx[indp_bx:indp_bx+deltat+1]
+bxp=o.bx[indp_bx:indp_bx+deltat+1]
 
 
 
@@ -643,7 +632,7 @@ print(round(maxval_by,1), ' nT   index: ',maxpos_by)
 #(so you take the future part coming after wind where the best match is seen)
 indp_by=startindex+maxpos_by+deltat
 #select array from OMNI data for predicted wind - predictions all have a p at the end
-byp=bygsm[indp_by:indp_by+deltat+1]
+byp=o.bygsm[indp_by:indp_by+deltat+1]
 
 
 
@@ -667,7 +656,7 @@ print(round(maxval_bz,1), ' nT   index: ',maxpos_bz)
 #(so you take the future part coming after wind where the best match is seen)
 indp_bz=startindex+maxpos_bz+deltat
 #select array from OMNI data for predicted wind - predictions all have a p at the end
-bzp=bzgsm[indp_bz:indp_bz+deltat+1]
+bzp=o.bzgsm[indp_bz:indp_bz+deltat+1]
 
 #for V
 #method with correlation
@@ -686,7 +675,7 @@ print(round(maxval_v), ' km/s   index: ',maxpos_v)
 
 #select array from OMNI data for predicted wind - all with p at the end
 indp_v=startindex+maxpos_v+deltat
-speedp=speed[indp_v:indp_v+deltat+1]
+speedp=o.speed[indp_v:indp_v+deltat+1]
     
     
 #for N
@@ -704,7 +693,7 @@ print(round(maxval_n,1), ' ccm-3     index: ',maxpos_n)
 
 #select array from OMNI data for predicted wind - all with p at the end
 indp_n=startindex+maxpos_n+deltat
-denp=den[indp_n:indp_n+deltat+1]
+denp=o.den[indp_n:indp_n+deltat+1]
     
     
 
@@ -731,7 +720,7 @@ print('Calculation Time in seconds: ', calculation_time)
 
 
 
-######################--------------------------------------- plot FORECAST results
+########################################### (4) plot FORECAST results
 
 sns.set_context("talk")     
 sns.set_style("darkgrid")  
@@ -748,12 +737,11 @@ fsize=11
 
 ax1 = fig.add_subplot(411)
 
-
 #for previous plot best 50 correlations 
 for j in np.arange(49):
  #search for index in OMNI data for each of the top50 entries
  indp_b50=startindex+top50_b[j]
- btot50=btot[indp_b50:indp_b50+deltat+1]
+ btot50=o.btot[indp_b50:indp_b50+deltat+1]
  #plot for previous times
  plt.plot_date(timesnb,btot50, 'lightgrey', linewidth=weite, alpha=0.9)
 
@@ -769,7 +757,7 @@ for j in np.arange(49):
  #search for index in OMNI data for each of the top50 entries, 
  #add a deltat for selecting the deltat after the data
  indp_b50=startindex+top50_b[j]+deltat
- btot50=btot[indp_b50:indp_b50+deltat+1]
+ btot50=o.btot[indp_b50:indp_b50+deltat+1]
  #plot for future time
  plt.plot_date(timesfb,btot50, 'g', linewidth=weite, alpha=0.4)
  
@@ -780,7 +768,7 @@ plt.ylabel('Magnetic field B [nT]', fontsize=fsize+2)
 plt.xlim((timesnb[0], timesfb[-1]))
 
 #indicate average level of training data btot
-btraining_mean=np.nanmean(btot[startindex:endindex]) 
+btraining_mean=np.nanmean(o.btot[startindex:endindex]) 
 plt.plot_date([timesnp[0], timesfp[-1]], [btraining_mean,btraining_mean],'--k', alpha=0.5, linewidth=1) 
 plt.annotate('average',xy=(timesnp[0],btraining_mean),xytext=(timesnp[0],btraining_mean),color='k', fontsize=10)
 
@@ -813,7 +801,7 @@ ax2 = fig.add_subplot(412)
 for j in np.arange(49):
  #search for index in OMNI data for each of the top50 entries
  indp_bz50=startindex+top50_bz[j]
- bz50=bzgsm[indp_bz50:indp_bz50+deltat+1]
+ bz50=o.bzgsm[indp_bz50:indp_bz50+deltat+1]
  #plot for previous times
  plt.plot_date(timesnb,bz50, 'lightgrey', linewidth=weite, alpha=0.9)
 
@@ -829,7 +817,7 @@ plt.plot_date(0,0, 'g', linewidth=weite, alpha=0.8,label='Bz predictions from 50
 for j in np.arange(49):
  #search for index in OMNI data for each of the top50 entries, add a deltat for selecting the deltat after the data
  indp_bz50=startindex+top50_bz[j]+deltat
- bz50=bzgsm[indp_bz50:indp_bz50+deltat+1]
+ bz50=o.bzgsm[indp_bz50:indp_bz50+deltat+1]
  #plot for future time
  plt.plot_date(timesfb,bz50, 'g', linewidth=weite, alpha=0.4)
  
@@ -864,7 +852,7 @@ ax3 = fig.add_subplot(413)
 for j in np.arange(49):
  #search for index in OMNI data for each of the top50 entries
  indp_v50=startindex+top50_v[j]
- speedp50=speed[indp_v50:indp_v50+deltat+1]
+ speedp50=o.speed[indp_v50:indp_v50+deltat+1]
  #plot for previous time
  plt.plot_date(timesnp,speedp50, 'lightgrey', linewidth=weite, alpha=0.9)
 
@@ -875,7 +863,7 @@ plt.plot_date(timesnp,speedn, 'k', linewidth=weite, label='V observed by DSCOVR'
 for j in np.arange(49):
  #search for index in OMNI data for each of the top50 entries, add a deltat for selecting the deltat after the data
  indp_v50=startindex+top50_v[j]+deltat
- speedp50=speed[indp_v50:indp_v50+deltat+1]
+ speedp50=o.speed[indp_v50:indp_v50+deltat+1]
  #plot for future time
  plt.plot_date(timesfp,speedp50, 'g', linewidth=weite, alpha=0.4)
 

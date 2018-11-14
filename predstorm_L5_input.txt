@@ -3,8 +3,8 @@
 #whether to show interpolated data points on the DSCOVR input plot
 0
 
-#read in data from omni file -> 1 , from save_file -> 0
-0
+
+
 
 #the time interval for both the observed and predicted wind, #Delta T in hours, start with 24 hours here (covers 1 night of aurora)
 24

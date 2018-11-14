@@ -6,6 +6,12 @@ import copy
 import sunpy
 import matplotlib.dates as mdates
 import ephem
+import datetime
+import urllib
+import json
+import os
+import pycdf
+from pycdf import pycdf
 
 # use
 # import importlib
@@ -13,22 +19,20 @@ import ephem
 # to update module while working in command line 
 
 
-# LIST OF FUNCTIONS AND PROCEDURES
+# LIST OF FUNCTIONS
+# getpositions
+# sphere2cart
+# time_to_num_cat
+# converttime
+# get_noaa_dst
+# sunriseset
+# get_omni_data
+# convert_GSE_to_GSM
+# convert_RTN_to_GSE_sta_l1
+# make_dst_from_wind
+# get_stereoa_data_beacon
+# get_dscovr_data_real
 
-# **************************************
-
-#
-
-#
-
-
-#
-
-# CONSTANTS
-
-
-
-#
 
 
 def getpositions(filename):  
@@ -49,7 +53,7 @@ def sphere2cart(r, phi, theta):
 def time_to_num_cat(time_in):  
   #for time conversion  
   #for all catalogues
-  #time_in is the time in format: 2007-11-17T07:20:00
+  #time_in is the time in format: 2007-11-17T07:20:00 
   #for times help see: 
   #http://docs.sunpy.org/en/latest/guide/time.html
   #http://matplotlib.org/examples/pylab_examples/date_demo2.html
@@ -93,6 +97,34 @@ def converttime():
 
 
 
+def get_noaa_dst():
+
+ #print('loaded real time Dst from Kyoto via NOAA')
+ url_dst='http://services.swpc.noaa.gov/products/kyoto-dst.json'
+ with urllib.request.urlopen(url_dst) as url:
+     dr = json.loads	(url.read().decode())
+ dr=dr[1:]
+ #define variables 
+ #plasma
+ rdst_time_str=['']*len(dr)
+ rdst_time=np.zeros(len(dr))
+ rdst=np.zeros(len(dr))
+ #convert variables to numpy arrays
+ #mag
+ for k in np.arange(0,len(dr),1):
+  #handle missing data, they show up as None from the JSON data file
+  if dr[k][1] is None: dr[k][1]=np.nan
+  rdst[k]=float(dr[k][1])
+  #convert time from string to datenumber
+  rdst_time_str[k]=dr[k][0][0:16]
+  rdst_time[k]=mdates.date2num(sunpy.time.parse_time(rdst_time_str[k]))
+
+ return rdst_time,rdst
+
+
+
+
+
 
 def sunriseset(location_name):
 
@@ -128,18 +160,49 @@ def sunriseset(location_name):
 
 
 
-def getdata():
 
- #statt NaN waere besser linear interpolieren
- #lese file ein:
- 
- #FORMAT(2I4,I3,I5,2I3,2I4,14F6.1,F9.0,F6.1,F6.0,2F6.1,F6.3,F6.2, F9.0,F6.1,F6.0,2F6.1,F6.3,2F7.2,F6.1,I3,I4,I6,I5,F10.2,5F9.2,I3,I4,2F6.1,2I6,F5.1)
+def get_omni_data():
+
+  #FORMAT(2I4,I3,I5,2I3,2I4,14F6.1,F9.0,F6.1,F6.0,2F6.1,F6.3,F6.2, F9.0,F6.1,F6.0,2F6.1,F6.3,2F7.2,F6.1,I3,I4,I6,I5,F10.2,5F9.2,I3,I4,2F6.1,2I6,F5.1)
  #1963   1  0 1771 99 99 999 999 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 9999999. 999.9 9999. 999.9 999.9 9.999 99.99 9999999. 999.9 9999. 999.9 999.9 9.999 999.99 999.99 999.9  7  23    -6  119 999999.99 99999.99 99999.99 99999.99 99999.99 99999.99  0   3 999.9 999.9 99999 99999 99.9
 
+#define variables from OMNI2 dataset
+ #see http://omniweb.gsfc.nasa.gov/html/ow_data.html
+
+ #omni2_url='ftp://nssdcftp.gsfc.nasa.gov/pub/data/omni/low_res_omni/omni2_all_years.dat'
+ 
+ #check how many rows exist in this file
+ f=open('omni2_all_years.dat')
+ dataset= len(f.readlines())
+ #print(dataset)
+ #global Variables
+ spot=np.zeros(dataset) 
+ btot=np.zeros(dataset) #floating points
+ bx=np.zeros(dataset) #floating points
+ by=np.zeros(dataset) #floating points
+ bz=np.zeros(dataset) #floating points
+ bzgsm=np.zeros(dataset) #floating points
+ bygsm=np.zeros(dataset) #floating points
+
+ speed=np.zeros(dataset) #floating points
+ speedx=np.zeros(dataset) #floating points
+ speed_phi=np.zeros(dataset) #floating points
+ speed_theta=np.zeros(dataset) #floating points
+
+ dst=np.zeros(dataset) #float
+ kp=np.zeros(dataset) #float
+
+ den=np.zeros(dataset) #float
+ pdyn=np.zeros(dataset) #float
+ year=np.zeros(dataset)
+ day=np.zeros(dataset)
+ hour=np.zeros(dataset)
+ t=np.zeros(dataset) #index time
+ 
  
  j=0
- print('start reading variables from file')
- with open('/Users/chris/python/data/omni_data/omni2_all_years.dat') as f:
+ print('Read OMNI2 data ...')
+ with open('omni2_all_years.dat') as f:
   for line in f:
    line = line.split() # to deal with blank 
    #print line #41 is Dst index, in nT
@@ -198,12 +261,48 @@ def getdata():
    day[j]=line[1]
    hour[j]=line[2]
    j=j+1     
+   
 
- print('done reading OMNI2 variables from file')
+ #convert time to matplotlib format
+ #http://docs.sunpy.org/en/latest/guide/time.html
+ #http://matplotlib.org/examples/pylab_examples/date_demo2.html
+
+ times1=np.zeros(len(year)) #datetime time
+ print('convert time start')
+ for index in range(0,len(year)):
+      #first to datetimeobject 
+      timedum=datetime.datetime(int(year[index]), 1, 1) + datetime.timedelta(day[index] - 1) +datetime.timedelta(hours=hour[index])
+      #then to matlibplot dateformat:
+      times1[index] = mdates.date2num(timedum)
+ print('convert time done')   #for time conversion
+
+ print('all done.')
  print(j, ' datapoints')   #for reading data from OMNI file
  
+ #make structured array of data
+ omni_data=np.rec.array([times1,btot,bx,by,bz,bygsm,bzgsm,speed,speedx,den,pdyn,dst,kp], \
+ dtype=[('time','f8'),('btot','f8'),('bx','f8'),('by','f8'),('bz','f8'),\
+ ('bygsm','f8'),('bzgsm','f8'),('speed','f8'),('speedx','f8'),('den','f8'),('pdyn','f8'),('dst','f8'),('kp','f8')])
+ 
+ return omni_data
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
 ############################################################# 
-
 
 def convert_GSE_to_GSM(bxgse,bygse,bzgse,timegse):
  #GSE to GSM conversion
@@ -617,4 +716,322 @@ def make_dst_from_wind(btot_in,bx_in, by_in,bz_in,v_in,vx_in,density_in,time_in)
   
   dst_temerin_li_out[i]=dst1[i]+dst2[i]+dst3[i]+pressureterm[i]+directterm[i]+offset[i]
   
- return (dstcalc1,dstcalc2, dst_temerin_li_out)     
+ return (dstcalc1,dstcalc2, dst_temerin_li_out)   
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+def get_dscovr_data_real():
+
+ #data from http://services.swpc.noaa.gov/products/solar-wind/
+ #if needed replace with ACE
+ #http://legacy-www.swpc.noaa.gov/ftpdir/lists/ace/
+ #get 3 or 7 day data
+ #url_plasma='http://services.swpc.noaa.gov/products/solar-wind/plasma-3-day.json'
+ #url_mag='http://services.swpc.noaa.gov/products/solar-wind/mag-3-day.json'
+
+ url_plasma='http://services.swpc.noaa.gov/products/solar-wind/plasma-7-day.json'
+ url_mag='http://services.swpc.noaa.gov/products/solar-wind/mag-7-day.json'
+
+ #download, see URLLIB https://docs.python.org/3/howto/urllib2.html
+ with urllib.request.urlopen(url_plasma) as url:
+    pr = json.loads	(url.read().decode())
+ with urllib.request.urlopen(url_mag) as url:
+    mr = json.loads(url.read().decode())
+ print('DSCOVR plasma data available')
+ print(pr[0])
+ print('DSCOVR MAG data available')
+ print(mr[0])
+ #kill first row which stems from the description part
+ pr=pr[1:]
+ mr=mr[1:]
+
+ #define variables 
+ #plasma
+ rptime_str=['']*len(pr)
+ rptime_num=np.zeros(len(pr))
+ rpv=np.zeros(len(pr))
+ rpn=np.zeros(len(pr))
+ rpt=np.zeros(len(pr))
+
+ #mag
+ rbtime_str=['']*len(mr)
+ rbtime_num=np.zeros(len(mr))
+ rbtot=np.zeros(len(mr))
+ rbzgsm=np.zeros(len(mr))
+ rbygsm=np.zeros(len(mr))
+ rbxgsm=np.zeros(len(mr))
+
+ #convert variables to numpy arrays
+ #mag
+ for k in np.arange(0,len(mr),1):
+
+  #handle missing data, they show up as None from the JSON data file
+  if mr[k][6] is None: mr[k][6]=np.nan
+  if mr[k][3] is None: mr[k][3]=np.nan
+  if mr[k][2] is None: mr[k][2]=np.nan
+  if mr[k][1] is None: mr[k][1]=np.nan
+
+  rbtot[k]=float(mr[k][6])
+  rbzgsm[k]=float(mr[k][3])
+  rbygsm[k]=float(mr[k][2])
+  rbxgsm[k]=float(mr[k][1])
+
+  #convert time from string to datenumber
+  rbtime_str[k]=mr[k][0][0:16]
+  rbtime_num[k]=mdates.date2num(sunpy.time.parse_time(rbtime_str[k]))
+ 
+ #plasma
+ for k in np.arange(0,len(pr),1):
+  if pr[k][2] is None: pr[k][2]=np.nan
+  rpv[k]=float(pr[k][2]) #speed
+  rptime_str[k]=pr[k][0][0:16]
+  rptime_num[k]=mdates.date2num(sunpy.time.parse_time(rptime_str[k]))
+  if pr[k][1] is None: pr[k][1]=np.nan
+  rpn[k]=float(pr[k][1]) #density
+  if pr[k][3] is None: pr[k][3]=np.nan
+  rpt[k]=float(pr[k][3]) #temperature
+
+
+ #interpolate to minutes 
+ rtimes_m=np.arange(rbtime_num[0],rbtime_num[-1],1.0000/(24*60))
+ rbtot_m=np.interp(rtimes_m,rbtime_num,rbtot)
+ rbzgsm_m=np.interp(rtimes_m,rbtime_num,rbzgsm)
+ rbygsm_m=np.interp(rtimes_m,rbtime_num,rbygsm)
+ rbxgsm_m=np.interp(rtimes_m,rbtime_num,rbxgsm)
+ rpv_m=np.interp(rtimes_m,rptime_num,rpv)
+ rpn_m=np.interp(rtimes_m,rptime_num,rpn)
+ rpt_m=np.interp(rtimes_m,rptime_num,rpt)
+ 
+
+ #interpolate to hours 
+ rtimes_h=np.arange(np.ceil(rbtime_num)[0],rbtime_num[-1],1.0000/24.0000)
+ rbtot_h=np.interp(rtimes_h,rbtime_num,rbtot)
+ rbzgsm_h=np.interp(rtimes_h,rbtime_num,rbzgsm)
+ rbygsm_h=np.interp(rtimes_h,rbtime_num,rbygsm)
+ rbxgsm_h=np.interp(rtimes_h,rbtime_num,rbxgsm)
+ rpv_h=np.interp(rtimes_h,rptime_num,rpv)
+ rpn_h=np.interp(rtimes_h,rptime_num,rpn)
+ rpt_h=np.interp(rtimes_h,rptime_num,rpt)
+
+
+ #make recarrays
+ data_hourly=np.rec.array([rtimes_h,rbtot_h,rbxgsm_h,rbygsm_h,rbzgsm_h,rpv_h,rpn_h,rpt_h], \
+ dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
+        ('speed','f8'),('den','f8'),('temp','f8')])
+ 
+ data_minutes=np.rec.array([rtimes_m,rbtot_m,rbxgsm_m,rbygsm_m,rbzgsm_m,rpv_m,rpn_m,rpt_m], \
+ dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
+        ('speed','f8'),('den','f8'),('temp','f8')])
+ 
+ print('DSCOVR data interpolated to hour/minute resolution done.')
+ 
+ return data_minutes, data_hourly
+
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+def get_stereoa_data_beacon():
+ 
+ print('get STEREO-A beacon data from STEREO SCIENCE CENTER')
+
+ #only last 2 hours here at NOAA
+ #http://legacy-www.swpc.noaa.gov/ftpdir/lists/stereo/
+ #http://legacy-www.swpc.noaa.gov/stereo/STEREO_data.html
+
+ #at the STEREO SCIENCE CENTER these are the cdf files for the beacon data, daily
+ #browse data, ~ 200kb
+ #https://stereo-ssc.nascom.nasa.gov/data/beacon/ahead/plastic/2018/05/STA_LB_PLA_BROWSE_20180502_V12.cdf	
+ #original data, ~1 MB
+ #https://stereo-ssc.nascom.nasa.gov/data/beacon/ahead/plastic/2018/05/STA_LB_PLA_20180502_V12.cdf	
+
+ ###### if folder sta_beacon is not here, create
+ if os.path.isdir('sta_beacon') == False: os.mkdir('sta_beacon')
+
+ #make file lists for the last 14 days and download data if not already here
+ daynowstr=['']*14
+ sta_pla_file_str=['']*14
+ sta_mag_file_str=['']*14
+ http_sta_pla_file_str=['']*14
+ http_sta_mag_file_str=['']*14
+
+ plastic_location='https://stereo-ssc.nascom.nasa.gov/data/beacon/ahead/plastic'
+ impact_location='https://stereo-ssc.nascom.nasa.gov/data/beacon/ahead/impact'
+
+ #system time now
+ now=mdates.date2num(datetime.datetime.utcnow())
+ 
+
+ #download cdf files if needed for 14 days prior to current UTC time
+ for p in np.arange(0,14):
+   stayear=str(mdates.num2date(now-14+p))[0:4]
+   stamonth=str(mdates.num2date(now-14+p))[5:7]
+   staday=str(mdates.num2date(now-14+p))[8:10]
+   daynowstr[p]=stayear+stamonth+staday
+ 
+   #filename convention is
+   #https://stereo-ssc.nascom.nasa.gov/data/beacon/ahead/impact/2018/05/STA_LB_IMPACT_20180502_V02.cdf
+
+   #filenames
+   #plastic
+   sta_pla_file_str[p]='STA_LB_PLASTIC_'+daynowstr[p]+'_V12.cdf'
+   #impact
+   sta_mag_file_str[p]='STA_LB_IMPACT_'+daynowstr[p]+'_V02.cdf' 
+ 
+   #check if file is already there, otherwise download
+ 
+   if not os.path.exists('sta_beacon/'+sta_pla_file_str[p]):
+   #download files if they are not here
+     http_sta_pla_file_str[p]=plastic_location+'/'+stayear+'/'+stamonth+'/'+sta_pla_file_str[p]
+     #check if url exists, if not state reason  
+     try: urllib.request.urlretrieve(http_sta_pla_file_str[p], 'sta_beacon/'+sta_pla_file_str[p])
+     except urllib.error.URLError as e:
+       print(' ', http_sta_pla_file_str[p],' ',e.reason)
+  
+   if not os.path.exists('sta_beacon/'+sta_mag_file_str[p]):
+     http_sta_mag_file_str[p]=impact_location+'/'+stayear+'/'+stamonth+'/'+sta_mag_file_str[p]
+     try: urllib.request.urlretrieve(http_sta_mag_file_str[p], 'sta_beacon/'+sta_mag_file_str[p])
+     except urllib.error.URLError as e:
+       print(' ', http_sta_pla_file_str[p],' ',e.reason)
+ #for loop end   
+ 
+ ################################### 
+ #now read in all CDF files and stitch to one array
+ #access cdfs in python works as:
+ #https://pythonhosted.org/SpacePy/pycdf.html#read-a-cdf
+ #define stereo-a variables with open size
+ sta_ptime=np.zeros(0)  
+ sta_vr=np.zeros(0)  
+ sta_den=np.zeros(0)  
+ sta_temp=np.zeros(0)  
+
+ #same for magnetic field
+ sta_btime=np.zeros(0)  
+ sta_br=np.zeros(0)  
+ sta_bt=np.zeros(0)  
+ sta_bn=np.zeros(0) 
+
+
+ for p in np.arange(0,14):
+   
+   #PLASMA first
+   
+   if os.path.exists('sta_beacon/'+sta_pla_file_str[p]):
+      #print('sta_beacon/'+sta_pla_file_str[p])
+      sta =  pycdf.CDF('sta_beacon/'+sta_pla_file_str[p])
+   #variables Epoch_MAG: Epoch1: CDF_EPOCH [1875]
+   #MAGBField: CDF_REAL4 [8640, 3]
+   sta_time=mdates.date2num(sta['Epoch1'][...])
+   sta_dvr=sta['Velocity_RTN'][...][:,0]
+   #sta_dvt=sta['Velocity_RTN'][...][:,1]
+   #sta_dvn=sta['Velocity_RTN'][...][:,2]
+   sta_dden=sta['Density'][...]
+   #sta_dtemp=sta['Temperature'][...]
+   #missing data are < -1e30
+   mis=np.where(sta_time < -1e30)
+   sta_time[mis]=np.nan
+
+   mis=np.where(sta_dvr < -1e30)
+   sta_dvr[mis]=np.nan
+   #mis=np.where(sta_dvt < -1e30)
+   #sta_dvt[mis]=np.nan
+   #mis=np.where(sta_dvn < -1e30)
+   #sta_dvn[mis]=np.nan
+   mis=np.where(sta_dden < -1e30)
+   sta_dden[mis]=np.nan
+   #mis=np.where(sta_dden < -1e30)
+   #sta_dtemp[mis]=np.nan
+   
+   sta_ptime=np.append(sta_ptime, sta_time)
+   sta_vr=np.append(sta_vr,sta_dvr)
+   sta_den=np.append(sta_den,sta_dden)
+   #sta_temp=np.append(sta_temp,sta_dtemp)
+   
+
+
+   #Magnetic FIELD
+
+   if os.path.exists('sta_beacon/'+sta_mag_file_str[p]):
+      #print('sta_beacon/'+sta_mag_file_str[p])
+      sta =  pycdf.CDF('sta_beacon/'+sta_mag_file_str[p])
+
+   #variables Epoch_MAG: CDF_EPOCH [8640]
+   #MAGBField: CDF_REAL4 [8640, 3]
+   sta_time=mdates.date2num(sta['Epoch_MAG'][...])
+   #d stands for dummy
+   sta_dbr=sta['MAGBField'][...][:,0]
+   sta_dbt=sta['MAGBField'][...][:,1]
+   sta_dbn=sta['MAGBField'][...][:,2]
+
+   #append data to array
+   sta_btime=np.append(sta_btime, sta_time)
+   sta_br=np.append(sta_br,sta_dbr)
+   sta_bt=np.append(sta_bt,sta_dbt)
+   sta_bn=np.append(sta_bn,sta_dbn)
+ 
+ # for loop end
+ 
+ #make total field variable
+ sta_btot=np.sqrt(sta_br**2+sta_bt**2+sta_bn**2)
+
+ 
+ ########## interpolate to minutes
+ sta_time_m=np.arange(np.ceil(sta_btime)[0],sta_btime[-1],1.0000/(24*60))
+ sta_btot_m=np.interp(sta_time_m,sta_btime,sta_btot)
+ sta_br_m=np.interp(sta_time_m,sta_btime,sta_br)
+ sta_bt_m=np.interp(sta_time_m,sta_btime,sta_bt)
+ sta_bn_m=np.interp(sta_time_m,sta_btime,sta_bn)
+ sta_vr_m=np.interp(sta_time_m,sta_ptime,sta_vr)
+ sta_den_m=np.interp(sta_time_m,sta_ptime,sta_den)
+ #sta_temp_m=np.interp(sta_time_m,sta_ptime,sta_temp)
+
+ ########## interpolate to hours
+ sta_time_h=np.arange(np.ceil(sta_btime)[0],sta_btime[-1],1.0000/(24))
+ sta_btot_h=np.interp(sta_time_h,sta_btime,sta_btot)
+ sta_br_h=np.interp(sta_time_h,sta_btime,sta_br)
+ sta_bt_h=np.interp(sta_time_h,sta_btime,sta_bt)
+ sta_bn_h=np.interp(sta_time_h,sta_btime,sta_bn)
+ sta_vr_h=np.interp(sta_time_h,sta_ptime,sta_vr)
+ sta_den_h=np.interp(sta_time_h,sta_ptime,sta_den)
+ #sta_temp_h=np.interp(sta_time_h,sta_ptime,sta_temp)
+
+  
+
+ #make recarrays
+ data_minutes=np.rec.array([sta_time_m,sta_btot_m,sta_br_m,sta_bt_m,sta_bn_m,sta_vr_m,sta_den_m], \
+ dtype=[('time','f8'),('btot','f8'),('br','f8'),('bt','f8'),('bn','f8'),\
+        ('speedr','f8'),('den','f8')])
+ 
+ data_hourly=np.rec.array([sta_time_h,sta_btot_h,sta_br_h,sta_bt_h,sta_bn_h,sta_vr_h,sta_den_h], \
+ dtype=[('time','f8'),('btot','f8'),('br','f8'),('bt','f8'),('bn','f8'),\
+        ('speedr','f8'),('den','f8')])
+ 
+ 
+ print('STEREO-A (RTN) beacon data interpolated to hour/minute resolution done.')
+ 
+ return data_minutes, data_hourly
+
