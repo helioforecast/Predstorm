@@ -104,9 +104,9 @@ import sunpy.time
 
 from predstorm_module import make_dst_from_wind
 from predstorm_module import sunriseset
-from predstorm_module import getdata
 from predstorm_module import get_omni_data
-
+from predstorm_module import get_dscovr_data_real
+from predstorm_module import get_noaa_dst
 
 ######################################## MAIN PROGRAM ####################################
 
@@ -139,112 +139,63 @@ print('-------------------------------------------------')
 
 ######################### (1) get real time DSCOVR data ##################################
 
-#see https://docs.python.org/3/howto/urllib2.html
-#data from http://services.swpc.noaa.gov/products/solar-wind/
-
-#get 3 or 7 day data
-#url_plasma='http://services.swpc.noaa.gov/products/solar-wind/plasma-3-day.json'
-#url_mag='http://services.swpc.noaa.gov/products/solar-wind/mag-3-day.json'
-
-url_plasma='http://services.swpc.noaa.gov/products/solar-wind/plasma-7-day.json'
-url_mag='http://services.swpc.noaa.gov/products/solar-wind/mag-7-day.json'
 
 
-with urllib.request.urlopen(url_plasma) as url:
-    pr = json.loads	(url.read().decode())
-with urllib.request.urlopen(url_mag) as url:
-    mr = json.loads(url.read().decode())
-print('DSCOVR plasma data available')
-print(pr[0])
-print('DSCOVR MAG data available')
-print(mr[0])
-#kill first row which stems from the description part
-pr=pr[1:]
-mr=mr[1:]
 
-#define variables 
-#plasma
-rptime_str=['']*len(pr)
-rptime_num=np.zeros(len(pr))
-rpv=np.zeros(len(pr))
-rpn=np.zeros(len(pr))
-rpt=np.zeros(len(pr))
+#get real time DSCOVR data with minute/hourly time resolution as recarray
+[dism,dis]=get_dscovr_data_real()
 
-#mag
-rbtime_str=['']*len(mr)
-rbtime_num=np.zeros(len(mr))
-rbtot=np.zeros(len(mr))
-rbzgsm=np.zeros(len(mr))
-rbygsm=np.zeros(len(mr))
-rbx=np.zeros(len(mr))
+#get time of the last entry in the DSCOVR data
+timenow=dism.time[-1]
+timenowstr=str(mdates.num2date(timenow))[0:16]
+
+#get UTC time now
+timeutc=mdates.date2num(datetime.datetime.utcnow())
+timeutcstr=str(datetime.datetime.utcnow())[0:16]
+
+print()
+print()
+print('Current time UTC')
+print(timeutcstr)
+print('UTC Time of last datapoint in real time DSCOVR data')
+print(timenowstr)
+print('Time lag in minutes:', int(round((timeutc-timenow)*24*60)))
+print()
 
 
-#convert variables to numpy arrays
-#mag
-for k in np.arange(0,len(mr),1):
 
- #handle missing data, they show up as None from the JSON data file
- if mr[k][6] is None: mr[k][6]=np.nan
- if mr[k][3] is None: mr[k][3]=np.nan
- if mr[k][2] is None: mr[k][2]=np.nan
-
- rbtot[k]=float(mr[k][6])
- rbzgsm[k]=float(mr[k][3])
- rbygsm[k]=float(mr[k][2])
- rbx[k]=float(mr[k][1])
- #convert time from string to datenumber
- rbtime_str[k]=mr[k][0][0:16]
- rbtime_num[k]=mdates.date2num(sunpy.time.parse_time(rbtime_str[k]))
- 
-#plasma
-for k in np.arange(0,len(pr),1):
- if pr[k][2] is None: pr[k][2]=np.nan
- rpv[k]=float(pr[k][2]) #speed
- rptime_str[k]=pr[k][0][0:16]
- rptime_num[k]=mdates.date2num(sunpy.time.parse_time(rptime_str[k]))
- if pr[k][1] is None: pr[k][1]=np.nan
- rpn[k]=float(pr[k][1]) #density
- if pr[k][3] is None: pr[k][3]=np.nan
- rpt[k]=float(pr[k][3]) #temperature
 
 #interpolate to 1 hour steps: make an array from last time in hour steps backwards for 24 hours, then interpolate
 
 
 #this is the last 24 hours in 1 hour timesteps, 25 data points
 #for field
-rbtimes24=np.arange(rbtime_num[-1]-1,rbtime_num[-1]+1/24,1/24) 
-rbtot24=np.interp(rbtimes24,rbtime_num,rbtot)
-rbzgsm24=np.interp(rbtimes24,rbtime_num,rbzgsm)
-rbygsm24=np.interp(rbtimes24,rbtime_num,rbygsm)
-rbx24=np.interp(rbtimes24,rbtime_num,rbx)
+rbtimes24=np.arange(dism.time[-1]-1,dism.time[-1]+1/24,1/24) 
+btot24=np.interp(rbtimes24,dism.time,dism.btot)
+bzgsm24=np.interp(rbtimes24,dism.time,dism.bzgsm)
+bygsm24=np.interp(rbtimes24,dism.time,dism.bygsm)
+bxgsm24=np.interp(rbtimes24,dism.time,dism.bxgsm)
 
 #for plasma
-rptimes24=np.arange(rptime_num[-1]-1,rptime_num[-1]+1/24,1/24) 
-rpv24=np.interp(rptimes24,rptime_num,rpv)
-rpn24=np.interp(rptimes24,rptime_num,rpn)
+rptimes24=np.arange(dism.time[-1]-1,dism.time[-1]+1/24,1/24) 
+rpv24=np.interp(rptimes24,dism.time,dism.speed)
+rpn24=np.interp(rptimes24,dism.time,dism.den)
 
 #define times of the future wind, deltat hours after current time
 timesfp=np.arange(rptimes24[-1],rptimes24[-1]+1+1/24,1/24)
 timesfb=np.arange(rbtimes24[-1],rbtimes24[-1]+1+1/24,1/24)
 
-#set time now 
-#for plasma current time
-timenowp=rptime_num[-1]
-#for B field current time
-timenowb=rbtime_num[-1]
-timenowstr=str(mdates.num2date(timenowb))[0:16]
-
 
 ###calculate Dst for DSCOVR last 7 day data with Burton and OBrien
 #this is the last 24 hours in 1 hour timesteps, 25 data points
 #start on next day 0 UT, so rbtimes7 contains values at every full hour like the real Dst
-rtimes7=np.arange(np.ceil(rbtime_num)[0],rbtime_num[-1],1.0000/24)
-rbtot7=np.interp(rtimes7,rbtime_num,rbtot)
-rbzgsm7=np.interp(rtimes7,rbtime_num,rbzgsm)
-rbygsm7=np.interp(rtimes7,rbtime_num,rbygsm)
-rbx7=np.interp(rtimes7,rbtime_num,rbx)
-rpv7=np.interp(rtimes7,rptime_num,rpv)
-rpn7=np.interp(rtimes7,rptime_num,rpn)
+rtimes7=np.arange(np.ceil(dism.time)[0],dism.time[-1],1.0000/24)
+btot7=np.interp(rtimes7,dism.time,dism.btot)
+bzgsm7=np.interp(rtimes7,dism.time,dism.bzgsm)
+bygsm7=np.interp(rtimes7,dism.time,dism.bygsm)
+bxgsm7=np.interp(rtimes7,dism.time,dism.bxgsm)
+rpv7=np.interp(rtimes7,dism.time,dism.speed)
+rpn7=np.interp(rtimes7,dism.time,dism.den)
 
 #interpolate NaN values in the hourly interpolated data ******* to add 
 
@@ -252,32 +203,14 @@ rpn7=np.interp(rtimes7,rptime_num,rpn)
 
 print('load real time Dst from Kyoto via NOAA')
 
-url_dst='http://services.swpc.noaa.gov/products/kyoto-dst.json'
-with urllib.request.urlopen(url_dst) as url:
-    dr = json.loads	(url.read().decode())
-dr=dr[1:]
-#define variables 
-#plasma
-rdst_time_str=['']*len(dr)
-rdst_time=np.zeros(len(dr))
-rdst=np.zeros(len(dr))
-#convert variables to numpy arrays
-#mag
-for k in np.arange(0,len(dr),1):
- #handle missing data, they show up as None from the JSON data file
- if dr[k][1] is None: dr[k][1]=np.nan
- rdst[k]=float(dr[k][1])
- #convert time from string to datenumber
- rdst_time_str[k]=dr[k][0][0:16]
- rdst_time[k]=mdates.date2num(sunpy.time.parse_time(rdst_time_str[k]))
-#interpolate to rtimes 7 not needed
-#rdst7=np.interp(rtimes7,rdst_time,rdst)
 
+#get NOAA Dst for comparison 
+[dst_time,dst]=get_noaa_dst()
+print('Loaded Kyoto Dst from NOAA for last 7 days.')
 
 #make Dst index from solar wind data
 #make_dst_from_wind(btot_in,bx_in, by_in,bz_in,v_in,vx_in,density_in,time_in):#
-[rdst_burton, rdst_obrien, rdst_temerin_li]=make_dst_from_wind(rbtot7,rbx7,rbygsm7,rbzgsm7,rpv7,rpv7,rpn7,rtimes7)
-
+[rdst_burton, rdst_obrien, rdst_temerin_li]=make_dst_from_wind(btot7,bxgsm7,bygsm7,bzgsm7,rpv7,rpv7,rpn7,rtimes7)
 
 
 
@@ -291,10 +224,10 @@ msize=5
 
 #panel 1
 ax4 = fig.add_subplot(411)
-plt.plot_date(rbtime_num, rbtot,'-k', label='B total', linewidth=weite)
-if showinterpolated > 0: plt.plot_date(rbtimes24, rbtot24,'ro', label='B total interpolated last 24 hours',linewidth=weite,markersize=msize)
-plt.plot_date(rbtime_num, rbzgsm,'-g', label='Bz GSM',linewidth=weite)
-if showinterpolated > 0: plt.plot_date(rbtimes24, rbzgsm24,'go', label='Bz GSM interpolated last 24 hours',linewidth=weite,markersize=msize)
+plt.plot_date(dism.time, dism.btot,'-k', label='B total', linewidth=weite)
+if showinterpolated > 0: plt.plot_date(rbtimes24, btot24,'ro', label='B total interpolated last 24 hours',linewidth=weite,markersize=msize)
+plt.plot_date(dism.time, dism.bzgsm,'-g', label='Bz GSM',linewidth=weite)
+if showinterpolated > 0: plt.plot_date(rbtimes24, bzgsm24,'go', label='Bz GSM interpolated last 24 hours',linewidth=weite,markersize=msize)
 
 
 #indicate 0 level for Bz
@@ -302,15 +235,15 @@ plt.plot_date([rtimes7[0], rtimes7[-1]], [0,0],'--k', alpha=0.5, linewidth=1)
 
 
 #test interpolation
-#plt.plot_date(rtimes7, rbzgsm7,'-ko', label='B7',linewidth=weite)
+#plt.plot_date(rtimes7, dism.bzgsm7,'-ko', label='B7',linewidth=weite)
 
 plt.ylabel('Magnetic field [nT]',  fontsize=fsize+2)
 myformat = mdates.DateFormatter('%Y %b %d %Hh')
 ax4.xaxis.set_major_formatter(myformat)
 ax4.legend(loc='upper left', fontsize=fsize-2,ncol=4)
-plt.xlim([np.ceil(rbtime_num)[0],rbtime_num[-1]])
-plt.ylim(np.nanmin(rbzgsm)-10, np.nanmax(rbtot)+10)
-plt.title('L1 DSCOVR real time solar wind provided by NOAA SWPC for '+ str(mdates.num2date(timenowb))[0:16]+ ' UT', fontsize=16)
+plt.xlim([np.ceil(dism.time)[0],dism.time[-1]])
+plt.ylim(np.nanmin(dism.bzgsm)-10, np.nanmax(dism.btot)+10)
+plt.title('L1 DSCOVR real time solar wind provided by NOAA SWPC for '+ str(mdates.num2date(timenow))[0:16]+ ' UT', fontsize=16)
 plt.xticks(fontsize=fsize)
 plt.yticks(fontsize=fsize)
 
@@ -323,29 +256,29 @@ plt.annotate('slow',xy=(rtimes7[0],400),xytext=(rtimes7[0],400),color='k', fonts
 plt.plot_date([rtimes7[0], rtimes7[-1]], [800,800],'--k', alpha=0.3, linewidth=1)
 plt.annotate('fast',xy=(rtimes7[0],800),xytext=(rtimes7[0],800),color='k', fontsize=10	)
 
-plt.plot_date(rptime_num, rpv,'-k', label='V observed',linewidth=weite)
+plt.plot_date(dism.time, dism.speed,'-k', label='V observed',linewidth=weite)
 if showinterpolated > 0: plt.plot_date(rptimes24, rpv24,'ro', label='V interpolated last 24 hours',linewidth=weite,markersize=msize)
-plt.xlim([np.ceil(rbtime_num)[0],rbtime_num[-1]])
+plt.xlim([np.ceil(dism.time)[0],dism.time[-1]])
 #plt.plot_date(rtimes7, rpv7,'-ko', label='B7',linewidth=weite)
 
 
 plt.ylabel('Speed $\mathregular{[km \\ s^{-1}]}$', fontsize=fsize+2)
 ax5.xaxis.set_major_formatter(myformat)
 ax5.legend(loc=2,fontsize=fsize-2,ncol=2)
-plt.xlim([np.ceil(rbtime_num)[0],rbtime_num[-1]])
-plt.ylim([np.nanmin(rpv)-50,np.nanmax(rpv)+100])
+plt.xlim([np.ceil(dism.time)[0],dism.time[-1]])
+plt.ylim([np.nanmin(dism.speed)-50,np.nanmax(dism.speed)+100])
 plt.xticks(fontsize=fsize)
 plt.yticks(fontsize=fsize)
 
 #panel 3
 ax6 = fig.add_subplot(413)
-plt.plot_date(rptime_num, rpn,'-k', label='N observed',linewidth=weite)
+plt.plot_date(dism.time, dism.den,'-k', label='N observed',linewidth=weite)
 if showinterpolated > 0:  plt.plot_date(rptimes24, rpn24,'ro', label='N interpolated last 24 hours',linewidth=weite,markersize=msize)
 plt.ylabel('Density $\mathregular{[ccm^{-3}]}$',fontsize=fsize+2)
 ax6.xaxis.set_major_formatter(myformat)
 ax6.legend(loc=2,ncol=2,fontsize=fsize-2)
-plt.ylim([0,np.nanmax(rpn)+10])
-plt.xlim([np.ceil(rbtime_num)[0],rbtime_num[-1]])
+plt.ylim([0,np.nanmax(dism.den)+10])
+plt.xlim([np.ceil(dism.time)[0],dism.time[-1]])
 plt.xticks(fontsize=fsize)
 plt.yticks(fontsize=fsize)
 
@@ -369,13 +302,13 @@ plt.fill_between(rtimes7+1/24, rdst_temerin_li-error, rdst_temerin_li+error, alp
 #for AER
 #plt.plot_date(rtimes7, rdst7,'ko', label='Dst observed',markersize=4)
 #for Kyoto
-plt.plot_date(rdst_time, rdst,'ko', label='Dst observed',markersize=4)
+plt.plot_date(dst_time, dst,'ko', label='Dst observed',markersize=4)
 
 
 plt.ylabel('Dst [nT]', fontsize=fsize+2)
 ax6.xaxis.set_major_formatter(myformat)
 ax6.legend(loc=2,ncol=3,fontsize=fsize-2)
-plt.xlim([np.ceil(rbtime_num)[0],rbtime_num[-1]])
+plt.xlim([np.ceil(dism.time)[0],dism.time[-1]])
 plt.ylim([np.nanmin(rdst_burton)-50,50])
 plt.xticks(fontsize=fsize)
 plt.yticks(fontsize=fsize)
@@ -461,15 +394,15 @@ trainendnum=mdates.date2num(sunpy.time.parse_time(trainend))-deltat/24
 print('Training data start and end interval: ', trainstart, '  ', trainend)
 
 
-####### "now-wind" is 24 hour data ist rptimes24, rpv24, rbtimes24, rbtot24
+####### "now-wind" is 24 hour data ist rptimes24, rpv24, rbtimes24, btot24
 #rename for plotting and analysis:
 timesnp=rptimes24
 speedn=rpv24
 timesnb=rbtimes24
-btotn=rbtot24
-bzgsmn=rbzgsm24
-bygsmn=rbygsm24
-bxn=rbx24
+btotn=btot24
+bzgsmn=bzgsm24
+bygsmn=bygsm24
+bxn=bxgsm24
 
 denn=rpn24
 
@@ -477,7 +410,7 @@ print()
 print()
 print('Number of data points in now-wind:', np.size(btotn))
 print('Observing and forecasting window delta-T: ',deltat,' hours')
-print('Time now: ', str(mdates.num2date(timenowb)))
+print('Time now: ', str(mdates.num2date(timenow)))
 print()
 print('-------------------------------------------------')
 print()
@@ -781,14 +714,14 @@ plt.plot_date([timesnb[-1],timesnb[-1]],[0,100],'-r', linewidth=3)
 plt.ylim(0,max(btotp)+12)
 #ax1.legend(loc=2, fontsize=fsize-2, ncol=2)
 
-plt.annotate('now',xy=(timenowb,max(btotp)+12-3),xytext=(timenowb+0.01,max(btotp)+12-3),color='r', fontsize=15)
-plt.annotate('observation',xy=(timenowb,max(btotp)+12-3),xytext=(timenowb-0.55,max(btotp)+12-3),color='k', fontsize=15)
-plt.annotate('prediction',xy=(timenowb,max(btotp)+12-3),xytext=(timenowb+0.45,max(btotp)+12-3),color='b', fontsize=15)
+plt.annotate('now',xy=(timenow,max(btotp)+12-3),xytext=(timenow+0.01,max(btotp)+12-3),color='r', fontsize=15)
+plt.annotate('observation',xy=(timenow,max(btotp)+12-3),xytext=(timenow-0.55,max(btotp)+12-3),color='k', fontsize=15)
+plt.annotate('prediction',xy=(timenow,max(btotp)+12-3),xytext=(timenow+0.45,max(btotp)+12-3),color='b', fontsize=15)
 
 plt.yticks(fontsize=fsize) 
 plt.xticks(fontsize=fsize) 
 
-plt.title('PREDSTORM L1 solar wind and magnetic storm prediction with unsupervised pattern recognition for '+ str(mdates.num2date(timenowb))[0:16]+ ' UT', fontsize=15)
+plt.title('PREDSTORM L1 solar wind and magnetic storm prediction with unsupervised pattern recognition for '+ str(mdates.num2date(timenow))[0:16]+ ' UT', fontsize=15)
 
 
 
@@ -968,7 +901,7 @@ plt.fill_between(timesdst+1/24, pdst_temerin_li-error, pdst_temerin_li+error, al
 #for AER
 #plt.plot_date(rtimes7, rdst7,'ko', label='Dst observed',markersize=4)
 #for Kyoto
-plt.plot_date(rdst_time, rdst,'ko', label='Dst observed',markersize=4)
+plt.plot_date(dst_time, dst,'ko', label='Dst observed',markersize=4)
 
 
 plt.ylabel('Dst [nT]')
@@ -1110,7 +1043,7 @@ plt.savefig(filename)
 
 filename_save='real/savefiles/predstorm_realtime_pattern_save_v1_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.p'
 print('All variables for plot saved in ', filename_save, ' for later verification usage.')
-pickle.dump([timenowb, rbtime_num, rbtot, rbygsm, rbzgsm, rtimes7, rbtot7, rbygsm7, rbzgsm7, rbtimes24, rbtot24,rbygsm24,rbzgsm24, rptime_num, rpv, rpn, rtimes7, rpv7, rpn7, rptimes24, rpn24, rpv24,rdst_time, rdst, timesdst, pdst_burton, pdst_obrien], open(filename_save, "wb" ) )
+pickle.dump([timenow, dism.time, dism.btot, dism.bygsm, dism.bzgsm,  dism.den, dism.speed, rtimes7, btot7, bygsm7, bzgsm7, rbtimes24, btot24,bygsm24,bzgsm24, rtimes7, rpv7, rpn7, rptimes24, rpn24, rpv24,dst_time, dst, timesdst, pdst_burton, pdst_obrien], open(filename_save, "wb" ) )
 
 ##########################################################################################
 ################################# CODE STOP ##############################################
