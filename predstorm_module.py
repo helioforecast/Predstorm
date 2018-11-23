@@ -5,7 +5,7 @@ import scipy
 import sunpy
 import copy	
 import matplotlib.dates as mdates
-import ephem
+#import ephem
 import datetime
 import urllib
 import json
@@ -127,8 +127,8 @@ def get_noaa_dst():
 
 
 
-def sunriseset(location_name):
-
+#def sunriseset(location_name):
+"""
  location = ephem.Observer()
 
  if location_name == 'iceland':
@@ -146,7 +146,6 @@ def sunriseset(location_name):
     location.long = '170.50361'  #+E, so negative is west
     location.elevation = 94 #meters
 
-
  sun = ephem.Sun()
  #get sun ephemerides for location	
  sun.compute(location)
@@ -156,6 +155,7 @@ def sunriseset(location_name):
  prevset=location.previous_setting(sun).datetime()
 
  return (nextrise,nextset,prevrise,prevset)
+"""
 
 
 
