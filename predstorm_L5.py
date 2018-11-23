@@ -66,25 +66,21 @@
 ######################################### CODE START #####################################
 ##########################################################################################
 
-import scipy
+
 import scipy.io
-import sys
 import os
 import datetime
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import numpy as np
-import time
-import copy
 import pdb
 import urllib
 import json
-import ephem
 import pickle
 import sunpy.time
 import seaborn as sns
-from pycdf import pycdf
+
 
 import predstorm_module
 from predstorm_module import get_dscovr_data_real
@@ -99,12 +95,8 @@ from predstorm_module import convert_RTN_to_GSE_sta_l1
 from predstorm_module import get_noaa_dst
 
 #ignore warnings
-import warnings
-warnings.filterwarnings('ignore')
-
-
-
-
+#import warnings
+#warnings.filterwarnings('ignore')
 
 
 

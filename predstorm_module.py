@@ -2,16 +2,17 @@
 
 import numpy as np
 import scipy
-import copy
 import sunpy
+import copy	
 import matplotlib.dates as mdates
 import ephem
 import datetime
 import urllib
 import json
 import os
-import pycdf
-from pycdf import pycdf
+import pdb
+import cdflib
+
 
 # use
 # import importlib
@@ -843,7 +844,27 @@ def get_dscovr_data_real():
 
  
  
- 
+def epoch_to_num(epoch):
+        #taken from spacepy https://pythonhosted.org/SpacePy/_modules/spacepy/pycdf.html#Library.epoch_to_num
+        """
+        Convert CDF EPOCH to matplotlib number.
+
+        Same output as :func:`~matplotlib.dates.date2num` and useful for
+        plotting large data sets without converting the times through datetime.
+
+        Parameters
+        ==========
+        epoch : double
+            EPOCH to convert. Lists and numpy arrays are acceptable.
+
+        Returns
+        =======
+        out : double
+            Floating point number representing days since 0001-01-01.
+        """
+        #date2num day 1 is 1/1/1 00UT
+        #epoch 1/1/1 00UT is 31622400000.0 (millisecond)
+        return (epoch - 31622400000.0) / (24 * 60 * 60 * 1000.0) + 1.0
  
  
  
@@ -921,8 +942,9 @@ def get_stereoa_data_beacon():
  
  ################################### 
  #now read in all CDF files and stitch to one array
- #access cdfs in python works as:
- #https://pythonhosted.org/SpacePy/pycdf.html#read-a-cdf
+ #access cdfs in python works with cdflib
+ #https://github.com/MAVENSDC/cdflib
+
  #define stereo-a variables with open size
  sta_ptime=np.zeros(0)  
  sta_vr=np.zeros(0)  
@@ -939,17 +961,31 @@ def get_stereoa_data_beacon():
  for p in np.arange(0,14):
    
    #PLASMA first
-   
+
+
    if os.path.exists('sta_beacon/'+sta_pla_file_str[p]):
       #print('sta_beacon/'+sta_pla_file_str[p])
-      sta =  pycdf.CDF('sta_beacon/'+sta_pla_file_str[p])
+      sta_file =  cdflib.CDF('sta_beacon/'+sta_pla_file_str[p])
+      #old version 
+      #sta_file =  pycdf.CDF('sta_beacon/'+sta_pla_file_str[p])
+      
+
    #variables Epoch_MAG: Epoch1: CDF_EPOCH [1875]
    #MAGBField: CDF_REAL4 [8640, 3]
-   sta_time=mdates.date2num(sta['Epoch1'][...])
-   sta_dvr=sta['Velocity_RTN'][...][:,0]
+   sta_time=epoch_to_num(sta_file.varget('Epoch1'))
+   #old version 
+   #sta_time=mdates.date2num(sta_file['Epoch1'][...])
+
+  
+   #das funkt
+   sta_dvr=sta_file.varget('Velocity_RTN')[:,0]
+   
+   #old sta_dvr=sta_file['Velocity_RTN'][...][:,0]
    #sta_dvt=sta['Velocity_RTN'][...][:,1]
    #sta_dvn=sta['Velocity_RTN'][...][:,2]
-   sta_dden=sta['Density'][...]
+   sta_dden=sta_file.varget('Density')
+   #sta_dden=sta_file.varget('Density')#[:,0]
+
    #sta_dtemp=sta['Temperature'][...]
    #missing data are < -1e30
    mis=np.where(sta_time < -1e30)
@@ -977,15 +1013,16 @@ def get_stereoa_data_beacon():
 
    if os.path.exists('sta_beacon/'+sta_mag_file_str[p]):
       #print('sta_beacon/'+sta_mag_file_str[p])
-      sta =  pycdf.CDF('sta_beacon/'+sta_mag_file_str[p])
+      sta_filem =  cdflib.CDF('sta_beacon/'+sta_mag_file_str[p])
+
 
    #variables Epoch_MAG: CDF_EPOCH [8640]
    #MAGBField: CDF_REAL4 [8640, 3]
-   sta_time=mdates.date2num(sta['Epoch_MAG'][...])
+   sta_time=epoch_to_num(sta_filem.varget('Epoch_MAG'))
    #d stands for dummy
-   sta_dbr=sta['MAGBField'][...][:,0]
-   sta_dbt=sta['MAGBField'][...][:,1]
-   sta_dbn=sta['MAGBField'][...][:,2]
+   sta_dbr=sta_filem.varget('MAGBField')[:,0]
+   sta_dbt=sta_filem.varget('MAGBField')[:,1]
+   sta_dbn=sta_filem.varget('MAGBField')[:,2]
 
    #append data to array
    sta_btime=np.append(sta_btime, sta_time)
