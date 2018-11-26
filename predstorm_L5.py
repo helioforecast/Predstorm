@@ -453,7 +453,7 @@ sta_index_future=np.where(np.logical_and(stam.time > dism.time[-1], \
 #initiate figure
 sns.set_context("talk")     
 sns.set_style("darkgrid")  
-fig=plt.figure(1,figsize=(12,10)) #fig=plt.figure(1,figsize=(14,14))
+fig=plt.figure(1,figsize=(14,12)) #fig=plt.figure(1,figsize=(14,14))
 wide=1
 fsize=11
 msize=5
@@ -509,8 +509,6 @@ plt.xlim([plotstart,plotend])
 plt.title('L1 DSCOVR real time solar wind from NOAA SWPC for '+ str(mdates.num2date(timeutc))[0:16]+ ' UT   STEREO-A beacon', fontsize=16)
 plt.xticks(fontsize=fsize)
 plt.yticks(fontsize=fsize)
-
-
 
 
 
@@ -639,34 +637,48 @@ plt.annotate('intense',xy=(dis.time[0]+realtime_plot_leftadd,-100+2),xytext=(dis
 plt.plot_date([dis.time[0], dis.time[-1]+realtime_plot_timeadd], [-250,-250],'--k', alpha=0.3, linewidth=1)
 plt.annotate('super-storm',xy=(dis.time[0]+realtime_plot_leftadd,-250+2),xytext=(dis.time[0]+realtime_plot_leftadd,-250+2),color='k', fontsize=10)
 
+#plt.tight_layout()
+#plt.tight_layout()
 
-plt.tight_layout()
+
+
+
+plt.figtext(0.99,0.05,'C. Moestl, IWF Graz, Austria', fontsize=12, ha='right')
+plt.figtext(0.99,0.025,'https://twitter.com/chrisoutofspace', fontsize=12, ha='right')
+
+plt.figtext(0.01,0.03,' We take no responsibility or liability for the frequency of provision and accuracy of this forecast. We will not be liable for any losses and damages in connection with using the provided information.' , fontsize=8, ha='left')
+
+
 
 print()
 
 #save plot 
 if verification_mode == 0:
- filename=outputdirectory+'/predstorm_v1_realtime_stereo_a_plot_'+timeutcstr[0:10]+'-'+timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.jpg'
+ filename=outputdirectory+'/predstorm_v1_realtime_stereo_a_plot_'+timeutcstr[0:10]+'-'+timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.png'
  filenameeps=outputdirectory+'/predstorm_v1_realtime_stereo_a_plot_'+timeutcstr[0:10]+'-'+timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.eps'
 
- print('Plot saved as jpg and eps:\n', filename)
+ print('Plot saved as png and eps:\n', filename)
  log.write('\n')
- log.write('Plot saved as jpg and eps:\n'+ filename)
+ log.write('Plot saved as png and eps:\n'+ filename)
+ 
+ #plt.savefig(filenameeps)
+ print('real time plot saved as predstorm_real.png')
+ plt.savefig('predstorm_real.png')
+
 
 #flag if verification_mode is used
 if verification_mode > 0:
- filename=outputdirectory+'/predstorm_v1_verify_stereo_a_plot_'+timeutcstr[0:10]+'-'+timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.jpg'
+ filename=outputdirectory+'/predstorm_v1_verify_stereo_a_plot_'+timeutcstr[0:10]+'-'+timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.png'
  filenameeps=outputdirectory+'/predstorm_v1_verify_stereo_a_plot_'+timeutcstr[0:10]+'-'+timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.eps'
- print('Plot saved as jpg and eps:\n', filename)
+
+ print('Plot saved as png and eps:\n', filename)
  log.write('\n')
- log.write('Plot saved as jpg and eps:\n'+ filename)
+ log.write('Plot saved as png and eps:\n'+ filename)
+
 
 
 plt.savefig(filename)
 #plt.savefig(filenameeps)
-
-
-
 
 
 
