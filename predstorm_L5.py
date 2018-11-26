@@ -646,7 +646,8 @@ plt.annotate('super-storm',xy=(dis.time[0]+realtime_plot_leftadd,-250+2),xytext=
 plt.figtext(0.99,0.05,'C. Moestl, IWF Graz, Austria', fontsize=12, ha='right')
 plt.figtext(0.99,0.025,'https://twitter.com/chrisoutofspace', fontsize=12, ha='right')
 
-plt.figtext(0.01,0.03,' We take no responsibility or liability for the frequency of provision and accuracy of this forecast. We will not be liable for any losses and damages in connection with using the provided information.' , fontsize=8, ha='left')
+plt.figtext(0.01,0.03,'We take no responsibility or liability for the frequency of provision and accuracy of this forecast.' , fontsize=8, ha='left')
+plt.figtext(0.01,0.01,'We will not be liable for any losses and damages in connection with using the provided information.' , fontsize=8, ha='left')
 
 
 
