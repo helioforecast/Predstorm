@@ -3,11 +3,13 @@
 # here STEREO-A is used, also suited for data from a 
 # possible future L5 mission or interplanetary CubeSats
 
+# This is the version to be run hourly on a server, changes to original version marked by ****
+
 #Author: C. Moestl, IWF Graz, Austria
 #twitter @chrisoutofspace, https://github.com/cmoestl
 #started April 2018, last update November 2018
 
-#python 3.5.2 with sunpy and seaborn, ipython 4.2.0
+#python 3.5.5 with sunpy and seaborn, ipython 4.2.0
 
 #current status:
 # The code works with STEREO-A beacon and DSCOVR data and downloads STEREO-A beacon files 
@@ -66,9 +68,10 @@
 ######################################### CODE START #####################################
 ##########################################################################################
 
-
+#**** important for server version, otherwise error when making figures
 import matplotlib
 matplotlib.use('Agg') 
+#*******
 
 import scipy.io
 import os
