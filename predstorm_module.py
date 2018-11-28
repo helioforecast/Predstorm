@@ -30,6 +30,7 @@ import cdflib
 # get_omni_data
 # convert_GSE_to_GSM
 # convert_RTN_to_GSE_sta_l1
+# make_kp_from_wind
 # make_dst_from_wind
 # get_stereoa_data_beacon
 # get_dscovr_data_real
@@ -471,8 +472,33 @@ def convert_RTN_to_GSE_sta_l1(cbr,cbt,cbn,ctime,pos_stereo_heeq,pos_time_num):
  
  
  
+#***********not fully sure if correct; problem with negative values after sin operation **8/3 -> imaginary  
+def make_kp_from_wind(btot_in,by_in,bz_in,v_in,density_in):
  
+ #Newell et al. 2008
+ #https://onlinelibrary.wiley.com/resolve/doi?DOI=10.1029/2010SW000604
+ #see also https://agupubs.onlinelibrary.wiley.com/doi/full/10.1002/swe.20053
+
+ #Here the IMF clock angle is defined by qc = arctan(By/Bz). 
+ thetac= np.arctan2(by_in,bz_in)
+ #***is the abs in sin ok???
+ kp=0.05+2.244*1e-4*(v_in**(4/3)*btot_in**(2/3)*(abs(np.sin(thetac/2)))**(8/3))+2.844*1e-6*density_in**0.5*v_in**2 
  
+ #print(np.round(kp,1))
+
+ return kp
+
+
+
+
+
+
+#*************
+def aurora_power(btot_in,by_in,bz_in,v_in,density_in):
+
+ #newell et al. 2008 JGR
+ return 0
+
 
   
 def make_dst_from_wind(btot_in,bx_in, by_in,bz_in,v_in,vx_in,density_in,time_in):
@@ -956,6 +982,7 @@ def get_stereoa_data_beacon():
  sta_br=np.zeros(0)  
  sta_bt=np.zeros(0)  
  sta_bn=np.zeros(0) 
+
 
 
  for p in np.arange(0,14):

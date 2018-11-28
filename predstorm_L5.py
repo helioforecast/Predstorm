@@ -26,6 +26,10 @@
 # - check coordinate conversions again, GSE to GSM is ok
 # - deal with CMEs at STEREO, because systematically degrades prediction results
 # - add metrics ROC for verification etc.
+# - DSCOVR data archive:
+# https://www.ngdc.noaa.gov/dscovr/portal/index.html#/download/1543017600000;1543363199999
+# https://www.ngdc.noaa.gov/next-web/docs/guide/catalog.html#dscovrCatalog
+
 
 # future larger steps:
 # (1) add the semi-supervised learning algorithm from the predstorm_L1 program; e.g. with older
@@ -88,6 +92,7 @@ from predstorm_module import get_stereoa_data_beacon
 from predstorm_module import time_to_num_cat
 from predstorm_module import converttime
 from predstorm_module import make_dst_from_wind
+from predstorm_module import make_kp_from_wind
 from predstorm_module import getpositions
 from predstorm_module import convert_GSE_to_GSM
 from predstorm_module import sphere2cart
@@ -173,8 +178,6 @@ if os.path.isdir('sta_beacon') == False: os.mkdir('sta_beacon')
 
 
 
-
-
 ######################################## MAIN PROGRAM ####################################
 
 #get current directory
@@ -197,8 +200,18 @@ print('------------------------------------------------------------------------'
 
 
 
-
-
+#SDO image
+#download latest 193 PFSS to current directory
+#maybe make your own at some point: https://github.com/antyeates1983/pfss
+sdo_latest='https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_0193pfss.jpg'
+try: urllib.request.urlretrieve(sdo_latest,'latest_1024_0193pfss.jpg')
+except urllib.error.URLError as e:
+       print(' ', sdo.latest,' ',e.reason)
+#convert to png       
+os.system('/Users/chris/bin/ffmpeg -i latest_1024_0193pfss.jpg latest_1024_0193pfss.png -loglevel quiet -y')
+print('downloaded SDO latest_1024_0193pfss.jpg converted to png')
+#delete jpg
+os.system('rm latest_1024_0193pfss.jpg')
 
 ################################ (1) GET DATA ############################################
 
@@ -413,17 +426,21 @@ if sum(np.isnan(com_vr)) >0:
  com_vr=np.interp(com_time,com_time[good],com_vr[good])
 
 
-##################### (2d) calculate Dst for combined data ###############################
+##################### (2d) calculate Dst/Kp for combined data ###############################
 
-print('Make Dst prediction for L1 calculated from time-shifted STEREO-A beacon data.')
+print('Make Dst/Kp prediction for L1 calculated from time-shifted STEREO-A beacon data.')
 log.write('\n')
-log.write('Make Dst prediction for L1 calculated from time-shifted STEREO-A beacon data.')
+log.write('Make Dst/Kp prediction for L1 calculated from time-shifted STEREO-A beacon data.')
 log.write('\n')
 
 #This function works as result=make_dst_from_wind(btot_in,bx_in, by_in,bz_in,v_in,vx_in,density_in,time_in):
 # ******* PROBLEM: USES vr twice (should be V and Vr in Temerin/Li 2002), take V from STEREO-A data too
 [dst_burton, dst_obrien, dst_temerin_li]=make_dst_from_wind(com_btot, com_bx,com_by, \
                                          com_bz, com_vr,com_vr, com_den, com_time)
+
+#make_kp_from_wind(btot_in,by_in,bz_in,v_in,density_in) and round to 1 decimal
+kp_newell=np.round(make_kp_from_wind(com_btot,com_by,com_bz,com_vr, com_den),1)
+
 
 #get NOAA Dst for comparison 
 [dst_time,dst]=get_noaa_dst()
@@ -701,8 +718,8 @@ filename_save=outputdirectory+'/savefiles/predstorm_v1_realtime_stereo_a_save_'+
               timeutcstr[0:10]+'-'+timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.p'
 
 #make recarrays
-combined=np.rec.array([com_time,dst_temerin_li,com_btot,com_bx,com_by,com_bz,com_den,com_vr], \
-dtype=[('time','f8'),('dst_temerin_li','f8'),('btot','f8'),\
+combined=np.rec.array([com_time,dst_temerin_li,kp_newell,com_btot,com_bx,com_by,com_bz,com_den,com_vr], \
+dtype=[('time','f8'),('dst_temerin_li','f8'),('kp_newell','f8'),('btot','f8'),\
         ('bx','f8'),('by','f8'),('bz','f8'),('den','f8'),('vr','f8')])
         
 pickle.dump(combined, open(filename_save, 'wb') )
@@ -713,7 +730,7 @@ log.write('PICKLE: Variables saved in: \n'+ filename_save+ '\n')
 
 filename_save=outputdirectory+'/savefiles/predstorm_v1_realtime_stereo_a_save_'+ \
               timenowstr[0:10]+'-'+timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.txt'
-vartxtout=np.zeros([np.size(com_time),8])
+vartxtout=np.zeros([np.size(com_time),9])
 
 #com_time_str= [''  for com_time_str in np.arange(10)]
 #for i in np.arange(size(com_time)):
@@ -722,13 +739,14 @@ vartxtout=np.zeros([np.size(com_time),8])
 #vartxtout[:,0]=com_time_str
 vartxtout[:,0]=com_time
 vartxtout[:,1]=dst_temerin_li
-vartxtout[:,2]=com_btot
-vartxtout[:,3]=com_bx
-vartxtout[:,4]=com_by
-vartxtout[:,5]=com_bz
-vartxtout[:,6]=com_den
-vartxtout[:,7]=com_vr
-np.savetxt(filename_save, vartxtout, delimiter='',fmt='%8.6f %5.0i %5.1f %5.1f %5.1f %5.1f %5.1f %5.0i') 
+vartxtout[:,2]=kp_newell
+vartxtout[:,3]=com_btot
+vartxtout[:,4]=com_bx
+vartxtout[:,5]=com_by
+vartxtout[:,6]=com_bz
+vartxtout[:,7]=com_den
+vartxtout[:,8]=com_vr
+np.savetxt(filename_save, vartxtout, delimiter='',fmt='%8.6f %5.0i %5.1f %5.1f %5.1f %5.1f %5.1f %5.1f %5.0i') 
 
 print('TXT: Variables saved in: \n', filename_save, ' \n ')
 log.write('TXT: Variables saved in: \n'+ filename_save+ '\n')
