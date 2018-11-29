@@ -5,7 +5,6 @@ import scipy
 import sunpy
 import copy	
 import matplotlib.dates as mdates
-#import ephem
 import datetime
 import urllib
 import json
@@ -31,6 +30,7 @@ import cdflib
 # convert_GSE_to_GSM
 # convert_RTN_to_GSE_sta_l1
 # make_kp_from_wind
+# aurora_power
 # make_dst_from_wind
 # get_stereoa_data_beacon
 # get_dscovr_data_real
@@ -470,39 +470,52 @@ def convert_RTN_to_GSE_sta_l1(cbr,cbt,cbn,ctime,pos_stereo_heeq,pos_time_num):
 
  return (bxgse,bygse,bzgse)
  
+
  
- 
-#***********not fully sure if correct; problem with negative values after sin operation **8/3 -> imaginary  
 def make_kp_from_wind(btot_in,by_in,bz_in,v_in,density_in):
+ 
+ 
+ #speed v_in [km/s]
+ #density [cm-3]
+ #B in [nT]
  
  #Newell et al. 2008
  #https://onlinelibrary.wiley.com/resolve/doi?DOI=10.1029/2010SW000604
  #see also https://agupubs.onlinelibrary.wiley.com/doi/full/10.1002/swe.20053
 
- #Here the IMF clock angle is defined by qc = arctan(By/Bz). 
- thetac= np.arctan2(by_in,bz_in)
- #***is the abs in sin ok???
- kp=0.05+2.244*1e-4*(v_in**(4/3)*btot_in**(2/3)*(abs(np.sin(thetac/2)))**(8/3))+2.844*1e-6*density_in**0.5*v_in**2 
+ #The IMF clock angle is defined by thetac = arctan(By/Bz)
+ #this angle is 0° pointing toward north (+Z), 180° toward south (-Z); 
+ #its negative for the -Y hemisphere, positive for +Y hemisphere
+ #thus southward pointing fields have angles abs(thetac)> 90 
+ #the absolute value for thetac needs to be taken otherwise the fractional power (8/3)
+ #will lead to imaginary values
  
- #print(np.round(kp,1))
-
+ thetac= abs(np.arctan2(by_in,bz_in)) #in radians
+ merging_rate=v_in**(4/3)*btot_in**(2/3)*(np.sin(thetac/2)**(8/3)) #flux per time
+ kp=0.05+2.244*1e-4*(merging_rate)+2.844*1e-6*density_in**0.5*v_in**2 
+ 
  return kp
 
 
 
 
+def make_aurora_power_from_wind(btot_in,by_in,bz_in,v_in,density_in):
 
+ #speed v_in [km/s]
+ #density [cm-3]
+ #B in [nT]
 
-#*************
-def aurora_power(btot_in,by_in,bz_in,v_in,density_in):
+ #newell et al. 2008 JGR, doi:10.1029/2007JA012825, page 7 
+ thetac= abs(np.arctan2(by_in,bz_in)) #in radians
+ merging_rate=v_in**(4/3)*btot_in**(2/3)*(np.sin(thetac/2)**(8/3)) #flux per time
+ #unit is in GW
+ aurora_power=-4.55+2.229*1e-3*(merging_rate)+1.73*1e-5*density_in**0.5*v_in**2
 
- #newell et al. 2008 JGR
- return 0
+ return aurora_power
 
 
   
 def make_dst_from_wind(btot_in,bx_in, by_in,bz_in,v_in,vx_in,density_in,time_in):
-
  
  #this makes from synthetic or observed solar wind the Dst index	
  #all nans in the input data must be removed prior to function call
