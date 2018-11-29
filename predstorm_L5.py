@@ -205,15 +205,21 @@ print('------------------------------------------------------------------------'
 #SDO image
 #download latest 193 PFSS to current directory
 #maybe make your own at some point: https://github.com/antyeates1983/pfss
-sdo_latest='https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_0193pfss.jpg'
-try: urllib.request.urlretrieve(sdo_latest,'latest_1024_0193pfss.jpg')
+#sdo_latest='https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_0193pfss.jpg'
+sdo_latest='https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_0193.jpg'
+
+
+try: urllib.request.urlretrieve(sdo_latest,'latest_1024_0193.jpg')
 except urllib.error.URLError as e:
        print(' ', sdo.latest,' ',e.reason)
-#convert to png       
-os.system('/Users/chris/bin/ffmpeg -i latest_1024_0193pfss.jpg latest_1024_0193pfss.png -loglevel quiet -y')
-print('downloaded SDO latest_1024_0193pfss.jpg converted to png')
+#convert to png    
+ 
+#***check ffmpeg for existence, otherwise skip
+   
+os.system('/Users/chris/bin/ffmpeg -i latest_1024_0193.jpg latest_1024_0193.png -loglevel quiet -y')
+print('downloaded SDO latest_1024_0193.jpg converted to png')
 #delete jpg
-os.system('rm latest_1024_0193pfss.jpg')
+os.system('rm latest_1024_0193.jpg')
 
 ################################ (1) GET DATA ############################################
 
