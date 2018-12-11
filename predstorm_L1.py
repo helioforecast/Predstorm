@@ -103,7 +103,6 @@ import seaborn as sns
 import sunpy.time
 
 from predstorm_module import make_dst_from_wind
-from predstorm_module import sunriseset
 from predstorm_module import get_omni_data
 from predstorm_module import get_dscovr_data_real
 from predstorm_module import get_noaa_dst
@@ -929,6 +928,7 @@ plt.annotate('super-storm',xy=(timesnp[0],-250+2),xytext=(timesnp[0],-250+2),col
 #plt.plot_date([timesnp[0], timesfp[-1]], [-1000,-1000],'--k', alpha=0.8, linewidth=1)
 #plt.annotate('Carrington event',xy=(timesnp[0],-1000+2),xytext=(timesnp[0],-1000+2),color='k', fontsize=12)
 
+"""
 
 plt.annotate('Horizontal lines are sunset to sunrise intervals ',xy=(timesnp[0],45),xytext=(timesnp[0],45),color='k', fontsize=10)
 
@@ -972,7 +972,6 @@ if iceprevset > iceprevrise:
  
 
 
-
 #NEW ZEALAND
 if dunprevset < dunprevrise:
  plt.plot_date([mdates.date2num(dunprevset), mdates.date2num(dunprevrise)], [nightlevels_dunedin,nightlevels_dunedin],'-k', alpha=0.8, linewidth=1)
@@ -1007,7 +1006,7 @@ if edprevset > edprevrise:
 
 #********** add level for aurora as rectangle plots
 
-
+"""
 
 #outputs
 
