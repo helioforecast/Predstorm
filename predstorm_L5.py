@@ -26,10 +26,6 @@
 # - check coordinate conversions again, GSE to GSM is ok
 # - deal with CMEs at STEREO, because systematically degrades prediction results
 # - add metrics ROC for verification etc.
-# - DSCOVR data archive:
-# https://www.ngdc.noaa.gov/dscovr/portal/index.html#/download/1543017600000;1543363199999
-# https://www.ngdc.noaa.gov/next-web/docs/guide/catalog.html#dscovrCatalog
-
 
 # future larger steps:
 # (1) add the semi-supervised learning algorithm from the predstorm_L1 program; e.g. with older
