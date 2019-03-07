@@ -1252,6 +1252,7 @@ def get_stereoa_data_beacon():
 
    #variables Epoch_MAG: CDF_EPOCH [8640]
    #MAGBField: CDF_REAL4 [8640, 3]
+   #pdb.set_trace()
    sta_time=epoch_to_num(sta_filem.varget('Epoch_MAG'))
    #d stands for dummy
    sta_dbr=sta_filem.varget('MAGBField')[:,0]

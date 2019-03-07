@@ -120,14 +120,15 @@ lines = open(inputfilename).read().splitlines()
 #whether to show interpolated data points on the DSCOVR input plot
 showinterpolated=int(lines[3])
 
-
+########## These parameters are for the Analogue Ensemble predictions (as in predstorm_L1.py)
+#and are currently not used
 #the time interval for both the observed and predicted wind 
 #Delta T in hours, start with 24 hours here (covers 1 night of aurora)
 deltat=int(lines[9])
-
 #take 4 solar minimum years as training data for 2018
 trainstart=lines[12]
 trainend=lines[13]
+###########
 
 #synodic solar rotation sun_syn=26.24 #days
 #carrington rotation 26 deg latitude: 27.28 days
@@ -198,18 +199,17 @@ print('------------------------------------------------------------------------'
 
 
 
-#SDO image
+################### get latest SDO coronal hole image
 #download latest 193 PFSS to current directory
 #maybe make your own at some point: https://github.com/antyeates1983/pfss
+#also in heliopy!
 #sdo_latest='https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_0193pfss.jpg'
+
 sdo_latest='https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_0193.jpg'
-
-
 try: urllib.request.urlretrieve(sdo_latest,'latest_1024_0193.jpg')
 except urllib.error.URLError as e:
-       print(' ', sdo.latest,' ',e.reason)
+ print(' ', sdo.latest,' ',e.reason)
 #convert to png    
- 
 #***check ffmpeg for existence, otherwise skip
    
 os.system('/Users/chris/bin/ffmpeg -i latest_1024_0193.jpg latest_1024_0193.png -loglevel quiet -y')
@@ -720,7 +720,7 @@ plt.savefig(filename)
 ###################################### (4) WRITE OUT RESULTS AND VARIABLES ###############
 
 
-############# (4a) write prediction variables (plot) to pickle and txt file
+############# (4a) write prediction variables (plot) to pickle and txt ASCII file
 
 filename_save=outputdirectory+'/savefiles/predstorm_v1_realtime_stereo_a_save_'+ \
               timeutcstr[0:10]+'-'+timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.p'
@@ -738,29 +738,45 @@ log.write('PICKLE: Variables saved in: \n'+ filename_save+ '\n')
 
 filename_save=outputdirectory+'/savefiles/predstorm_v1_realtime_stereo_a_save_'+ \
               timenowstr[0:10]+'-'+timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.txt'
-vartxtout=np.zeros([np.size(com_time),10])
-
-#com_time_str= [''  for com_time_str in np.arange(10)]
-#for i in np.arange(size(com_time)):
-#   com_time_str[i]=str(mdates.num2date(com_time[i]))[0:16]
 
 
-#vartxtout[:,0]=com_time_str
-vartxtout[:,0]=com_time
-vartxtout[:,1]=com_btot
-vartxtout[:,2]=com_bx
-vartxtout[:,3]=com_by
-vartxtout[:,4]=com_bz
-vartxtout[:,5]=com_den
-vartxtout[:,6]=com_vr
-vartxtout[:,7]=dst_temerin_li
-vartxtout[:,8]=kp_newell
-vartxtout[:,9]=aurora_power
+########## ASCII file
+
+vartxtout=np.zeros([np.size(com_time),16])
+
+#create array of time strings
+#com_time_str= [''  for com_time_str in np.arange(np.size(com_time))]
+
+#get date in ascii
+for i in np.arange(np.size(com_time)):
+   #for format 2019-03-13 23:59
+   #com_time_str[i]=str(mdates.num2date(com_time[i]))[0:16]
+   #com_time_str[i]=time_dummy.strftime("%Y %m %d %H %M %M")
+
+   time_dummy=mdates.num2date(com_time[i]) 
+   vartxtout[i,0]=time_dummy.year  
+   vartxtout[i,1]=time_dummy.month  
+   vartxtout[i,2]=time_dummy.day 
+   vartxtout[i,3]=time_dummy.hour  
+   vartxtout[i,4]=time_dummy.minute  
+   vartxtout[i,5]=time_dummy.second
+
+
+vartxtout[:,6]=com_time
+vartxtout[:,7]=com_btot
+vartxtout[:,8]=com_bx
+vartxtout[:,9]=com_by
+vartxtout[:,10]=com_bz
+vartxtout[:,11]=com_den
+vartxtout[:,12]=com_vr
+vartxtout[:,13]=dst_temerin_li
+vartxtout[:,14]=kp_newell
+vartxtout[:,15]=aurora_power
 
 #description
 #np.savetxt(filename_save, ['time     Dst [nT]     Kp     aurora [GW]   B [nT]    Bx [nT]     By [nT]     Bz [nT]    N [ccm-3]   V [km/s]    ']) 
-np.savetxt(filename_save, vartxtout, delimiter='',fmt='%8.6f %5.1f %5.1f %5.1f %5.1f   %7.0i %7.0i   %5.0f %5.1f %5.1f', \
-           header='time         B[nT]  Bx    By    Bz   N[ccm-3] V[km/s] Dst[nT]    Kp  aurora [GW]') 
+np.savetxt(filename_save, vartxtout, delimiter='',fmt='%4i %2i %2i %2i %2i %2i %10.6f %5.1f %5.1f %5.1f %5.1f   %7.0i %7.0i   %5.0f %5.1f %5.1f', \
+           header='        time      matplotlib_time B[nT] Bx   By     Bz   N[ccm-3] V[km/s] Dst[nT]   Kp   aurora [GW]') 
 
 
 
