@@ -4,10 +4,10 @@
 # possible future L5 mission or interplanetary CubeSats
 
 #Author: C. Moestl, IWF Graz, Austria
-#twitter @chrisoutofspace, https://github.com/cmoestl
+#twitter @chrisoutofspace, https://github.com/cmoestl/predstorm
 #started April 2018, last update November 2018
 
-#python 3.5.5 with sunpy and seaborn, ipython 4.2.0
+#python 3.5.5 with sunpy and seaborn
 
 #current status:
 # The code works with STEREO-A beacon and DSCOVR data and downloads STEREO-A beacon files 
@@ -16,13 +16,12 @@
 
 # things to add: 
 
-# - make verification mode new, add manual dst offset
+# - make verification mode new (= "lab" mode)
+# - add manual dst offset
 # - add error bars for the Temerin/Li Dst model with 1 and 2 sigma
 # - fill data gaps from STEREO-A beacon data with reasonable Bz fluctuations etc.
 #   based on a thorough assessment of errors with the ... stereob_errors program
 # - add timeshifts from L1 to Earth
-# - add approximate levels of Dst for each location to see the aurora (depends on season)
-#   taken from correlations of ovation prime, SuomiNPP data in NASA worldview and Dst 
 # - check coordinate conversions again, GSE to GSM is ok
 # - deal with CMEs at STEREO, because systematically degrades prediction results
 # - add metrics ROC for verification etc.
@@ -136,10 +135,10 @@ trainend=lines[13]
 sun_syn=float(lines[16]) #days
 
 #how far to see in the future with STEREO-A data to the right of the current time
-realtime_plot_timeadd=int(lines[19])
+realtime_plot_timeadd=float(lines[19])
 
 #to shift the left beginning of the plot
-realtime_plot_leftadd=int(lines[22])
+realtime_plot_leftadd=float	(lines[22])
 
 
 #to get older data for plotting Burton/OBrien Dst for verification
@@ -448,7 +447,8 @@ kp_newell=np.round(make_kp_from_wind(com_btot,com_by,com_bz,com_vr, com_den),1)
 
 #make_kp_from_wind(btot_in,by_in,bz_in,v_in,density_in) and round to 2 decimals in GW
 aurora_power=np.round(make_aurora_power_from_wind(com_btot,com_by,com_bz,com_vr, com_den),2)
-
+#make sure that no values are < 0
+aurora_power[np.where(aurora_power < 0)]=0.0
 
 #get NOAA Dst for comparison 
 [dst_time,dst]=get_noaa_dst()
@@ -483,8 +483,8 @@ wide=1
 fsize=11
 msize=5
 
-plotstart=np.floor(dism.time[-1]-realtime_plot_leftadd)
-plotend=np.floor(dis.time[-1]+realtime_plot_timeadd)
+plotstart=dism.time[-1]-realtime_plot_leftadd
+plotend=dis.time[-1]+realtime_plot_timeadd
 
 
 

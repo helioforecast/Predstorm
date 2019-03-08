@@ -140,11 +140,10 @@ trainend=lines[13]
 sun_syn=float(lines[16]) #days
 
 #how far to see in the future with STEREO-A data to the right of the current time
-realtime_plot_timeadd=int(lines[19])
+realtime_plot_timeadd=float(lines[19])
 
 #to shift the left beginning of the plot
-realtime_plot_leftadd=int(lines[22])
-
+realtime_plot_leftadd=float	(lines[22])
 
 #to get older data for plotting Burton/OBrien Dst for verification
 verification_mode=int(lines[25])
@@ -456,9 +455,10 @@ log.write('\n')
 #make_kp_from_wind(btot_in,by_in,bz_in,v_in,density_in) and round to 1 decimal
 kp_newell=np.round(make_kp_from_wind(com_btot,com_by,com_bz,com_vr, com_den),1)
 
-
 #make_kp_from_wind(btot_in,by_in,bz_in,v_in,density_in) and round to 2 decimals in GW
 aurora_power=np.round(make_aurora_power_from_wind(com_btot,com_by,com_bz,com_vr, com_den),2)
+#make sure that no values are < 0
+aurora_power[np.where(aurora_power < 0)]=0.0
 
 #get NOAA Dst for comparison 
 [dst_time,dst]=get_noaa_dst()
@@ -493,8 +493,8 @@ wide=1
 fsize=11
 msize=5
 
-plotstart=np.floor(dism.time[-1]-realtime_plot_leftadd)
-plotend=np.floor(dis.time[-1]+realtime_plot_timeadd)
+plotstart=dism.time[-1]-realtime_plot_leftadd
+plotend=dis.time[-1]+realtime_plot_timeadd
 
 
 
