@@ -316,7 +316,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, Dst, dst_label=
         myformat = mdates.DateFormatter('%b %d %Hh')
         ax.xaxis.set_major_formatter(myformat)
         
-        # Verticle line for now:
+        # Vertical line for NOW:
         ax.plot_date([timeutc,timeutc],[-2000,2000],'-k', linewidth=2)
     
     # Liability text:
@@ -347,6 +347,52 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, Dst, dst_label=
     log.write('\n')
     log.write('Plot saved as png:\n'+ filename)
     
+
+def return_stereoa_details(positions, DSCOVR_lasttime):
+    """Returns a string describing STEREO-A's current whereabouts.
+    
+    Parameters
+    ==========
+    positions : ???
+        Array containing spacecraft positions at given time.
+    DSCOVR_lasttime : float
+        Date of last DSCOVR measurements in number form.
+
+    Returns
+    =======
+    stereostr : str
+        Nicely formatted string with info on STEREO-A's location with
+        with respect to Earth and L5/L1.
+    """
+    
+    # Find index of current position:
+    pos_time_num = time_to_num_cat(positions.time)
+    pos_time_now_ind = np.where(timenow < pos_time_num)[0][0]
+    sta_r=positions.sta[0][pos_time_now_ind]
+    
+    # Get longitude and latitude
+    sta_long_heeq = positions.sta[1][pos_time_now_ind]*180./np.pi
+    sta_lat_heeq = positions.sta[2][pos_time_now_ind]*180./np.pi
+    
+    # Define time lag from STEREO-A to Earth 
+    timelag_sta_l1=abs(sta_long_heeq)/(360./sun_syn)
+    arrival_time_l1_sta=DSCOVR_lasttime + timelag_sta_l1
+    arrival_time_l1_sta_str=str(mdates.num2date(arrival_time_l1_sta))
+    
+    stereostr = ''
+    stereostr += 'STEREO-A HEEQ longitude wrt Earth is {:.1f} degrees.\n'.format(sta_long_heeq)
+    stereostr += 'This is {:.2f} times the location of L5.\n'.format(abs(sta_long_heeq)/60.)
+    stereostr += 'STEREO-A HEEQ latitude is {:.1f} degrees.\n'.format(sta_lat_heeq) 
+    stereostr += 'Earth L1 HEEQ latitude is {:.1f} degrees.\n'.format(positions.earth_l1[2][pos_time_now_ind]*180./np.pi,1)
+    stereostr += 'Difference HEEQ latitude is {:.1f} degrees.\n'.format(abs(
+                sta_lat_heeq-positions.earth_l1[2][pos_time_now_ind]*180./np.pi))
+    stereostr += 'STEREO-A heliocentric distance is {:.3f} AU.\n'.format(sta_r)
+    stereostr += 'The solar rotation period with respect to Earth is chosen as {:.2f} days.\n'.format(sun_syn) 
+    stereostr += 'This is a time lag of {:.2f} days.\n'.format(timelag_sta_l1)
+    stereostr += 'Arrival time of now STEREO-A wind at L1: {}\n'.format(arrival_time_l1_sta_str[0:16])
+    
+    return stereostr
+
 
 #========================================================================================
 #--------------------------------- MAIN PROGRAM -----------------------------------------
@@ -439,9 +485,6 @@ pos_time_num=time_to_num_cat(pos.time)
 #take position of STEREO-A for time now from position file
 pos_time_now_ind=np.where(timenow < pos_time_num)[0][0]
 sta_r=pos.sta[0][pos_time_now_ind]
-#get longitude and latitude
-sta_long_heeq=pos.sta[1][pos_time_now_ind]*180/np.pi
-sta_lat_heeq=pos.sta[2][pos_time_now_ind]*180/np.pi
 
 
 print()
@@ -456,6 +499,10 @@ print()
 
 #------------------------ (2a)  Time lag for solar rotation ------------------------------
 
+# Get longitude and latitude
+sta_long_heeq = pos.sta[1][pos_time_now_ind]*180./np.pi
+sta_lat_heeq = pos.sta[2][pos_time_now_ind]*180./np.pi
+
 # define time lag from STEREO-A to Earth 
 timelag_sta_l1=abs(sta_long_heeq)/(360/sun_syn) #days
 arrival_time_l1_sta=dis.time[-1]+timelag_sta_l1
@@ -465,33 +512,15 @@ arrival_time_l1_sta_str=str(mdates.num2date(arrival_time_l1_sta))
 #arrival_feature_sta_str=str(mdates.num2date(feature_sta+timelag_sta_l1))
 
 #print a few important numbers for current prediction
-print('STEREO-A HEEQ longitude to Earth is ', round(sta_long_heeq,1),' degree.') 
-print('This is ', round(abs(sta_long_heeq)/60,2),' times the location of L5.') 
-print('STEREO-A HEEQ latitude is ', round(sta_lat_heeq,1),' degree.') 
-print('Earth L1 HEEQ latitude is ', \
-       round(pos.earth_l1[2][pos_time_now_ind]*180/np.pi,1),' degree')
-print('Difference HEEQ latitude is ', \
-       abs(round(sta_lat_heeq-pos.earth_l1[2][pos_time_now_ind]*180/np.pi,1)),' degree')
-print('STEREO-A heliocentric distance is ', round(sta_r,3),' AU.') 
-print('The Sun rotation period with respect to Earth is chosen as ', sun_syn,' days') 
-print('This is a time lag of ', round(timelag_sta_l1,2), ' days.') 
-print('Arrival time of now STEREO-A wind at L1:',arrival_time_l1_sta_str[0:16])
+
+stereostr = return_stereoa_details(pos, dis.time[-1])
+print(stereostr)
 
 log.write('\n')
 log.write('\n')
-log.write('STEREO-A HEEQ longitude to Earth is '+ str(round(sta_long_heeq,1))+' degree.   \
-           \nThis is '+ str(round(abs(sta_long_heeq)/60,2))+' times the location of L5.   \
-           \nSTEREO-A HEEQ latitude is '+str( round(sta_lat_heeq,1))+' degree.                 \
-           \nEarth L1 HEEQ latitude is '+str(round(pos.earth_l1[2][pos_time_now_ind]*180/np.pi,1))+' degree. \
-           \nDifference HEEQ latitude is '+str(abs(round(sta_lat_heeq-pos.earth_l1[2][pos_time_now_ind]*180/np.pi,1)))+' degree. \
-           \nSTEREO-A heliocentric distance is '+ str(round(sta_r,3))+' AU. \
-           \nThe Sun rotation period with respect to Earth is chosen as '+ str(sun_syn)+' days. \
-           \nThis is a time lag of '+str( round(timelag_sta_l1,2))+ ' days. \
-           \nArrival time of now STEREO-A wind at L1: '+str(arrival_time_l1_sta_str[0:16]))
+log.write(stereostr)
 log.write('\n')
 log.write('\n')
-
-
 
 #------------------------ (2b) Corrections to time-shifted STEREO-A data ----------------
 
