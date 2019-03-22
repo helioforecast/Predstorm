@@ -762,548 +762,530 @@ def make_dst_from_wind(btot_in,bx_in, by_in,bz_in,v_in,vx_in,density_in,time_in)
   
  return (dstcalc1,dstcalc2, dst_temerin_li_out)   
  
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
+
 
 def get_dscovr_data_real():
+    """
+    Downloads and returns DSCOVR data 
+    data from http://services.swpc.noaa.gov/products/solar-wind/
+    if needed replace with ACE
+    http://legacy-www.swpc.noaa.gov/ftpdir/lists/ace/
+    get 3 or 7 day data
+    url_plasma='http://services.swpc.noaa.gov/products/solar-wind/plasma-3-day.json'
+    url_mag='http://services.swpc.noaa.gov/products/solar-wind/mag-3-day.json'
+    
+    Parameters
+    ==========
+    None
 
- #data from http://services.swpc.noaa.gov/products/solar-wind/
- #if needed replace with ACE
- #http://legacy-www.swpc.noaa.gov/ftpdir/lists/ace/
- #get 3 or 7 day data
- #url_plasma='http://services.swpc.noaa.gov/products/solar-wind/plasma-3-day.json'
- #url_mag='http://services.swpc.noaa.gov/products/solar-wind/mag-3-day.json'
+    Returns
+    =======
+    (data_minutes, data_hourly)
+    data_minutes : np.rec.array
+         Array of interpolated minute data with format:
+         dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
+            ('speed','f8'),('den','f8'),('temp','f8')]
+    data_hourly : np.rec.array
+         Array of interpolated hourly data with format:
+         dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
+            ('speed','f8'),('den','f8'),('temp','f8')]
+    """
+    
+    url_plasma='http://services.swpc.noaa.gov/products/solar-wind/plasma-7-day.json'
+    url_mag='http://services.swpc.noaa.gov/products/solar-wind/mag-7-day.json'
 
- url_plasma='http://services.swpc.noaa.gov/products/solar-wind/plasma-7-day.json'
- url_mag='http://services.swpc.noaa.gov/products/solar-wind/mag-7-day.json'
+    #download, see URLLIB https://docs.python.org/3/howto/urllib2.html
+    with urllib.request.urlopen(url_plasma) as url:
+        pr = json.loads	(url.read().decode())
+    with urllib.request.urlopen(url_mag) as url:
+        mr = json.loads(url.read().decode())
+    print('DSCOVR plasma data available')
+    print(pr[0])
+    print('DSCOVR MAG data available')
+    print(mr[0])
+    #kill first row which stems from the description part
+    pr=pr[1:]
+    mr=mr[1:]
 
- #download, see URLLIB https://docs.python.org/3/howto/urllib2.html
- with urllib.request.urlopen(url_plasma) as url:
-    pr = json.loads	(url.read().decode())
- with urllib.request.urlopen(url_mag) as url:
-    mr = json.loads(url.read().decode())
- print('DSCOVR plasma data available')
- print(pr[0])
- print('DSCOVR MAG data available')
- print(mr[0])
- #kill first row which stems from the description part
- pr=pr[1:]
- mr=mr[1:]
+    #define variables 
+    #plasma
+    rptime_str=['']*len(pr)
+    rptime_num=np.zeros(len(pr))
+    rpv=np.zeros(len(pr))
+    rpn=np.zeros(len(pr))
+    rpt=np.zeros(len(pr))
 
- #define variables 
- #plasma
- rptime_str=['']*len(pr)
- rptime_num=np.zeros(len(pr))
- rpv=np.zeros(len(pr))
- rpn=np.zeros(len(pr))
- rpt=np.zeros(len(pr))
+    #mag
+    rbtime_str=['']*len(mr)
+    rbtime_num=np.zeros(len(mr))
+    rbtot=np.zeros(len(mr))
+    rbzgsm=np.zeros(len(mr))
+    rbygsm=np.zeros(len(mr))
+    rbxgsm=np.zeros(len(mr))
 
- #mag
- rbtime_str=['']*len(mr)
- rbtime_num=np.zeros(len(mr))
- rbtot=np.zeros(len(mr))
- rbzgsm=np.zeros(len(mr))
- rbygsm=np.zeros(len(mr))
- rbxgsm=np.zeros(len(mr))
+    #convert variables to numpy arrays
+    #mag
+    for k in np.arange(0,len(mr),1):
 
- #convert variables to numpy arrays
- #mag
- for k in np.arange(0,len(mr),1):
+        #handle missing data, they show up as None from the JSON data file
+        if mr[k][6] is None: mr[k][6]=np.nan
+        if mr[k][3] is None: mr[k][3]=np.nan
+        if mr[k][2] is None: mr[k][2]=np.nan
+        if mr[k][1] is None: mr[k][1]=np.nan
 
-  #handle missing data, they show up as None from the JSON data file
-  if mr[k][6] is None: mr[k][6]=np.nan
-  if mr[k][3] is None: mr[k][3]=np.nan
-  if mr[k][2] is None: mr[k][2]=np.nan
-  if mr[k][1] is None: mr[k][1]=np.nan
+        rbtot[k]=float(mr[k][6])
+        rbzgsm[k]=float(mr[k][3])
+        rbygsm[k]=float(mr[k][2])
+        rbxgsm[k]=float(mr[k][1])
 
-  rbtot[k]=float(mr[k][6])
-  rbzgsm[k]=float(mr[k][3])
-  rbygsm[k]=float(mr[k][2])
-  rbxgsm[k]=float(mr[k][1])
-
-  #convert time from string to datenumber
-  rbtime_str[k]=mr[k][0][0:16]
-  rbtime_num[k]=mdates.date2num(sunpy.time.parse_time(rbtime_str[k]))
- 
- #plasma
- for k in np.arange(0,len(pr),1):
-  if pr[k][2] is None: pr[k][2]=np.nan
-  rpv[k]=float(pr[k][2]) #speed
-  rptime_str[k]=pr[k][0][0:16]
-  rptime_num[k]=mdates.date2num(sunpy.time.parse_time(rptime_str[k]))
-  if pr[k][1] is None: pr[k][1]=np.nan
-  rpn[k]=float(pr[k][1]) #density
-  if pr[k][3] is None: pr[k][3]=np.nan
-  rpt[k]=float(pr[k][3]) #temperature
-
-
- #interpolate to minutes 
- rtimes_m=np.arange(rbtime_num[0],rbtime_num[-1],1.0000/(24*60))
- rbtot_m=np.interp(rtimes_m,rbtime_num,rbtot)
- rbzgsm_m=np.interp(rtimes_m,rbtime_num,rbzgsm)
- rbygsm_m=np.interp(rtimes_m,rbtime_num,rbygsm)
- rbxgsm_m=np.interp(rtimes_m,rbtime_num,rbxgsm)
- rpv_m=np.interp(rtimes_m,rptime_num,rpv)
- rpn_m=np.interp(rtimes_m,rptime_num,rpn)
- rpt_m=np.interp(rtimes_m,rptime_num,rpt)
- 
-
- #interpolate to hours 
- rtimes_h=np.arange(np.ceil(rbtime_num)[0],rbtime_num[-1],1.0000/24.0000)
- rbtot_h=np.interp(rtimes_h,rbtime_num,rbtot)
- rbzgsm_h=np.interp(rtimes_h,rbtime_num,rbzgsm)
- rbygsm_h=np.interp(rtimes_h,rbtime_num,rbygsm)
- rbxgsm_h=np.interp(rtimes_h,rbtime_num,rbxgsm)
- rpv_h=np.interp(rtimes_h,rptime_num,rpv)
- rpn_h=np.interp(rtimes_h,rptime_num,rpn)
- rpt_h=np.interp(rtimes_h,rptime_num,rpt)
+        #convert time from string to datenumber
+        rbtime_str[k]=mr[k][0][0:16]
+        rbtime_num[k]=mdates.date2num(sunpy.time.parse_time(rbtime_str[k]))
+    
+    #plasma
+    for k in np.arange(0,len(pr),1):
+        if pr[k][2] is None: pr[k][2]=np.nan
+        rpv[k]=float(pr[k][2]) #speed
+        rptime_str[k]=pr[k][0][0:16]
+        rptime_num[k]=mdates.date2num(sunpy.time.parse_time(rptime_str[k]))
+        if pr[k][1] is None: pr[k][1]=np.nan
+        rpn[k]=float(pr[k][1]) #density
+        if pr[k][3] is None: pr[k][3]=np.nan
+        rpt[k]=float(pr[k][3]) #temperature
 
 
- #make recarrays
- data_hourly=np.rec.array([rtimes_h,rbtot_h,rbxgsm_h,rbygsm_h,rbzgsm_h,rpv_h,rpn_h,rpt_h], \
- dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
-        ('speed','f8'),('den','f8'),('temp','f8')])
- 
- data_minutes=np.rec.array([rtimes_m,rbtot_m,rbxgsm_m,rbygsm_m,rbzgsm_m,rpv_m,rpn_m,rpt_m], \
- dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
-        ('speed','f8'),('den','f8'),('temp','f8')])
- 
- print('DSCOVR data interpolated to hour/minute resolution done.')
- 
- return data_minutes, data_hourly
+    #interpolate to minutes 
+    rtimes_m=np.arange(rbtime_num[0],rbtime_num[-1],1.0000/(24*60))
+    rbtot_m=np.interp(rtimes_m,rbtime_num,rbtot)
+    rbzgsm_m=np.interp(rtimes_m,rbtime_num,rbzgsm)
+    rbygsm_m=np.interp(rtimes_m,rbtime_num,rbygsm)
+    rbxgsm_m=np.interp(rtimes_m,rbtime_num,rbxgsm)
+    rpv_m=np.interp(rtimes_m,rptime_num,rpv)
+    rpn_m=np.interp(rtimes_m,rptime_num,rpn)
+    rpt_m=np.interp(rtimes_m,rptime_num,rpt)
+    
+
+    #interpolate to hours 
+    rtimes_h=np.arange(np.ceil(rbtime_num)[0],rbtime_num[-1],1.0000/24.0000)
+    rbtot_h=np.interp(rtimes_h,rbtime_num,rbtot)
+    rbzgsm_h=np.interp(rtimes_h,rbtime_num,rbzgsm)
+    rbygsm_h=np.interp(rtimes_h,rbtime_num,rbygsm)
+    rbxgsm_h=np.interp(rtimes_h,rbtime_num,rbxgsm)
+    rpv_h=np.interp(rtimes_h,rptime_num,rpv)
+    rpn_h=np.interp(rtimes_h,rptime_num,rpn)
+    rpt_h=np.interp(rtimes_h,rptime_num,rpt)
 
 
-
-
+    #make recarrays
+    data_hourly=np.rec.array([rtimes_h,rbtot_h,rbxgsm_h,rbygsm_h,rbzgsm_h,rpv_h,rpn_h,rpt_h], \
+    dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
+            ('speed','f8'),('den','f8'),('temp','f8')])
+    
+    data_minutes=np.rec.array([rtimes_m,rbtot_m,rbxgsm_m,rbygsm_m,rbzgsm_m,rpv_m,rpn_m,rpt_m], \
+    dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
+            ('speed','f8'),('den','f8'),('temp','f8')])
+    
+    print('DSCOVR data interpolated to hour/minute resolution done.')
+    
+    return data_minutes, data_hourly
 
 
 
 def get_dscovr_data_all():
+    """ 
+    - DSCOVR data archive:
+    https://www.ngdc.noaa.gov/dscovr/portal/index.html#/download/1543017600000;1543363199999
+    https://www.ngdc.noaa.gov/dscovr/portal/index.html#/
+    https://www.ngdc.noaa.gov/next-web/docs/guide/catalog.html#dscovrCatalog
+    ftp://spdf.gsfc.nasa.gov/pub/data/dscovr/h0/mag/2018
+    or get data via heliopy and ftp:
+    https://docs.heliopy.org/en/stable/api/heliopy.data.dscovr.mag_h0.html#heliopy.data.dscovr.mag_h0
 
- # - DSCOVR data archive:
- #https://www.ngdc.noaa.gov/dscovr/portal/index.html#/download/1543017600000;1543363199999
- #https://www.ngdc.noaa.gov/dscovr/portal/index.html#/
- #https://www.ngdc.noaa.gov/next-web/docs/guide/catalog.html#dscovrCatalog
- #ftp://spdf.gsfc.nasa.gov/pub/data/dscovr/h0/mag/2018
- #or get data via heliopy and ftp:
- #https://docs.heliopy.org/en/stable/api/heliopy.data.dscovr.mag_h0.html#heliopy.data.dscovr.mag_h0
+    BEST WAY TO GET UPDATED DSCOVR DATA:
+    monthly folders, e.g.
+    https://www.ngdc.noaa.gov/dscovr/data/2018/11/
 
- #BEST WAY TO GET UPDATED DSCOVR DATA:
+    then 
+    curl -O https://www.ngdc.noaa.gov/dscovr/data/2018/12/oe_f1m_dscovr_s20181207000000_e20181207235959_p20181208031650_pub.nc.gz
 
-
- """ 
- monthly folders, e.g.
- https://www.ngdc.noaa.gov/dscovr/data/2018/11/
-
- then 
- curl -O https://www.ngdc.noaa.gov/dscovr/data/2018/12/oe_f1m_dscovr_s20181207000000_e20181207235959_p20181208031650_pub.nc.gz
-
- zum entpacken:
- gunzip oe_f1m_dscovr_s20181207000000_e20181207235959_p20181208031650_pub.nc.gz
- netcdf files
+    zum entpacken:
+    gunzip oe_f1m_dscovr_s20181207000000_e20181207235959_p20181208031650_pub.nc.gz
+    netcdf files
 
 
- filenames are f1m for faraday and m1m for magnetometer, 1 minute averages
+    filenames are f1m for faraday and m1m for magnetometer, 1 minute averages
 
- NETCDF examples
- #go to http://nbviewer.jupyter.org/github/Unidata/netcdf4-python/blob/master/examples/reading_netCDF.ipynb
+    NETCDF examples
+    #go to http://nbviewer.jupyter.org/github/Unidata/netcdf4-python/blob/master/examples/reading_netCDF.ipynb
 
- """
+    """
  
 
- os.system('curl -o dscovr_data/oe_f1m_dscovr_s20181207000000_e20181207235959_p20181208031650_pub.nc.gz -O https://www.ngdc.noaa.gov/dscovr/data/2018/12/oe_f1m_dscovr_s20181207000000_e20181207235959_p20181208031650_pub.nc.gz')
- os.system('gunzip -f dscovr_data/oe_f1m_dscovr_s20181207000000_e20181207235959_p20181208031650_pub.nc.gz')
+    os.system('curl -o dscovr_data/oe_f1m_dscovr_s20181207000000_e20181207235959_p20181208031650_pub.nc.gz -O https://www.ngdc.noaa.gov/dscovr/data/2018/12/oe_f1m_dscovr_s20181207000000_e20181207235959_p20181208031650_pub.nc.gz')
+    os.system('gunzip -f dscovr_data/oe_f1m_dscovr_s20181207000000_e20181207235959_p20181208031650_pub.nc.gz')
 
- f='dscovr_data/oe_f1m_dscovr_s20181207000000_e20181207235959_p20181208031650_pub.nc'
- #if os.path.exists('sta_beacon/'+sta_pla_file_str[p]):
- #print('sta_beacon/'+sta_pla_file_str[p])
- 
- d =  netCDF4.Dataset(f)
- 
- d.dimensions.keys()
- 
- 
- 
- a=d.variables['time'] 
- print(a[1])
- sys.exit()
- #old version 
- #sta_file =  pycdf.CDF('sta_beacon/'+sta_pla_file_str[p])
-      
+    f='dscovr_data/oe_f1m_dscovr_s20181207000000_e20181207235959_p20181208031650_pub.nc'
+    #if os.path.exists('sta_beacon/'+sta_pla_file_str[p]):
+    #print('sta_beacon/'+sta_pla_file_str[p])
+    
+    d =  netCDF4.Dataset(f)
+    
+    d.dimensions.keys()
+    
+    
+    
+    a=d.variables['time'] 
+    print(a[1])
+    sys.exit()
+    #old version 
+    #sta_file =  pycdf.CDF('sta_beacon/'+sta_pla_file_str[p])
+        
 
- #variables Epoch_MAG: Epoch1: CDF_EPOCH [1875]
- #MAGBField: CDF_REAL4 [8640, 3]
- #sta_time=epoch_to_num(sta_file.varget('Epoch1'))
- #old version 
- #sta_time=mdates.date2num(sta_file['Epoch1'][...])
-
-
- #define stereo-a variables with open size
- sta_ptime=np.zeros(0)  
- sta_vr=np.zeros(0)  
- sta_den=np.zeros(0)  
- sta_temp=np.zeros(0)  
-
- #same for magnetic field
- sta_btime=np.zeros(0)  
- sta_br=np.zeros(0)  
- sta_bt=np.zeros(0)  
- sta_bn=np.zeros(0) 
- 
- 
- 
+    #variables Epoch_MAG: Epoch1: CDF_EPOCH [1875]
+    #MAGBField: CDF_REAL4 [8640, 3]
+    #sta_time=epoch_to_num(sta_file.varget('Epoch1'))
+    #old version 
+    #sta_time=mdates.date2num(sta_file['Epoch1'][...])
 
 
+    #define stereo-a variables with open size
+    sta_ptime=np.zeros(0)  
+    sta_vr=np.zeros(0)  
+    sta_den=np.zeros(0)  
+    sta_temp=np.zeros(0)  
+
+    #same for magnetic field
+    sta_btime=np.zeros(0)  
+    sta_br=np.zeros(0)  
+    sta_bt=np.zeros(0)  
+    sta_bn=np.zeros(0) 
+    
+    url_plasma='http://services.swpc.noaa.gov/products/solar-wind/plasma-7-day.json'
+    url_mag='http://services.swpc.noaa.gov/products/solar-wind/mag-7-day.json'
+
+    #download, see URLLIB https://docs.python.org/3/howto/urllib2.html
+    with urllib.request.urlopen(url_plasma) as url:
+        pr = json.loads	(url.read().decode())
+    with urllib.request.urlopen(url_mag) as url:
+        mr = json.loads(url.read().decode())
+    print('DSCOVR plasma data available')
+    print(pr[0])
+    print('DSCOVR MAG data available')
+    print(mr[0])
+    #kill first row which stems from the description part
+    pr=pr[1:]
+    mr=mr[1:]
+
+    #define variables 
+    #plasma
+    rptime_str=['']*len(pr)
+    rptime_num=np.zeros(len(pr))
+    rpv=np.zeros(len(pr))
+    rpn=np.zeros(len(pr))
+    rpt=np.zeros(len(pr))
+
+    #mag
+    rbtime_str=['']*len(mr)
+    rbtime_num=np.zeros(len(mr))
+    rbtot=np.zeros(len(mr))
+    rbzgsm=np.zeros(len(mr))
+    rbygsm=np.zeros(len(mr))
+    rbxgsm=np.zeros(len(mr))
+
+    #convert variables to numpy arrays
+    #mag
+    for k in np.arange(0,len(mr),1):
+
+        #handle missing data, they show up as None from the JSON data file
+        if mr[k][6] is None: mr[k][6]=np.nan
+        if mr[k][3] is None: mr[k][3]=np.nan
+        if mr[k][2] is None: mr[k][2]=np.nan
+        if mr[k][1] is None: mr[k][1]=np.nan
+
+        rbtot[k]=float(mr[k][6])
+        rbzgsm[k]=float(mr[k][3])
+        rbygsm[k]=float(mr[k][2])
+        rbxgsm[k]=float(mr[k][1])
+
+        #convert time from string to datenumber
+        rbtime_str[k]=mr[k][0][0:16]
+        rbtime_num[k]=mdates.date2num(sunpy.time.parse_time(rbtime_str[k]))
+    
+    #plasma
+    for k in np.arange(0,len(pr),1):
+        if pr[k][2] is None: pr[k][2]=np.nan
+        rpv[k]=float(pr[k][2]) #speed
+        rptime_str[k]=pr[k][0][0:16]
+        rptime_num[k]=mdates.date2num(sunpy.time.parse_time(rptime_str[k]))
+        if pr[k][1] is None: pr[k][1]=np.nan
+        rpn[k]=float(pr[k][1]) #density
+        if pr[k][3] is None: pr[k][3]=np.nan
+        rpt[k]=float(pr[k][3]) #temperature
 
 
- url_plasma='http://services.swpc.noaa.gov/products/solar-wind/plasma-7-day.json'
- url_mag='http://services.swpc.noaa.gov/products/solar-wind/mag-7-day.json'
+    #interpolate to minutes 
+    rtimes_m=np.arange(rbtime_num[0],rbtime_num[-1],1.0000/(24*60))
+    rbtot_m=np.interp(rtimes_m,rbtime_num,rbtot)
+    rbzgsm_m=np.interp(rtimes_m,rbtime_num,rbzgsm)
+    rbygsm_m=np.interp(rtimes_m,rbtime_num,rbygsm)
+    rbxgsm_m=np.interp(rtimes_m,rbtime_num,rbxgsm)
+    rpv_m=np.interp(rtimes_m,rptime_num,rpv)
+    rpn_m=np.interp(rtimes_m,rptime_num,rpn)
+    rpt_m=np.interp(rtimes_m,rptime_num,rpt)
+    
 
- #download, see URLLIB https://docs.python.org/3/howto/urllib2.html
- with urllib.request.urlopen(url_plasma) as url:
-    pr = json.loads	(url.read().decode())
- with urllib.request.urlopen(url_mag) as url:
-    mr = json.loads(url.read().decode())
- print('DSCOVR plasma data available')
- print(pr[0])
- print('DSCOVR MAG data available')
- print(mr[0])
- #kill first row which stems from the description part
- pr=pr[1:]
- mr=mr[1:]
-
- #define variables 
- #plasma
- rptime_str=['']*len(pr)
- rptime_num=np.zeros(len(pr))
- rpv=np.zeros(len(pr))
- rpn=np.zeros(len(pr))
- rpt=np.zeros(len(pr))
-
- #mag
- rbtime_str=['']*len(mr)
- rbtime_num=np.zeros(len(mr))
- rbtot=np.zeros(len(mr))
- rbzgsm=np.zeros(len(mr))
- rbygsm=np.zeros(len(mr))
- rbxgsm=np.zeros(len(mr))
-
- #convert variables to numpy arrays
- #mag
- for k in np.arange(0,len(mr),1):
-
-  #handle missing data, they show up as None from the JSON data file
-  if mr[k][6] is None: mr[k][6]=np.nan
-  if mr[k][3] is None: mr[k][3]=np.nan
-  if mr[k][2] is None: mr[k][2]=np.nan
-  if mr[k][1] is None: mr[k][1]=np.nan
-
-  rbtot[k]=float(mr[k][6])
-  rbzgsm[k]=float(mr[k][3])
-  rbygsm[k]=float(mr[k][2])
-  rbxgsm[k]=float(mr[k][1])
-
-  #convert time from string to datenumber
-  rbtime_str[k]=mr[k][0][0:16]
-  rbtime_num[k]=mdates.date2num(sunpy.time.parse_time(rbtime_str[k]))
- 
- #plasma
- for k in np.arange(0,len(pr),1):
-  if pr[k][2] is None: pr[k][2]=np.nan
-  rpv[k]=float(pr[k][2]) #speed
-  rptime_str[k]=pr[k][0][0:16]
-  rptime_num[k]=mdates.date2num(sunpy.time.parse_time(rptime_str[k]))
-  if pr[k][1] is None: pr[k][1]=np.nan
-  rpn[k]=float(pr[k][1]) #density
-  if pr[k][3] is None: pr[k][3]=np.nan
-  rpt[k]=float(pr[k][3]) #temperature
+    #interpolate to hours 
+    rtimes_h=np.arange(np.ceil(rbtime_num)[0],rbtime_num[-1],1.0000/24.0000)
+    rbtot_h=np.interp(rtimes_h,rbtime_num,rbtot)
+    rbzgsm_h=np.interp(rtimes_h,rbtime_num,rbzgsm)
+    rbygsm_h=np.interp(rtimes_h,rbtime_num,rbygsm)
+    rbxgsm_h=np.interp(rtimes_h,rbtime_num,rbxgsm)
+    rpv_h=np.interp(rtimes_h,rptime_num,rpv)
+    rpn_h=np.interp(rtimes_h,rptime_num,rpn)
+    rpt_h=np.interp(rtimes_h,rptime_num,rpt)
 
 
- #interpolate to minutes 
- rtimes_m=np.arange(rbtime_num[0],rbtime_num[-1],1.0000/(24*60))
- rbtot_m=np.interp(rtimes_m,rbtime_num,rbtot)
- rbzgsm_m=np.interp(rtimes_m,rbtime_num,rbzgsm)
- rbygsm_m=np.interp(rtimes_m,rbtime_num,rbygsm)
- rbxgsm_m=np.interp(rtimes_m,rbtime_num,rbxgsm)
- rpv_m=np.interp(rtimes_m,rptime_num,rpv)
- rpn_m=np.interp(rtimes_m,rptime_num,rpn)
- rpt_m=np.interp(rtimes_m,rptime_num,rpt)
- 
-
- #interpolate to hours 
- rtimes_h=np.arange(np.ceil(rbtime_num)[0],rbtime_num[-1],1.0000/24.0000)
- rbtot_h=np.interp(rtimes_h,rbtime_num,rbtot)
- rbzgsm_h=np.interp(rtimes_h,rbtime_num,rbzgsm)
- rbygsm_h=np.interp(rtimes_h,rbtime_num,rbygsm)
- rbxgsm_h=np.interp(rtimes_h,rbtime_num,rbxgsm)
- rpv_h=np.interp(rtimes_h,rptime_num,rpv)
- rpn_h=np.interp(rtimes_h,rptime_num,rpn)
- rpt_h=np.interp(rtimes_h,rptime_num,rpt)
+    #make recarrays
+    data_hourly=np.rec.array([rtimes_h,rbtot_h,rbxgsm_h,rbygsm_h,rbzgsm_h,rpv_h,rpn_h,rpt_h], \
+    dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
+            ('speed','f8'),('den','f8'),('temp','f8')])
+    
+    data_minutes=np.rec.array([rtimes_m,rbtot_m,rbxgsm_m,rbygsm_m,rbzgsm_m,rpv_m,rpn_m,rpt_m], \
+    dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
+            ('speed','f8'),('den','f8'),('temp','f8')])
+    
+    print('DSCOVR data interpolated to hour/minute resolution done.')
+    
+    return data_minutes, data_hourly
 
 
- #make recarrays
- data_hourly=np.rec.array([rtimes_h,rbtot_h,rbxgsm_h,rbygsm_h,rbzgsm_h,rpv_h,rpn_h,rpt_h], \
- dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
-        ('speed','f8'),('den','f8'),('temp','f8')])
- 
- data_minutes=np.rec.array([rtimes_m,rbtot_m,rbxgsm_m,rbygsm_m,rbzgsm_m,rpv_m,rpn_m,rpt_m], \
- dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
-        ('speed','f8'),('den','f8'),('temp','f8')])
- 
- print('DSCOVR data interpolated to hour/minute resolution done.')
- 
- return data_minutes, data_hourly
-
-
-
-
-
-
-
-
-
-
- 
- 
 def epoch_to_num(epoch):
-        #taken from spacepy https://pythonhosted.org/SpacePy/_modules/spacepy/pycdf.html#Library.epoch_to_num
-        """
-        Convert CDF EPOCH to matplotlib number.
+    """
+    Taken from spacepy https://pythonhosted.org/SpacePy/_modules/spacepy/pycdf.html#Library.epoch_to_num
+    Convert CDF EPOCH to matplotlib number.
 
-        Same output as :func:`~matplotlib.dates.date2num` and useful for
-        plotting large data sets without converting the times through datetime.
+    Same output as :func:`~matplotlib.dates.date2num` and useful for
+    plotting large data sets without converting the times through datetime.
 
-        Parameters
-        ==========
-        epoch : double
-            EPOCH to convert. Lists and numpy arrays are acceptable.
+    Parameters
+    ==========
+    epoch : double
+        EPOCH to convert. Lists and numpy arrays are acceptable.
 
-        Returns
-        =======
-        out : double
-            Floating point number representing days since 0001-01-01.
-        """
-        #date2num day 1 is 1/1/1 00UT
-        #epoch 1/1/1 00UT is 31622400000.0 (millisecond)
-        return (epoch - 31622400000.0) / (24 * 60 * 60 * 1000.0) + 1.0
- 
- 
- 
- 
- 
- 
- 
- 
- 
+    Returns
+    =======
+    out : double
+        Floating point number representing days since 0001-01-01.
+    """
+    #date2num day 1 is 1/1/1 00UT
+    #epoch 1/1/1 00UT is 31622400000.0 (millisecond)
+    return (epoch - 31622400000.0) / (24 * 60 * 60 * 1000.0) + 1.0
  
  
 def get_stereoa_data_beacon():
+    """
+    Loads STEREO-A beacon data.
+
+    D STEREO SCIENCE CENTER these are the cdf files for the beacon data, daily
+    browse data, ~ 200kb
+    https://stereo-ssc.nascom.nasa.gov/data/beacon/ahead/plastic/2018/05/STA_LB_PLA_BROWSE_20180502_V12.cdf       
+    original data, ~1 MB
+    https://stereo-ssc.nascom.nasa.gov/data/beacon/ahead/plastic/2018/05/STA_LB_PLA_20180502_V12.cdf
+    
+    Last 2 hours are available here at NOAA:
+    http://legacy-www.swpc.noaa.gov/ftpdir/lists/stereo/
+    http://legacy-www.swpc.noaa.gov/stereo/STEREO_data.html
+    
+    Parameters
+    ==========
+    None
+
+    Returns
+    =======
+    (data_minutes, data_hourly)
+    data_minutes : np.rec.array
+         Array of interpolated minute data with format:
+         dtype=[('time','f8'),('btot','f8'),('br','f8'),('bt','f8'),('bn','f8'),\
+            ('speedr','f8'),('den','f8')]
+    data_hourly : np.rec.array
+         Array of interpolated hourly data with format:
+         dtype=[('time','f8'),('btot','f8'),('br','f8'),('bt','f8'),('bn','f8'),\
+            ('speedr','f8'),('den','f8')]
+    """
  
- print('get STEREO-A beacon data from STEREO SCIENCE CENTER')
+    print('get STEREO-A beacon data from STEREO SCIENCE CENTER')
 
- #only last 2 hours here at NOAA
- #http://legacy-www.swpc.noaa.gov/ftpdir/lists/stereo/
- #http://legacy-www.swpc.noaa.gov/stereo/STEREO_data.html
+    # If folder sta_beacon is not here, create
+    if os.path.isdir('sta_beacon') == False: os.mkdir('sta_beacon')
 
- #at the STEREO SCIENCE CENTER these are the cdf files for the beacon data, daily
- #browse data, ~ 200kb
- #https://stereo-ssc.nascom.nasa.gov/data/beacon/ahead/plastic/2018/05/STA_LB_PLA_BROWSE_20180502_V12.cdf	
- #original data, ~1 MB
- #https://stereo-ssc.nascom.nasa.gov/data/beacon/ahead/plastic/2018/05/STA_LB_PLA_20180502_V12.cdf	
+    #make file lists for the last 14 days and download data if not already here
+    daynowstr=['']*14
+    sta_pla_file_str=['']*14
+    sta_mag_file_str=['']*14
+    http_sta_pla_file_str=['']*14
+    http_sta_mag_file_str=['']*14
 
- ###### if folder sta_beacon is not here, create
- if os.path.isdir('sta_beacon') == False: os.mkdir('sta_beacon')
+    plastic_location='https://stereo-ssc.nascom.nasa.gov/data/beacon/ahead/plastic'
+    impact_location='https://stereo-ssc.nascom.nasa.gov/data/beacon/ahead/impact'
 
- #make file lists for the last 14 days and download data if not already here
- daynowstr=['']*14
- sta_pla_file_str=['']*14
- sta_mag_file_str=['']*14
- http_sta_pla_file_str=['']*14
- http_sta_mag_file_str=['']*14
+    #system time now
+    now=mdates.date2num(datetime.datetime.utcnow())
+    
+    #download cdf files if needed for 14 days prior to current UTC time
+    for p in np.arange(0,14):
+        stayear=str(mdates.num2date(now-14+p))[0:4]
+        stamonth=str(mdates.num2date(now-14+p))[5:7]
+        staday=str(mdates.num2date(now-14+p))[8:10]
+        daynowstr[p]=stayear+stamonth+staday
+        
+        #filename convention is
+        #https://stereo-ssc.nascom.nasa.gov/data/beacon/ahead/impact/2018/05/STA_LB_IMPACT_20180502_V02.cdf
 
- plastic_location='https://stereo-ssc.nascom.nasa.gov/data/beacon/ahead/plastic'
- impact_location='https://stereo-ssc.nascom.nasa.gov/data/beacon/ahead/impact'
+        #filenames
+        #plastic
+        sta_pla_file_str[p]='STA_LB_PLASTIC_'+daynowstr[p]+'_V12.cdf'
+        #impact
+        sta_mag_file_str[p]='STA_LB_IMPACT_'+daynowstr[p]+'_V02.cdf' 
+        
+        #check if file is already there, otherwise download
+        
+        if not os.path.exists('sta_beacon/'+sta_pla_file_str[p]):
+            #download files if they are not here
+            http_sta_pla_file_str[p]=plastic_location+'/'+stayear+'/'+stamonth+'/'+sta_pla_file_str[p]
+            #check if url exists, if not state reason  
+            try: urllib.request.urlretrieve(http_sta_pla_file_str[p], 'sta_beacon/'+sta_pla_file_str[p])
+            except urllib.error.URLError as e:
+                print(' ', http_sta_pla_file_str[p],' ',e.reason)
+        
+        if not os.path.exists('sta_beacon/'+sta_mag_file_str[p]):
+            http_sta_mag_file_str[p]=impact_location+'/'+stayear+'/'+stamonth+'/'+sta_mag_file_str[p]
+            try: urllib.request.urlretrieve(http_sta_mag_file_str[p], 'sta_beacon/'+sta_mag_file_str[p])
+            except urllib.error.URLError as e:
+                print(' ', http_sta_pla_file_str[p],' ',e.reason)
+    
+    ################################### 
+    #now read in all CDF files and stitch to one array
+    #access cdfs in python works with cdflib
+    #https://github.com/MAVENSDC/cdflib
 
- #system time now
- now=mdates.date2num(datetime.datetime.utcnow())
- 
+    #define stereo-a variables with open size
+    sta_ptime=np.zeros(0)  
+    sta_vr=np.zeros(0)  
+    sta_den=np.zeros(0)  
+    sta_temp=np.zeros(0)  
 
- #download cdf files if needed for 14 days prior to current UTC time
- for p in np.arange(0,14):
-   stayear=str(mdates.num2date(now-14+p))[0:4]
-   stamonth=str(mdates.num2date(now-14+p))[5:7]
-   staday=str(mdates.num2date(now-14+p))[8:10]
-   daynowstr[p]=stayear+stamonth+staday
- 
-   #filename convention is
-   #https://stereo-ssc.nascom.nasa.gov/data/beacon/ahead/impact/2018/05/STA_LB_IMPACT_20180502_V02.cdf
+    #same for magnetic field
+    sta_btime=np.zeros(0)  
+    sta_br=np.zeros(0)  
+    sta_bt=np.zeros(0)  
+    sta_bn=np.zeros(0) 
 
-   #filenames
-   #plastic
-   sta_pla_file_str[p]='STA_LB_PLASTIC_'+daynowstr[p]+'_V12.cdf'
-   #impact
-   sta_mag_file_str[p]='STA_LB_IMPACT_'+daynowstr[p]+'_V02.cdf' 
- 
-   #check if file is already there, otherwise download
- 
-   if not os.path.exists('sta_beacon/'+sta_pla_file_str[p]):
-   #download files if they are not here
-     http_sta_pla_file_str[p]=plastic_location+'/'+stayear+'/'+stamonth+'/'+sta_pla_file_str[p]
-     #check if url exists, if not state reason  
-     try: urllib.request.urlretrieve(http_sta_pla_file_str[p], 'sta_beacon/'+sta_pla_file_str[p])
-     except urllib.error.URLError as e:
-       print(' ', http_sta_pla_file_str[p],' ',e.reason)
+    for p in np.arange(0,14):
+    
+        #PLASMA first
+        if os.path.exists('sta_beacon/'+sta_pla_file_str[p]):
+            #print('sta_beacon/'+sta_pla_file_str[p])
+            sta_file =  cdflib.CDF('sta_beacon/'+sta_pla_file_str[p])
+            #old version 
+            #sta_file =  pycdf.CDF('sta_beacon/'+sta_pla_file_str[p])
+            
+
+        #variables Epoch_MAG: Epoch1: CDF_EPOCH [1875]
+        #MAGBField: CDF_REAL4 [8640, 3]
+        sta_time=epoch_to_num(sta_file.varget('Epoch1'))
+        #old version 
+        #sta_time=mdates.date2num(sta_file['Epoch1'][...])
+
+        
+        #das funkt
+        sta_dvr=sta_file.varget('Velocity_RTN')[:,0]
+        
+        #old sta_dvr=sta_file['Velocity_RTN'][...][:,0]
+        #sta_dvt=sta['Velocity_RTN'][...][:,1]
+        #sta_dvn=sta['Velocity_RTN'][...][:,2]
+        sta_dden=sta_file.varget('Density')
+        #sta_dden=sta_file.varget('Density')#[:,0]
+
+        #sta_dtemp=sta['Temperature'][...]
+        #missing data are < -1e30
+        mis=np.where(sta_time < -1e30)
+        sta_time[mis]=np.nan
+
+        mis=np.where(sta_dvr < -1e30)
+        sta_dvr[mis]=np.nan
+        #mis=np.where(sta_dvt < -1e30)
+        #sta_dvt[mis]=np.nan
+        #mis=np.where(sta_dvn < -1e30)
+        #sta_dvn[mis]=np.nan
+        mis=np.where(sta_dden < -1e30)
+        sta_dden[mis]=np.nan
+        #mis=np.where(sta_dden < -1e30)
+        #sta_dtemp[mis]=np.nan
+        
+        sta_ptime=np.append(sta_ptime, sta_time)
+        sta_vr=np.append(sta_vr,sta_dvr)
+        sta_den=np.append(sta_den,sta_dden)
+        #sta_temp=np.append(sta_temp,sta_dtemp)
+        
+        #Magnetic FIELD
+
+        if os.path.exists('sta_beacon/'+sta_mag_file_str[p]):
+            #print('sta_beacon/'+sta_mag_file_str[p])
+            sta_filem =  cdflib.CDF('sta_beacon/'+sta_mag_file_str[p])
+
+
+        #variables Epoch_MAG: CDF_EPOCH [8640]
+        #MAGBField: CDF_REAL4 [8640, 3]
+        #pdb.set_trace()
+        sta_time=epoch_to_num(sta_filem.varget('Epoch_MAG'))
+        #d stands for dummy
+        sta_dbr=sta_filem.varget('MAGBField')[:,0]
+        sta_dbt=sta_filem.varget('MAGBField')[:,1]
+        sta_dbn=sta_filem.varget('MAGBField')[:,2]
+
+        #append data to array
+        sta_btime=np.append(sta_btime, sta_time)
+        sta_br=np.append(sta_br,sta_dbr)
+        sta_bt=np.append(sta_bt,sta_dbt)
+        sta_bn=np.append(sta_bn,sta_dbn)
   
-   if not os.path.exists('sta_beacon/'+sta_mag_file_str[p]):
-     http_sta_mag_file_str[p]=impact_location+'/'+stayear+'/'+stamonth+'/'+sta_mag_file_str[p]
-     try: urllib.request.urlretrieve(http_sta_mag_file_str[p], 'sta_beacon/'+sta_mag_file_str[p])
-     except urllib.error.URLError as e:
-       print(' ', http_sta_pla_file_str[p],' ',e.reason)
- #for loop end   
- 
- ################################### 
- #now read in all CDF files and stitch to one array
- #access cdfs in python works with cdflib
- #https://github.com/MAVENSDC/cdflib
+    #make total field variable
+    sta_btot=np.sqrt(sta_br**2+sta_bt**2+sta_bn**2)
 
- #define stereo-a variables with open size
- sta_ptime=np.zeros(0)  
- sta_vr=np.zeros(0)  
- sta_den=np.zeros(0)  
- sta_temp=np.zeros(0)  
+    
+    ########## interpolate to minutes
+    sta_time_m=np.arange(np.ceil(sta_btime)[0],sta_btime[-1],1.0000/(24*60))
+    sta_btot_m=np.interp(sta_time_m,sta_btime,sta_btot)
+    sta_br_m=np.interp(sta_time_m,sta_btime,sta_br)
+    sta_bt_m=np.interp(sta_time_m,sta_btime,sta_bt)
+    sta_bn_m=np.interp(sta_time_m,sta_btime,sta_bn)
+    sta_vr_m=np.interp(sta_time_m,sta_ptime,sta_vr)
+    sta_den_m=np.interp(sta_time_m,sta_ptime,sta_den)
+    #sta_temp_m=np.interp(sta_time_m,sta_ptime,sta_temp)
 
- #same for magnetic field
- sta_btime=np.zeros(0)  
- sta_br=np.zeros(0)  
- sta_bt=np.zeros(0)  
- sta_bn=np.zeros(0) 
+    ########## interpolate to hours
+    sta_time_h=np.arange(np.ceil(sta_btime)[0],sta_btime[-1],1.0000/(24))
+    sta_btot_h=np.interp(sta_time_h,sta_btime,sta_btot)
+    sta_br_h=np.interp(sta_time_h,sta_btime,sta_br)
+    sta_bt_h=np.interp(sta_time_h,sta_btime,sta_bt)
+    sta_bn_h=np.interp(sta_time_h,sta_btime,sta_bn)
+    sta_vr_h=np.interp(sta_time_h,sta_ptime,sta_vr)
+    sta_den_h=np.interp(sta_time_h,sta_ptime,sta_den)
+    #sta_temp_h=np.interp(sta_time_h,sta_ptime,sta_temp)
 
+    
 
-
- for p in np.arange(0,14):
-   
-   #PLASMA first
-
-
-   if os.path.exists('sta_beacon/'+sta_pla_file_str[p]):
-      #print('sta_beacon/'+sta_pla_file_str[p])
-      sta_file =  cdflib.CDF('sta_beacon/'+sta_pla_file_str[p])
-      #old version 
-      #sta_file =  pycdf.CDF('sta_beacon/'+sta_pla_file_str[p])
-      
-
-   #variables Epoch_MAG: Epoch1: CDF_EPOCH [1875]
-   #MAGBField: CDF_REAL4 [8640, 3]
-   sta_time=epoch_to_num(sta_file.varget('Epoch1'))
-   #old version 
-   #sta_time=mdates.date2num(sta_file['Epoch1'][...])
-
-  
-   #das funkt
-   sta_dvr=sta_file.varget('Velocity_RTN')[:,0]
-   
-   #old sta_dvr=sta_file['Velocity_RTN'][...][:,0]
-   #sta_dvt=sta['Velocity_RTN'][...][:,1]
-   #sta_dvn=sta['Velocity_RTN'][...][:,2]
-   sta_dden=sta_file.varget('Density')
-   #sta_dden=sta_file.varget('Density')#[:,0]
-
-   #sta_dtemp=sta['Temperature'][...]
-   #missing data are < -1e30
-   mis=np.where(sta_time < -1e30)
-   sta_time[mis]=np.nan
-
-   mis=np.where(sta_dvr < -1e30)
-   sta_dvr[mis]=np.nan
-   #mis=np.where(sta_dvt < -1e30)
-   #sta_dvt[mis]=np.nan
-   #mis=np.where(sta_dvn < -1e30)
-   #sta_dvn[mis]=np.nan
-   mis=np.where(sta_dden < -1e30)
-   sta_dden[mis]=np.nan
-   #mis=np.where(sta_dden < -1e30)
-   #sta_dtemp[mis]=np.nan
-   
-   sta_ptime=np.append(sta_ptime, sta_time)
-   sta_vr=np.append(sta_vr,sta_dvr)
-   sta_den=np.append(sta_den,sta_dden)
-   #sta_temp=np.append(sta_temp,sta_dtemp)
-   
-
-
-   #Magnetic FIELD
-
-   if os.path.exists('sta_beacon/'+sta_mag_file_str[p]):
-      #print('sta_beacon/'+sta_mag_file_str[p])
-      sta_filem =  cdflib.CDF('sta_beacon/'+sta_mag_file_str[p])
-
-
-   #variables Epoch_MAG: CDF_EPOCH [8640]
-   #MAGBField: CDF_REAL4 [8640, 3]
-   #pdb.set_trace()
-   sta_time=epoch_to_num(sta_filem.varget('Epoch_MAG'))
-   #d stands for dummy
-   sta_dbr=sta_filem.varget('MAGBField')[:,0]
-   sta_dbt=sta_filem.varget('MAGBField')[:,1]
-   sta_dbn=sta_filem.varget('MAGBField')[:,2]
-
-   #append data to array
-   sta_btime=np.append(sta_btime, sta_time)
-   sta_br=np.append(sta_br,sta_dbr)
-   sta_bt=np.append(sta_bt,sta_dbt)
-   sta_bn=np.append(sta_bn,sta_dbn)
- 
- # for loop end
- 
- #make total field variable
- sta_btot=np.sqrt(sta_br**2+sta_bt**2+sta_bn**2)
-
- 
- ########## interpolate to minutes
- sta_time_m=np.arange(np.ceil(sta_btime)[0],sta_btime[-1],1.0000/(24*60))
- sta_btot_m=np.interp(sta_time_m,sta_btime,sta_btot)
- sta_br_m=np.interp(sta_time_m,sta_btime,sta_br)
- sta_bt_m=np.interp(sta_time_m,sta_btime,sta_bt)
- sta_bn_m=np.interp(sta_time_m,sta_btime,sta_bn)
- sta_vr_m=np.interp(sta_time_m,sta_ptime,sta_vr)
- sta_den_m=np.interp(sta_time_m,sta_ptime,sta_den)
- #sta_temp_m=np.interp(sta_time_m,sta_ptime,sta_temp)
-
- ########## interpolate to hours
- sta_time_h=np.arange(np.ceil(sta_btime)[0],sta_btime[-1],1.0000/(24))
- sta_btot_h=np.interp(sta_time_h,sta_btime,sta_btot)
- sta_br_h=np.interp(sta_time_h,sta_btime,sta_br)
- sta_bt_h=np.interp(sta_time_h,sta_btime,sta_bt)
- sta_bn_h=np.interp(sta_time_h,sta_btime,sta_bn)
- sta_vr_h=np.interp(sta_time_h,sta_ptime,sta_vr)
- sta_den_h=np.interp(sta_time_h,sta_ptime,sta_den)
- #sta_temp_h=np.interp(sta_time_h,sta_ptime,sta_temp)
-
-  
-
- #make recarrays
- data_minutes=np.rec.array([sta_time_m,sta_btot_m,sta_br_m,sta_bt_m,sta_bn_m,sta_vr_m,sta_den_m], \
- dtype=[('time','f8'),('btot','f8'),('br','f8'),('bt','f8'),('bn','f8'),\
-        ('speedr','f8'),('den','f8')])
- 
- data_hourly=np.rec.array([sta_time_h,sta_btot_h,sta_br_h,sta_bt_h,sta_bn_h,sta_vr_h,sta_den_h], \
- dtype=[('time','f8'),('btot','f8'),('br','f8'),('bt','f8'),('bn','f8'),\
-        ('speedr','f8'),('den','f8')])
- 
- 
- print('STEREO-A (RTN) beacon data interpolated to hour/minute resolution done.')
- 
- return data_minutes, data_hourly
+    #make recarrays
+    data_minutes=np.rec.array([sta_time_m,sta_btot_m,sta_br_m,sta_bt_m,sta_bn_m,sta_vr_m,sta_den_m], \
+    dtype=[('time','f8'),('btot','f8'),('br','f8'),('bt','f8'),('bn','f8'),\
+            ('speedr','f8'),('den','f8')])
+    
+    data_hourly=np.rec.array([sta_time_h,sta_btot_h,sta_br_h,sta_bt_h,sta_bn_h,sta_vr_h,sta_den_h], \
+    dtype=[('time','f8'),('btot','f8'),('br','f8'),('bt','f8'),('bn','f8'),\
+            ('speedr','f8'),('den','f8')])
+    
+    
+    print('STEREO-A (RTN) beacon data interpolated to hour/minute resolution done.')
+    
+    return data_minutes, data_hourly
 

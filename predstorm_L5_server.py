@@ -1,92 +1,103 @@
-# PREDSTORM real time solar wind and magnetic storm forecasting with 
-# time-shifted data from a spacecraft east of the Sun-Earth line 
-# here STEREO-A is used, also suited for data from a 
-# possible future L5 mission or interplanetary CubeSats
+"""
+PREDSTORM real time solar wind and magnetic storm forecasting with 
+time-shifted data from a spacecraft east of the Sun-Earth line 
+here STEREO-A is used, also suited for data from a 
+possible future L5 mission or interplanetary CubeSats
 
-# This is the version to be run hourly on a server, changes to original version marked by ****
+This is the version to be run hourly on a server, changes to original version marked by ****
 
-#Author: C. Moestl, IWF Graz, Austria
-#twitter @chrisoutofspace, https://github.com/cmoestl
-#started April 2018, last update November 2018
+Author: C. Moestl, R. Bailey, IWF Graz, Austria
+twitter @chrisoutofspace, https://github.com/cmoestl
+started April 2018, last update March 2019
 
-#python 3.5.5 with sunpy and seaborn, ipython 4.2.0
+python 3.5.5 with sunpy and seaborn, ipython 4.2.0
 
-#current status:
-# The code works with STEREO-A beacon and DSCOVR data and downloads STEREO-A beacon files 
-# into the sta_beacon directory 14 days prior to current time 
-# tested for correctly handling missing PLASTIC files
+current status:
+The code works with STEREO-A beacon and DSCOVR data and downloads STEREO-A beacon files 
+into the sta_beacon directory 14 days prior to current time 
+tested for correctly handling missing PLASTIC files
 
-# things to add: 
+things to add: 
 
-# - make verification mode new, add manual dst offset
-# - add error bars for the Temerin/Li Dst model with 1 and 2 sigma
-# - fill data gaps from STEREO-A beacon data with reasonable Bz fluctuations etc.
-#   based on a thorough assessment of errors with the ... stereob_errors program
-# - add timeshifts from L1 to Earth
-# - add approximate levels of Dst for each location to see the aurora (depends on season)
-#   taken from correlations of ovation prime, SuomiNPP data in NASA worldview and Dst 
-# - check coordinate conversions again, GSE to GSM is ok
-# - deal with CMEs at STEREO, because systematically degrades prediction results
-# - add metrics ROC for verification etc.
+- make verification mode new, add manual dst offset
+- add error bars for the Temerin/Li Dst model with 1 and 2 sigma
+- fill data gaps from STEREO-A beacon data with reasonable Bz fluctuations etc.
+  based on a thorough assessment of errors with the ... stereob_errors program
+- add timeshifts from L1 to Earth
+- add approximate levels of Dst for each location to see the aurora (depends on season)
+  taken from correlations of ovation prime, SuomiNPP data in NASA worldview and Dst 
+- check coordinate conversions again, GSE to GSM is ok
+- deal with CMEs at STEREO, because systematically degrades prediction results
+- add metrics ROC for verification etc.
+- proper status/debugging logging system
 
-# future larger steps:
-# (1) add the semi-supervised learning algorithm from the predstorm_L1 program; e.g. with older
-# 	STEREO data additionally, so a #combined L1/L5 forecast
-# 	most important: implement pattern recognition for STEREO-A streams, 
-# 	and link this to the most probably outcome days later at L1
-# 	train with STB data around the location where STA is at the moment
-# (2) fundamental issue: by what amount is Bz stable for HSS from L5 to L1? are there big changes?
-# is Bz higher for specific locations with respect to the HCS and the solar equator? 
-# temporal and spatial coherence of Bz
-# (3) probabilities for magnetic storm magnitude, probabilities for aurora for many locations
+future larger steps:
+(1) add the semi-supervised learning algorithm from the predstorm_L1 program; e.g. with older
+	STEREO data additionally, so a #combined L1/L5 forecast
+	most important: implement pattern recognition for STEREO-A streams, 
+	and link this to the most probably outcome days later at L1
+	train with STB data around the location where STA is at the moment
+(2) fundamental issue: by what amount is Bz stable for HSS from L5 to L1? are there big changes?
+is Bz higher for specific locations with respect to the HCS and the solar equator? 
+temporal and spatial coherence of Bz
+(3) probabilities for magnetic storm magnitude, probabilities for aurora for many locations
 
-
-## MIT LICENSE
-## Copyright 2018, Christian Moestl 
-## Permission is hereby granted, free of charge, to any person obtaining a copy of this 
-## software and associated documentation files (the "Software"), to deal in the Software
-## without restriction, including without limitation the rights to use, copy, modify, 
-## merge, publish, distribute, sublicense, and/or sell copies of the Software, and to 
-## permit persons to whom the Software is furnished to do so, subject to the following 
-## conditions:
-## The above copyright notice and this permission notice shall be included in all copies 
-## or substantial portions of the Software.
-## THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
-## INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-## PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT 
-## HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF 
-## CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE 
-## OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-
-
-
-
+MIT LICENSE
+Copyright 2019, Christian Moestl 
+Permission is hereby granted, free of charge, to any person obtaining a copy of this 
+software and associated documentation files (the "Software"), to deal in the Software
+without restriction, including without limitation the rights to use, copy, modify, 
+merge, publish, distribute, sublicense, and/or sell copies of the Software, and to 
+permit persons to whom the Software is furnished to do so, subject to the following 
+conditions:
+The above copyright notice and this permission notice shall be included in all copies 
+or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT 
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF 
+CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE 
+OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+"""
 
 
 ##########################################################################################
 ######################################### CODE START #####################################
 ##########################################################################################
 
-#**** important for server version, otherwise error when making figures
-import matplotlib
-matplotlib.use('Agg') 
-#*******
-
-import scipy.io
 import os
-import datetime
+import sys
+import getopt
+
+# READ INPUT OPTIONS FROM COMMAND LINE
+argv = sys.argv[1:]
+opts, args = getopt.getopt(argv,"h",["testing", "help"])
+
+testing = False
+if "--testing" in [o for o, v in opts]:
+    testing = True
+    print("In testing mode!")
+
 import matplotlib
+if not testing:
+    matplotlib.use('Agg') # important for server version, otherwise error when making figures
+else:
+    try:
+        import IPython
+    except:
+        print("IPython import for testing failed!")
+
+from datetime import datetime, timedelta
+import json
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import numpy as np
 import pdb
-import urllib
-import json
 import pickle
-import sunpy.time
+import scipy.io
 import seaborn as sns
-
+import sunpy.time
+import urllib
 
 import predstorm_module
 from predstorm_module import get_dscovr_data_real
@@ -102,91 +113,248 @@ from predstorm_module import sphere2cart
 from predstorm_module import convert_RTN_to_GSE_sta_l1
 from predstorm_module import get_noaa_dst
 
-#ignore warnings
-#import warnings
-#warnings.filterwarnings('ignore')
+# GET INPUT PARAMETERS
+from predstorm_L5_input import *
 
+for opt, arg in opts:
+    if opt == "--testing":
+        testing = True
+    elif opt == '-h' or opt == '--help':
+        print("This is help text.")
 
-
-
-
-
-
-
-
-############################## INPUT PARAMETERS ######################################
-
-
-inputfilename='predstorm_L5_input.txt'
-
-#reads all lines as strings
-lines = open(inputfilename).read().splitlines()
-
-#whether to show interpolated data points on the DSCOVR input plot
-showinterpolated=int(lines[3])
-
-
-#the time interval for both the observed and predicted wind 
-#Delta T in hours, start with 24 hours here (covers 1 night of aurora)
-deltat=int(lines[9])
-
-#take 4 solar minimum years as training data for 2018
-trainstart=lines[12]
-trainend=lines[13]
-
-#synodic solar rotation sun_syn=26.24 #days
-#carrington rotation 26 deg latitude: 27.28 days
-#use other values for equatorial coronal holes?
-sun_syn=float(lines[16]) #days
-
-#how far to see in the future with STEREO-A data to the right of the current time
-realtime_plot_timeadd=float(lines[19])
-
-#to shift the left beginning of the plot
-realtime_plot_leftadd=float	(lines[22])
-
-#to get older data for plotting Burton/OBrien Dst for verification
-verification_mode=int(lines[25])
-#verify_filename='real/savefiles/predstorm_realtime_stereo_l1_save_v1_2018-05-04-10_00.p'
-#verify_filename='real/savefiles/predstorm_realtime_stereo_l1_save_v1_2018-05-29-12_32.p'
-#verify_filename='real/savefiles/predstorm_realtime_stereo_l1_save_v1_2018-06-16-07_13.p'
-verify_filename=lines[27]
-
-#intervals for verification
-verify_int_start=lines[30]
-verify_int_end=lines[31]
-
-##################*******************
-dst_offset=0
-
-
+# DEFINE OUTPUT DIRECTORIES:
 outputdirectory='results'
-
-#check if directory for output exists (for plots and txt files)
-#if not make new directory
+# Check if directory for output exists (for plots and txt files)
 if os.path.isdir(outputdirectory) == False: os.mkdir(outputdirectory)
-#also make directory for savefiles
-if os.path.isdir(outputdirectory+'/savefiles') == False: \
-   os.mkdir(outputdirectory+'/savefiles')
-
-#check if directory for beacon data exists, if not make new directory
+# Make directory for savefiles
+if os.path.isdir(outputdirectory+'/savefiles') == False:
+    os.mkdir(outputdirectory+'/savefiles')
+# Check if directory for beacon data exists
 if os.path.isdir('sta_beacon') == False: os.mkdir('sta_beacon')
 
+#========================================================================================
+#--------------------------------- FUNCTIONS --------------------------------------------
+#========================================================================================
 
+def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, Dst, dst_label='Dst Temerin & Li 2002', past_days=3.5, future_days=7., lw=1, fs=11, ms=5, figsize=(14,12), verification_mode=False):
+    """
+    Plots solar wind variables, past from DSCOVR and future/predicted from STEREO-A.
+    Total B-field and Bz (top), solar wind speed (second), particle density (third)
+    and Dst (fourth) from Kyoto and model prediction.
 
+    Parameters
+    ==========
+    DSCOVR_data : list[minute data, hourly data]
+        DSCOVR data in different time resolutions.
+    STEREOA_data : list[minute data, hourly data]
+        STEREO-A data in different time resolutions.
+    Dst : array
+        Predicted Dst
+    dst_method : str (default='temerin_li')
+        Descriptor for Dst method being plotted.
+    past_days : float (default=3.5)
+        Number of days in the past to plot.
+    future_days : float (default=7.)
+        Number of days into the future to plot.
+    lw : int (default=1)
+        Linewidth for plotting functions.
+    fs : int (default=11)
+        Font size for all text in plot.
+    ms : int (default=5)
+        Marker size for markers in plot.
+    figsize : tuple(float=width, float=height) (default=(14,12))
+        Figure size (in inches) for output file.
+    verification_mode : bool (default=False)
+        If True, verification mode will produce a plot of the predicted Dst
+        for model verification purposes.
 
+    Returns
+    =======
+    plt.savefig : .png file
+        File saved to XXX
+    """
+    
+    # Set style:
+    sns.set_context("talk")     
+    sns.set_style("darkgrid")  
+    
+    # Make figure object:
+    fig=plt.figure(1,figsize=figsize)
+    axes = []
+    
+    # Set data objects:
+    stam, sta = STEREOA_data
+    dism, dis = DSCOVR_data
 
+    plotstart = dism.time[-1] - past_days
+    plotend = dis.time[-1] + future_days
 
+    # SUBPLOT 1: Total B-field and Bz
+    # -------------------------------
+    ax1 = fig.add_subplot(411)
+    axes.append(ax1)
 
+    # Total B-field and Bz (DSCOVR)
+    plt.plot_date(dism.time, dism.btot,'-k', label='B total L1', linewidth=lw)
+    plt.plot_date(dism.time, dism.bzgsm,'-g', label='Bz GSM L1',linewidth=lw)
 
+    # STEREO-A minute resolution data with timeshift    
+    plt.plot_date(stam.time[sta_index_future], stam.btot[sta_index_future],
+                  '-r', linewidth=lw, label='B STEREO-Ahead')
+    plt.plot_date(stam.time[sta_index_future], stam.bn[sta_index_future], markersize=0,
+                  linestyle='-', color='darkolivegreen', linewidth=lw, label='Bn RTN STEREO-Ahead')
 
+    # Indicate 0 level for Bz
+    plt.plot_date([plotstart,plotend], [0,0],'--k', alpha=0.5, linewidth=1)
+    plt.ylabel('Magnetic field [nT]',  fontsize=fs+2)
 
+    # For y limits check where the maximum and minimum are for DSCOVR and STEREO taken together:
+    bplotmax=np.nanmax(np.concatenate((dism.btot,stam.btot[sta_index_future])))+5
+    bplotmin=np.nanmin(np.concatenate((dism.bzgsm,stam.bn[sta_index_future]))-5)
 
-######################################## MAIN PROGRAM ####################################
+    plt.ylim(bplotmin, bplotmax)
 
-#get current directory
-os.system('pwd')
-#closes all plots
+    plt.title('L1 DSCOVR real time solar wind from NOAA SWPC for '+ str(mdates.num2date(timeutc))[0:16]+ ' UT   STEREO-A beacon', fontsize=16)
+
+    # SUBPLOT 2: Solar wind speed
+    # ---------------------------
+    ax2 = fig.add_subplot(412)
+    axes.append(ax2)
+
+    # Plot solar wind speed (DSCOVR):
+    plt.plot_date(dism.time, dism.speed,'-k', label='speed L1',linewidth=lw)
+    plt.ylabel('Speed $\mathregular{[km \\ s^{-1}]}$', fontsize=fs+2)
+    
+    # Plot STEREO-A data with timeshift and savgol filter
+    from scipy.signal import savgol_filter
+    try:
+        plt.plot_date(stam.time[sta_index_future], 
+                      savgol_filter(stam.speedr[sta_index_future],5,1),
+                      '-r', linewidth=lw, label='speed STEREO-Ahead')
+    except:
+        print("Savgol filter failed for STEREO-A data. Continuing without...")  # TODO Why does this happen?
+        plt.plot_date(stam.time[sta_index_future], stam.speedr[sta_index_future],
+                      '-r', linewidth=lw, label='speed STEREO-Ahead')
+
+    # Add speed levels:
+    for hline, linetext in zip([400, 800], ['slow', 'fast']):
+        plt.plot_date([dis.time[0], dis.time[-1]+future_days], 
+                    [hline, hline],'--k', alpha=0.3, linewidth=1)
+        plt.annotate(linetext,xy=(dis.time[0]+past_days,hline),
+                    xytext=(dis.time[0]+past_days,hline),
+                    color='k', fontsize=10)
+
+    # For y limits check where the maximum and minimum are for DSCOVR and STEREO taken together:
+    try:
+        vplotmax=np.nanmax(np.concatenate((dism.speed,savgol_filter(stam.speedr[sta_index_future],15,1))))+100
+        vplotmin=np.nanmin(np.concatenate((dism.speed,savgol_filter(stam.speedr[sta_index_future],15,1)))-50)
+    except:
+        vplotmax=np.nanmax(np.concatenate((dism.speed,stam.speedr[sta_index_future])))+100
+        vplotmin=np.nanmin(np.concatenate((dism.speed,stam.speedr[sta_index_future]))-50)
+    plt.ylim(vplotmin, vplotmax)
+
+    plt.annotate('now',xy=(timeutc,vplotmax-100),xytext=(timeutc+0.05,vplotmax-100),color='k', fontsize=14)
+
+    # SUBPLOT 3: Solar wind density
+    # -----------------------------
+    ax3 = fig.add_subplot(413)
+    axes.append(ax3)
+    
+    # Plot solar wind density:
+    plt.plot_date(dism.time, dism.den,'-k', label='density L1',linewidth=lw)
+    plt.ylabel('Density $\mathregular{[ccm^{-3}]}$',fontsize=fs+2)
+    # For y limits check where the maximum and minimum are for DSCOVR and STEREO taken together:
+    plt.ylim([0,np.nanmax(np.nanmax(np.concatenate((dism.den,stam.den[sta_index_future])))+10)])
+
+    #plot STEREO-A data with timeshift and savgol filter
+    try:
+        plt.plot_date(stam.time[sta_index_future], savgol_filter(stam.den[sta_index_future],5,1),
+                      '-r', linewidth=lw, label='density STEREO-Ahead')
+    except:
+        plt.plot_date(stam.time[sta_index_future], stam.den[sta_index_future],
+                      '-r', linewidth=lw, label='density STEREO-Ahead')
+
+    # SUBPLOT 4: Actual and predicted Dst
+    # -----------------------------------
+    ax4 = fig.add_subplot(414)
+    axes.append(ax4)
+
+    # Observed Dst Kyoto (past):
+    plt.plot_date(dst_time, dst,'ko', label='Dst observed',markersize=4)
+    plt.ylabel('Dst [nT]', fontsize=fs+2)
+    plt.ylim([np.nanmin(Dst)-50,np.nanmax(Dst)+20])
+        
+    if not verification_mode:
+        plt.plot_date(com_time, Dst,'-r', label=dst_label,markersize=3, linewidth=1)
+        # Add generic error bars of +/-15 nT:
+        error=15
+        plt.fill_between(com_time, Dst-error, Dst+error, alpha=0.2, 
+                         label='Error for high speed streams')
+    else:
+        #load saved data l prefix is for loaded - WARNING This will crash if called right now
+        [timenowb, sta_ptime, sta_vr, sta_btime, sta_btot, sta_br,sta_bt, sta_bn, rbtime_num, rbtot, rbzgsm, rptime_num, rpv, rpn, lrdst_time, lrdst, lcom_time, ldst_burton, ldst_obrien,ldst_temerin_li]=pickle.load(open(verify_filename,'rb') )  
+        plt.plot_date(lcom_time, ldst_burton,'-b', label='Forecast Dst Burton et al. 1975',markersize=3, linewidth=1)
+        plt.plot_date(lcom_time, ldst_obrien,'-r', label='Forecast Dst OBrien & McPherron 2000',markersize=3, linewidth=1)
+    
+    # Label plot with geomagnetic storm levels
+    plt.plot_date([dis.time[0], dis.time[-1]+future_days], [0,0],'--k', alpha=0.3, linewidth=1)
+    for hline, linetext in zip([-50, -100, -250], ['moderate', 'intense', 'super-storm']):
+        plt.plot_date([dis.time[0], dis.time[-1]+future_days], 
+                      [hline,hline],'--k', alpha=0.3, linewidth=1)
+        plt.annotate(linetext,xy=(dis.time[0]+past_days,hline+2),
+                     xytext=(dis.time[0]+past_days,hline+2),color='k', fontsize=10)
+
+    # GENERAL FORMATTING
+    # ------------------
+    for ax in axes:
+        ax.set_xlim([plotstart,plotend])
+        ax.tick_params(axis="x", labelsize=fs)
+        ax.tick_params(axis="y", labelsize=fs)
+        ax.legend(loc=2,ncol=3,fontsize=fs-2)
+        
+        # Dates on x-axes:
+        myformat = mdates.DateFormatter('%b %d %Hh')
+        ax.xaxis.set_major_formatter(myformat)
+        
+        # Verticle line for now:
+        ax.plot_date([timeutc,timeutc],[-2000,2000],'-k', linewidth=2)
+    
+    # Liability text:
+    plt.figtext(0.99,0.05,'C. Moestl, IWF Graz, Austria', fontsize=12, ha='right')
+    plt.figtext(0.99,0.025,'https://twitter.com/chrisoutofspace', fontsize=12, ha='right')
+    plt.figtext(0.01,0.03,'We take no responsibility or liability for the frequency of provision and accuracy of this forecast.' , fontsize=8, ha='left')
+    plt.figtext(0.01,0.01,'We will not be liable for any losses and damages in connection with using the provided information.' , fontsize=8, ha='left')
+
+    #save plot 
+    if not verification_mode:
+        plot_label = 'realtime'
+    else:
+        plot_label = 'verify'
+        
+    filename = os.path.join(outputdirectory,'predstorm_v1_{}_stereo_a_plot_{}-{}_{}.png'.format(
+                            plot_label, timeutcstr[0:10], timeutcstr[11:13], timeutcstr[14:16]))
+    filename_eps = filename.replace('png', 'eps')
+        
+    if not verification_mode:
+        plt.savefig('predstorm_real.png')
+        print('Real-time plot saved as predstorm_real.png!')
+        
+    if testing: # Just plot and exit
+        plt.show()
+        sys.exit()
+    plt.savefig(filename)
+    print('Plot saved as png:\n', filename)
+    log.write('\n')
+    log.write('Plot saved as png:\n'+ filename)
+    
+
+#========================================================================================
+#--------------------------------- MAIN PROGRAM -----------------------------------------
+#========================================================================================
+
+# Get current directory
+os.system('pwd')        # TODO What does this do?
+# Closes all plots
 plt.close('all')
 
 print('------------------------------------------------------------------------')
@@ -201,9 +369,9 @@ print()
 print()
 print('------------------------------------------------------------------------')
 
+#================================== (1) GET DATA ========================================
 
-
-
+# TODO Make the SDO generalised for server
 ################### get latest SDO coronal hole image
 #download latest 193 PFSS to current directory
 #maybe make your own at some point: https://github.com/antyeates1983/pfss
@@ -222,24 +390,24 @@ print('downloaded SDO latest_1024_0193.jpg converted to png')
 #delete jpg
 os.system('rm latest_1024_0193.jpg')
 
+#------------------------ (1a) Get real-time DSCOVR data --------------------------------
 
-
-
-################################ (1) GET DATA ############################################
-
-
-######################### (1a) get real time DSCOVR data #################################
-
-#get real time DSCOVR data with minute/hourly time resolution as recarray
+# Get real time DSCOVR data with minute/hourly time resolution as recarray
 [dism,dis]=get_dscovr_data_real()
 
-#get time of the last entry in the DSCOVR data
+# Get time of the last entry in the DSCOVR data
 timenow=dism.time[-1]
 timenowstr=str(mdates.num2date(timenow))[0:16]
 
-#get UTC time now
-timeutc=mdates.date2num(datetime.datetime.utcnow())
-timeutcstr=str(datetime.datetime.utcnow())[0:16]
+# Get UTC time now
+timeutc=mdates.date2num(datetime.utcnow())
+timeutcstr=str(datetime.utcnow())[0:16]
+
+# Open file for logging results:        # TODO use logging module
+logfile=outputdirectory+'/predstorm_v1_realtime_stereo_a_results_'+timeutcstr[0:10]+'-' \
+         +timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.txt'
+print('Logfile for results is: ',logfile)
+print()
 
 print()
 print()
@@ -250,14 +418,6 @@ print(timenowstr)
 print('Time lag in minutes:', int(round((timeutc-timenow)*24*60)))
 print()
 
-
-
-########################## (1b) open file for logging results
-logfile=outputdirectory+'/predstorm_v1_realtime_stereo_a_results_'+timeutcstr[0:10]+'-' \
-         +timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.txt'
-print('Logfile for results is: ',logfile)
-print()
-
 log=open(logfile,'wt')
 log.write('')
 log.write('PREDSTORM L5 v1 results \n')
@@ -265,8 +425,7 @@ log.write('For UT time: \n')
 log.write(timenowstr)
 log.write('\n')
 
-
-########################### (1c) get real time STEREO-A beacon data
+#------------------------ (1b) Get real-time STEREO-A beacon data -----------------------
 
 #get real time STEREO-A data with minute/hourly time resolution as recarray
 [stam,sta]=get_stereoa_data_beacon()
@@ -293,26 +452,14 @@ print(laststa_time_str)
 print('Time lag in hours:', int(round((timeutc-laststa)*24)))
 print()
 
+#========================== (2) PREDICTION CALCULATIONS ==================================
 
-
-
-
-
-
-
-
-
-
-########################### (2) PREDICTION CALCULATIONS ##################################
-
-
-########################### (2a)  Time lag for solar rotation
+#------------------------ (2a)  Time lag for solar rotation ------------------------------
 
 # define time lag from STEREO-A to Earth 
 timelag_sta_l1=abs(sta_long_heeq)/(360/sun_syn) #days
 arrival_time_l1_sta=dis.time[-1]+timelag_sta_l1
 arrival_time_l1_sta_str=str(mdates.num2date(arrival_time_l1_sta))
-
 
 #feature_sta=mdates.date2num(sunpy.time.parse_time('2018-04-27T01:00:00'))
 #arrival_feature_sta_str=str(mdates.num2date(feature_sta+timelag_sta_l1))
@@ -346,7 +493,7 @@ log.write('\n')
 
 
 
-################################# (2b) Further corrections to time-shifted STEREO-A data 
+#------------------------ (2b) Corrections to time-shifted STEREO-A data ----------------
 
 # (1) make correction for heliocentric distance of STEREO-A to L1 position
 # take position of Earth and STEREO-A from positions file 
@@ -414,9 +561,7 @@ sta_bn=np.interp(sta_time,sta.time,sta.bn)
 sta_speedr=np.interp(sta_time,sta.time,sta.speedr)
 sta_den=np.interp(sta_time,sta.time,sta.den)
 
-
-
-#################### (2c) COMBINE DSCOVR and time-shifted STEREO-A data ################## 
+#------------------- (2c) COMBINE DSCOVR and time-shifted STEREO-A data -----------------
 
 # make combined array of DSCOVR and STEREO-A data
 com_time=np.concatenate((dis.time, sta_time))
@@ -429,16 +574,16 @@ com_den=np.concatenate((dis.den, sta_den))
 
 
 #if there are nans interpolate them (important for Temerin/Li method)
-if sum(np.isnan(com_den)) >0: 
- good = np.where(np.isfinite(com_den)) 
- com_den=np.interp(com_time,com_time[good],com_den[good])
+if sum(np.isnan(com_den)) > 0: 
+    good = np.where(np.isfinite(com_den)) 
+    com_den=np.interp(com_time,com_time[good],com_den[good])
 
-if sum(np.isnan(com_vr)) >0: 
- good = np.where(np.isfinite(com_vr)) 
- com_vr=np.interp(com_time,com_time[good],com_vr[good])
+if sum(np.isnan(com_vr)) > 0: 
+    good = np.where(np.isfinite(com_vr)) 
+    com_vr=np.interp(com_time,com_time[good],com_vr[good])
 
 
-##################### (2d) calculate Dst for combined data ###############################
+#---------------------- (2d) calculate Dst for combined data ----------------------------
 
 print('Make Dst prediction for L1 calculated from time-shifted STEREO-A beacon data.')
 log.write('\n')
@@ -468,263 +613,30 @@ log.write('Loaded Kyoto Dst from NOAA for last 7 days.')
 log.write('\n')
 
 
-
-
-
-
-
-
-
-
-
-
-
-################################### (3) PLOT RESULTS  ####################################
+#========================== (3) PLOT RESULTS  ===========================================
 
 #for the minute data, check which are the intervals to show for STEREO-A until end of plot
 sta_index_future=np.where(np.logical_and(stam.time > dism.time[-1], \
-                          stam.time < dism.time[-1]+realtime_plot_timeadd))
-
-#initiate figure
-sns.set_context("talk")     
-sns.set_style("darkgrid")  
-fig=plt.figure(1,figsize=(14,12)) #fig=plt.figure(1,figsize=(14,14))
-wide=1
-fsize=11
-msize=5
-
-plotstart=dism.time[-1]-realtime_plot_leftadd
-plotend=dis.time[-1]+realtime_plot_timeadd
-
-
-
-################################# panel 1
-ax1 = fig.add_subplot(411)
-
-#plot DSCOVR with minute resolution
-plt.plot_date(dism.time, dism.btot,'-k', label='B total L1', linewidth=wide)
-plt.plot_date(dism.time, dism.bzgsm,'-g', label='Bz GSM L1',linewidth=wide)
-
-#plot STEREO-A minute resolution data with timeshift	
-plt.plot_date(stam.time[sta_index_future], stam.btot[sta_index_future], \
-              '-r', linewidth=wide, label='B STEREO-Ahead')
-plt.plot_date(stam.time[sta_index_future], stam.bn[sta_index_future], markersize=0, \
-       linestyle='-', color='darkolivegreen', linewidth=wide, label='Bn RTN STEREO-Ahead')
-
-#indicate 0 level for Bz
-plt.plot_date([plotstart,plotend], [0,0],'--k', alpha=0.5, linewidth=1)
-
-#vertical line and indicator for prediction and observation
-plt.plot_date([timeutc,timeutc],[-100,100],'-k', linewidth=2)
-
-
-#if showinterpolated > 0: plt.plot_date(rbtimes24, rbtot24,'ro', label='B total interpolated last 24 hours',linewidth=wide,markersize=msize)
-#if showinterpolated > 0: plt.plot_date(rbtimes24, rbzgsm24,'go', label='Bz GSM interpolated last 24 hours',linewidth=wide,markersize=msize)
-#test hourly interpolation 
-#plt.plot_date(rtimes7, rbtot7,'-ko', label='B7',linewidth=wide,markersize=5)
-#plt.plot_date(rtimes7, rbzgsm7,'-go', label='Bz7',linewidth=wide,markersize=5)
-#plt.plot_date(sta_time7, sta_btot7,'-ko', label='B7',linewidth=wide, markersize=5)
-#plt.plot_date(sta_time7, sta_bn7,'-go', label='Bz GSM STEREO-Ahead',linewidth=wide,markersize=5)
-#plt.plot_date(sta_time7, dbn,'-bo', label='Bg',linewidth=wide,markersize=5)
-
-
-plt.ylabel('Magnetic field [nT]',  fontsize=fsize+2)
-myformat = mdates.DateFormatter('%b %d %Hh') #myformat = mdates.DateFormatter('%Y %b %d %Hh')
-ax1.xaxis.set_major_formatter(myformat)
-ax1.legend(loc='upper left', fontsize=fsize-2,ncol=4)
-
-#for y limits check where the maximum and minimum are for DSCOVR and STEREO in the minute data taken together
-#negative is surely in bz for this plot, positive in btot
-bplotmax=np.nanmax(np.concatenate((dism.btot,stam.btot[sta_index_future])))+5
-bplotmin=np.nanmin(np.concatenate((dism.bzgsm,stam.bn[sta_index_future]))-5)
-
-plt.ylim(bplotmin, bplotmax)
-plt.xlim([plotstart,plotend])
-
-plt.title('L1 DSCOVR real time solar wind from NOAA SWPC for '+ str(mdates.num2date(timeutc))[0:16]+ ' UT   STEREO-A beacon', fontsize=16)
-plt.xticks(fontsize=fsize)
-plt.yticks(fontsize=fsize)
-
-
-
-###################################### panel 2
-ax2 = fig.add_subplot(412)
-
-#DSCOVR
-plt.plot_date(dism.time, dism.speed,'-k', label='speed L1',linewidth=wide)
-#plot STEREO-A data with timeshift	and savgol filter
-from scipy.signal import savgol_filter
-plt.plot_date(stam.time[sta_index_future], savgol_filter(stam.speedr[sta_index_future],5,1),'-r', linewidth=wide, label='speed STEREO-Ahead')
-
-#add speed levels
-plt.plot_date([dis.time[0], dis.time[-1]+realtime_plot_timeadd], [400,400],'--k', alpha=0.3, linewidth=1)
-plt.annotate('slow',xy=(dis.time[0]+realtime_plot_leftadd,400),xytext=(dis.time[0]+realtime_plot_leftadd,400),color='k', fontsize=10)
-plt.plot_date([dis.time[0], dis.time[-1]+realtime_plot_timeadd], [800,800],'--k', alpha=0.3, linewidth=1)
-plt.annotate('fast',xy=(dis.time[0]+realtime_plot_leftadd,800),xytext=(dis.time[0]+realtime_plot_leftadd,800),color='k', fontsize=10	)
-
-
-#for y limits check where the maximum and minimum are for DSCOVR and STEREO taken together
-vplotmax=np.nanmax(np.concatenate((dism.speed,savgol_filter(stam.speedr[sta_index_future],15,1))))+100
-vplotmin=np.nanmin(np.concatenate((dism.speed,savgol_filter(stam.speedr[sta_index_future],15,1)))-50)
-plt.ylim(vplotmin, vplotmax)
-plt.xlim([plotstart,plotend])
-
-#now vertical line for current time
-plt.plot_date([timeutc,timeutc],[0,vplotmax],'-k', linewidth=2)
-plt.annotate('now',xy=(timeutc,vplotmax-100),xytext=(timeutc+0.05,vplotmax-100),color='k', fontsize=14)
-#plt.annotate('observation',xy=(timenowb,bplotmax-3),xytext=(timenowb-0.55,bplotmax-3),color='k', fontsize=15)
-#plt.annotate('prediction',xy=(timenowb,bplotmax-3),xytext=(timenowb+0.45,bplotmax-3),color='b', fontsize=15)
-
-#if showinterpolated > 0: plt.plot_date(rptimes24, rpv24,'ro', label='V interpolated last 24 hours',linewidth=wide,markersize=msize)
-#test interpolation
-#plt.plot_date(dis.time, rpv7,'-ko', label='v7',linewidth=wide,markersize=5)
-#plt.plot_date(sta_time7, sta_vr7,'-go', label='Vr7',linewidth=wide,markersize=5)
-
-
-#plt.ylim([np.nanmin(rpv)-50,np.nanmax(rpv)+100])
-plt.xticks(fontsize=fsize)
-plt.yticks(fontsize=fsize)
-
-
-plt.ylabel('Speed $\mathregular{[km \\ s^{-1}]}$', fontsize=fsize+2)
-ax2.xaxis.set_major_formatter(myformat)
-ax2.legend(loc=2,fontsize=fsize-2,ncol=2)
-
-
-
-########################################### panel 3 density
-ax3 = fig.add_subplot(413)
-plt.plot_date(dism.time, dism.den,'-k', label='density L1',linewidth=wide)
-
-#plot STEREO-A data with timeshift and savgol filter
-plt.plot_date(stam.time[sta_index_future], savgol_filter(stam.den[sta_index_future],5,1),'-r', linewidth=wide, label='density STEREO-Ahead')
-
-#now vertical line
-plt.plot_date([timeutc,timeutc],[0,500],'-k', linewidth=2)
-
-#if showinterpolated > 0:  plt.plot_date(rptimes24, rpn24,'ro', label='N interpolated last 24 hours',linewidth=wide,markersize=msize)
-#test interpolation
-#plt.plot_date(dis.time, rpn7,'-ko', label='n7',linewidth=wide,markersize=5)
-#plt.plot_date(sta_time7, sta_den7,'-go', label='den7',linewidth=wide,markersize=5)
-
-plt.ylabel('Density $\mathregular{[ccm^{-3}]}$',fontsize=fsize+2)
-ax3.xaxis.set_major_formatter(myformat)
-ax3.legend(loc=2,ncol=2,fontsize=fsize-2)
-
-#for y limits check where the maximum and minimum are for DSCOVR and STEREO taken together
-plt.ylim([0,np.nanmax(np.nanmax(np.concatenate((dism.den,stam.den[sta_index_future])))+10)])
-
-plt.xlim([plotstart,plotend])
-plt.xticks(fontsize=fsize)
-plt.yticks(fontsize=fsize)
-
-
-
-
-########################################### panel 4 Dst
-ax4 = fig.add_subplot(414)
-
-#observed Dst Kyoto
-plt.plot_date(dst_time, dst,'ko', label='Dst observed',markersize=4)
-
-dst_temerin_li=dst_temerin_li+dst_offset
-
-#now vertical line
-plt.plot_date([timeutc,timeutc],[-2000,200],'-k', linewidth=2)
-
-plt.ylabel('Dst [nT]', fontsize=fsize+2)
-ax4.xaxis.set_major_formatter(myformat)
-plt.xlim([plotstart,plotend])
-plt.ylim([np.nanmin(dst_temerin_li)-50,np.nanmax(dst_temerin_li)+20])
-plt.xticks(fontsize=fsize)
-plt.yticks(fontsize=fsize)
-
-#plot Dst made from L1 and STEREO-A
-if verification_mode == 0:
-  plt.plot_date(com_time, dst_temerin_li,'-r', label='Dst Temerin & Li 2002',markersize=3, linewidth=1)
-  #generic errors of +/-15 nT from test program with STEREO-B data
-  error=15
-  plt.fill_between(com_time, dst_temerin_li-error, dst_temerin_li+error, alpha=0.2, label='Error for high speed streams')
-  #other methods
-  #plt.plot_date(com_time+1/24, dst_burton,'-b', label='Dst Burton et al. 1975',markersize=3, linewidth=1)
-  #plt.plot_date(com_time+1/24, dst_obrien,'-r', label='Dst OBrien & McPherron 2000',markersize=3, linewidth=1)
-  #plt.fill_between(com_time+1/24, dst_burton-error, dst_burton+error, alpha=0.2)
-  #plt.fill_between(com_time+1/24, dst_obrien-error, dst_obrien+error, alpha=0.2)
-
-
-
-#####**********************
-if verification_mode > 0:
-  #load saved data l prefix is for loaded 
-  [timenowb, sta_ptime, sta_vr, sta_btime, sta_btot, sta_br,sta_bt, sta_bn, rbtime_num, rbtot, rbzgsm, rptime_num, rpv, rpn, lrdst_time, lrdst, lcom_time, ldst_burton, ldst_obrien,ldst_temerin_li]=pickle.load(open(verify_filename,'rb') )  
-  plt.plot_date(lcom_time, ldst_burton,'-b', label='Forecast Dst Burton et al. 1975',markersize=3, linewidth=1)
-  plt.plot_date(lcom_time, ldst_obrien,'-r', label='Forecast Dst OBrien & McPherron 2000',markersize=3, linewidth=1)
- 
-ax4.legend(loc=2,ncol=3,fontsize=fsize-2)
-
-
-#add geomagnetic storm levels
-plt.plot_date([dis.time[0], dis.time[-1]+realtime_plot_timeadd], [0,0],'--k', alpha=0.3, linewidth=1)
-plt.plot_date([dis.time[0], dis.time[-1]+realtime_plot_timeadd], [-50,-50],'--k', alpha=0.3, linewidth=1)
-plt.annotate('moderate',xy=(dis.time[0]+realtime_plot_leftadd,-50+2),xytext=(dis.time[0]+realtime_plot_leftadd,-50+2),color='k', fontsize=10)
-plt.plot_date([dis.time[0], dis.time[-1]+realtime_plot_timeadd], [-100,-100],'--k', alpha=0.3, linewidth=1)
-plt.annotate('intense',xy=(dis.time[0]+realtime_plot_leftadd,-100+2),xytext=(dis.time[0]+realtime_plot_leftadd,-100+2),color='k', fontsize=10)
-plt.plot_date([dis.time[0], dis.time[-1]+realtime_plot_timeadd], [-250,-250],'--k', alpha=0.3, linewidth=1)
-plt.annotate('super-storm',xy=(dis.time[0]+realtime_plot_leftadd,-250+2),xytext=(dis.time[0]+realtime_plot_leftadd,-250+2),color='k', fontsize=10)
-
-#plt.tight_layout()
-#plt.tight_layout()
-
-
-
-
-plt.figtext(0.99,0.05,'C. Moestl, IWF Graz, Austria', fontsize=12, ha='right')
-plt.figtext(0.99,0.025,'https://twitter.com/chrisoutofspace', fontsize=12, ha='right')
-
-plt.figtext(0.01,0.03,'We take no responsibility or liability for the frequency of provision and accuracy of this forecast.' , fontsize=8, ha='left')
-plt.figtext(0.01,0.01,'We will not be liable for any losses and damages in connection with using the provided information.' , fontsize=8, ha='left')
-
-
-
-print()
-
-#save plot 
-if verification_mode == 0:
- filename=outputdirectory+'/predstorm_v1_realtime_stereo_a_plot_'+timeutcstr[0:10]+'-'+timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.png'
- filenameeps=outputdirectory+'/predstorm_v1_realtime_stereo_a_plot_'+timeutcstr[0:10]+'-'+timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.eps'
-
- print('Plot saved as png and eps:\n', filename)
- log.write('\n')
- log.write('Plot saved as png and eps:\n'+ filename)
- 
- #plt.savefig(filenameeps)
- print('real time plot saved as predstorm_real.png')
- plt.savefig('predstorm_real.png')
-
-
-#flag if verification_mode is used
-if verification_mode > 0:
- filename=outputdirectory+'/predstorm_v1_verify_stereo_a_plot_'+timeutcstr[0:10]+'-'+timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.png'
- filenameeps=outputdirectory+'/predstorm_v1_verify_stereo_a_plot_'+timeutcstr[0:10]+'-'+timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.eps'
-
- print('Plot saved as png and eps:\n', filename)
- log.write('\n')
- log.write('Plot saved as png and eps:\n'+ filename)
-
-
-
-plt.savefig(filename)
-#plt.savefig(filenameeps)
-
-
-
-
-
-
-
-
-
-
+                          stam.time < dism.time[-1]+plot_future_days))
+
+# Prediction Dst from L1 and STEREO-A:
+if dst_method == 'temerin_li':      # Can compare methods later to see which is most accurate
+    Dst = dst_temerin_li
+    dst_label = 'Dst Temerin & Li 2002'
+elif dst_method == 'obrien':
+    Dst = dst_obrien
+    dst_label = 'Dst OBrien & McPherron 2000'
+elif dst_method == 'burton':
+    Dst = dst_burton
+    dst_label = 'Dst Burton et al. 1975'
+Dst = Dst + dst_offset
+
+# **************************************************************
+plot_solarwind_and_dst_prediction([dism, dis], [stam, sta], Dst,
+                                  past_days=plot_past_days,
+                                  future_days=plot_future_days,
+                                  dst_label=dst_label)
+# **************************************************************
 
 
 ###################################### (4) WRITE OUT RESULTS AND VARIABLES ###############
@@ -799,7 +711,7 @@ log.write('TXT: Variables saved in: \n'+ filename_save+ '\n')
 
 ################################# VERIFICATION MODE BRANCH ###############################
 #######**********************
-if verification_mode > 0:
+if verification_mode:
   print('Verification results for interval:')
   
 
