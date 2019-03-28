@@ -5,13 +5,14 @@ import scipy
 import sunpy
 import copy	
 import matplotlib.dates as mdates
-#import ephem
 import datetime
 import urllib
 import json
 import os
 import pdb
 import cdflib
+#import netCDF4
+import sys  
 
 
 # use
@@ -30,9 +31,13 @@ import cdflib
 # get_omni_data
 # convert_GSE_to_GSM
 # convert_RTN_to_GSE_sta_l1
+# make_kp_from_wind
+# aurora_power
 # make_dst_from_wind
+# epoch_to_num
 # get_stereoa_data_beacon
 # get_dscovr_data_real
+# get_dscovr_data_all
 
 
 
@@ -469,14 +474,52 @@ def convert_RTN_to_GSE_sta_l1(cbr,cbt,cbn,ctime,pos_stereo_heeq,pos_time_num):
 
  return (bxgse,bygse,bzgse)
  
+
+ 
+def make_kp_from_wind(btot_in,by_in,bz_in,v_in,density_in):
  
  
+ #speed v_in [km/s]
+ #density [cm-3]
+ #B in [nT]
  
+ #Newell et al. 2008
+ #https://onlinelibrary.wiley.com/resolve/doi?DOI=10.1029/2010SW000604
+ #see also https://agupubs.onlinelibrary.wiley.com/doi/full/10.1002/swe.20053
+
+ #The IMF clock angle is defined by thetac = arctan(By/Bz)
+ #this angle is 0° pointing toward north (+Z), 180° toward south (-Z); 
+ #its negative for the -Y hemisphere, positive for +Y hemisphere
+ #thus southward pointing fields have angles abs(thetac)> 90 
+ #the absolute value for thetac needs to be taken otherwise the fractional power (8/3)
+ #will lead to imaginary values
  
+ thetac= abs(np.arctan2(by_in,bz_in)) #in radians
+ merging_rate=v_in**(4/3)*btot_in**(2/3)*(np.sin(thetac/2)**(8/3)) #flux per time
+ kp=0.05+2.244*1e-4*(merging_rate)+2.844*1e-6*density_in**0.5*v_in**2 
+ 
+ return kp
+
+
+
+
+def make_aurora_power_from_wind(btot_in,by_in,bz_in,v_in,density_in):
+
+ #speed v_in [km/s]
+ #density [cm-3]
+ #B in [nT]
+
+ #newell et al. 2008 JGR, doi:10.1029/2007JA012825, page 7 
+ thetac= abs(np.arctan2(by_in,bz_in)) #in radians
+ merging_rate=v_in**(4/3)*btot_in**(2/3)*(np.sin(thetac/2)**(8/3)) #flux per time
+ #unit is in GW
+ aurora_power=-4.55+2.229*1e-3*(merging_rate)+1.73*1e-5*density_in**0.5*v_in**2
+
+ return aurora_power
+
 
   
 def make_dst_from_wind(btot_in,bx_in, by_in,bz_in,v_in,vx_in,density_in,time_in):
-
  
  #this makes from synthetic or observed solar wind the Dst index	
  #all nans in the input data must be removed prior to function call
@@ -842,6 +885,196 @@ def get_dscovr_data_real():
  return data_minutes, data_hourly
 
 
+
+
+
+
+
+def get_dscovr_data_all():
+
+ # - DSCOVR data archive:
+ #https://www.ngdc.noaa.gov/dscovr/portal/index.html#/download/1543017600000;1543363199999
+ #https://www.ngdc.noaa.gov/dscovr/portal/index.html#/
+ #https://www.ngdc.noaa.gov/next-web/docs/guide/catalog.html#dscovrCatalog
+ #ftp://spdf.gsfc.nasa.gov/pub/data/dscovr/h0/mag/2018
+ #or get data via heliopy and ftp:
+ #https://docs.heliopy.org/en/stable/api/heliopy.data.dscovr.mag_h0.html#heliopy.data.dscovr.mag_h0
+
+ #BEST WAY TO GET UPDATED DSCOVR DATA:
+
+
+ """ 
+ monthly folders, e.g.
+ https://www.ngdc.noaa.gov/dscovr/data/2018/11/
+
+ then 
+ curl -O https://www.ngdc.noaa.gov/dscovr/data/2018/12/oe_f1m_dscovr_s20181207000000_e20181207235959_p20181208031650_pub.nc.gz
+
+ zum entpacken:
+ gunzip oe_f1m_dscovr_s20181207000000_e20181207235959_p20181208031650_pub.nc.gz
+ netcdf files
+
+
+ filenames are f1m for faraday and m1m for magnetometer, 1 minute averages
+
+ NETCDF examples
+ #go to http://nbviewer.jupyter.org/github/Unidata/netcdf4-python/blob/master/examples/reading_netCDF.ipynb
+
+ """
+ 
+
+ os.system('curl -o dscovr_data/oe_f1m_dscovr_s20181207000000_e20181207235959_p20181208031650_pub.nc.gz -O https://www.ngdc.noaa.gov/dscovr/data/2018/12/oe_f1m_dscovr_s20181207000000_e20181207235959_p20181208031650_pub.nc.gz')
+ os.system('gunzip -f dscovr_data/oe_f1m_dscovr_s20181207000000_e20181207235959_p20181208031650_pub.nc.gz')
+
+ f='dscovr_data/oe_f1m_dscovr_s20181207000000_e20181207235959_p20181208031650_pub.nc'
+ #if os.path.exists('sta_beacon/'+sta_pla_file_str[p]):
+ #print('sta_beacon/'+sta_pla_file_str[p])
+ 
+ d =  netCDF4.Dataset(f)
+ 
+ d.dimensions.keys()
+ 
+ 
+ 
+ a=d.variables['time'] 
+ print(a[1])
+ sys.exit()
+ #old version 
+ #sta_file =  pycdf.CDF('sta_beacon/'+sta_pla_file_str[p])
+      
+
+ #variables Epoch_MAG: Epoch1: CDF_EPOCH [1875]
+ #MAGBField: CDF_REAL4 [8640, 3]
+ #sta_time=epoch_to_num(sta_file.varget('Epoch1'))
+ #old version 
+ #sta_time=mdates.date2num(sta_file['Epoch1'][...])
+
+
+ #define stereo-a variables with open size
+ sta_ptime=np.zeros(0)  
+ sta_vr=np.zeros(0)  
+ sta_den=np.zeros(0)  
+ sta_temp=np.zeros(0)  
+
+ #same for magnetic field
+ sta_btime=np.zeros(0)  
+ sta_br=np.zeros(0)  
+ sta_bt=np.zeros(0)  
+ sta_bn=np.zeros(0) 
+ 
+ 
+ 
+
+
+
+
+ url_plasma='http://services.swpc.noaa.gov/products/solar-wind/plasma-7-day.json'
+ url_mag='http://services.swpc.noaa.gov/products/solar-wind/mag-7-day.json'
+
+ #download, see URLLIB https://docs.python.org/3/howto/urllib2.html
+ with urllib.request.urlopen(url_plasma) as url:
+    pr = json.loads	(url.read().decode())
+ with urllib.request.urlopen(url_mag) as url:
+    mr = json.loads(url.read().decode())
+ print('DSCOVR plasma data available')
+ print(pr[0])
+ print('DSCOVR MAG data available')
+ print(mr[0])
+ #kill first row which stems from the description part
+ pr=pr[1:]
+ mr=mr[1:]
+
+ #define variables 
+ #plasma
+ rptime_str=['']*len(pr)
+ rptime_num=np.zeros(len(pr))
+ rpv=np.zeros(len(pr))
+ rpn=np.zeros(len(pr))
+ rpt=np.zeros(len(pr))
+
+ #mag
+ rbtime_str=['']*len(mr)
+ rbtime_num=np.zeros(len(mr))
+ rbtot=np.zeros(len(mr))
+ rbzgsm=np.zeros(len(mr))
+ rbygsm=np.zeros(len(mr))
+ rbxgsm=np.zeros(len(mr))
+
+ #convert variables to numpy arrays
+ #mag
+ for k in np.arange(0,len(mr),1):
+
+  #handle missing data, they show up as None from the JSON data file
+  if mr[k][6] is None: mr[k][6]=np.nan
+  if mr[k][3] is None: mr[k][3]=np.nan
+  if mr[k][2] is None: mr[k][2]=np.nan
+  if mr[k][1] is None: mr[k][1]=np.nan
+
+  rbtot[k]=float(mr[k][6])
+  rbzgsm[k]=float(mr[k][3])
+  rbygsm[k]=float(mr[k][2])
+  rbxgsm[k]=float(mr[k][1])
+
+  #convert time from string to datenumber
+  rbtime_str[k]=mr[k][0][0:16]
+  rbtime_num[k]=mdates.date2num(sunpy.time.parse_time(rbtime_str[k]))
+ 
+ #plasma
+ for k in np.arange(0,len(pr),1):
+  if pr[k][2] is None: pr[k][2]=np.nan
+  rpv[k]=float(pr[k][2]) #speed
+  rptime_str[k]=pr[k][0][0:16]
+  rptime_num[k]=mdates.date2num(sunpy.time.parse_time(rptime_str[k]))
+  if pr[k][1] is None: pr[k][1]=np.nan
+  rpn[k]=float(pr[k][1]) #density
+  if pr[k][3] is None: pr[k][3]=np.nan
+  rpt[k]=float(pr[k][3]) #temperature
+
+
+ #interpolate to minutes 
+ rtimes_m=np.arange(rbtime_num[0],rbtime_num[-1],1.0000/(24*60))
+ rbtot_m=np.interp(rtimes_m,rbtime_num,rbtot)
+ rbzgsm_m=np.interp(rtimes_m,rbtime_num,rbzgsm)
+ rbygsm_m=np.interp(rtimes_m,rbtime_num,rbygsm)
+ rbxgsm_m=np.interp(rtimes_m,rbtime_num,rbxgsm)
+ rpv_m=np.interp(rtimes_m,rptime_num,rpv)
+ rpn_m=np.interp(rtimes_m,rptime_num,rpn)
+ rpt_m=np.interp(rtimes_m,rptime_num,rpt)
+ 
+
+ #interpolate to hours 
+ rtimes_h=np.arange(np.ceil(rbtime_num)[0],rbtime_num[-1],1.0000/24.0000)
+ rbtot_h=np.interp(rtimes_h,rbtime_num,rbtot)
+ rbzgsm_h=np.interp(rtimes_h,rbtime_num,rbzgsm)
+ rbygsm_h=np.interp(rtimes_h,rbtime_num,rbygsm)
+ rbxgsm_h=np.interp(rtimes_h,rbtime_num,rbxgsm)
+ rpv_h=np.interp(rtimes_h,rptime_num,rpv)
+ rpn_h=np.interp(rtimes_h,rptime_num,rpn)
+ rpt_h=np.interp(rtimes_h,rptime_num,rpt)
+
+
+ #make recarrays
+ data_hourly=np.rec.array([rtimes_h,rbtot_h,rbxgsm_h,rbygsm_h,rbzgsm_h,rpv_h,rpn_h,rpt_h], \
+ dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
+        ('speed','f8'),('den','f8'),('temp','f8')])
+ 
+ data_minutes=np.rec.array([rtimes_m,rbtot_m,rbxgsm_m,rbygsm_m,rbzgsm_m,rpv_m,rpn_m,rpt_m], \
+ dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
+        ('speed','f8'),('den','f8'),('temp','f8')])
+ 
+ print('DSCOVR data interpolated to hour/minute resolution done.')
+ 
+ return data_minutes, data_hourly
+
+
+
+
+
+
+
+
+
+
  
  
 def epoch_to_num(epoch):
@@ -958,6 +1191,7 @@ def get_stereoa_data_beacon():
  sta_bn=np.zeros(0) 
 
 
+
  for p in np.arange(0,14):
    
    #PLASMA first
@@ -1018,6 +1252,7 @@ def get_stereoa_data_beacon():
 
    #variables Epoch_MAG: CDF_EPOCH [8640]
    #MAGBField: CDF_REAL4 [8640, 3]
+   #pdb.set_trace()
    sta_time=epoch_to_num(sta_filem.varget('Epoch_MAG'))
    #d stands for dummy
    sta_dbr=sta_filem.varget('MAGBField')[:,0]

@@ -71,6 +71,9 @@
 #**** important for server version, otherwise error when making figures
 import matplotlib
 matplotlib.use('Agg') 
+
+## netCDF4 not yet installed
+
 #*******
 
 import scipy.io
@@ -94,6 +97,8 @@ from predstorm_module import get_stereoa_data_beacon
 from predstorm_module import time_to_num_cat
 from predstorm_module import converttime
 from predstorm_module import make_dst_from_wind
+from predstorm_module import make_kp_from_wind
+from predstorm_module import make_aurora_power_from_wind
 from predstorm_module import getpositions
 from predstorm_module import convert_GSE_to_GSM
 from predstorm_module import sphere2cart
@@ -138,11 +143,10 @@ trainend=lines[13]
 sun_syn=float(lines[16]) #days
 
 #how far to see in the future with STEREO-A data to the right of the current time
-realtime_plot_timeadd=int(lines[19])
+realtime_plot_timeadd=float(lines[19])
 
 #to shift the left beginning of the plot
-realtime_plot_leftadd=int(lines[22])
-
+realtime_plot_leftadd=float	(lines[22])
 
 #to get older data for plotting Burton/OBrien Dst for verification
 verification_mode=int(lines[25])
@@ -156,7 +160,7 @@ verify_int_start=lines[30]
 verify_int_end=lines[31]
 
 ##################*******************
-dst_offset=-15
+dst_offset=0
 
 
 outputdirectory='results'
@@ -202,6 +206,24 @@ print('------------------------------------------------------------------------'
 
 
 
+
+################### get latest SDO coronal hole image
+#download latest 193 PFSS to current directory
+#maybe make your own at some point: https://github.com/antyeates1983/pfss
+#also in heliopy!
+#sdo_latest='https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_0193pfss.jpg'
+
+sdo_latest='https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_0193.jpg'
+try: urllib.request.urlretrieve(sdo_latest,'latest_1024_0193.jpg')
+except urllib.error.URLError as e:
+ print(' ', sdo.latest,' ',e.reason)
+#convert to png    
+#***check ffmpeg for existence, otherwise skip
+   
+os.system('/Users/chris/bin/ffmpeg -i latest_1024_0193.jpg latest_1024_0193.png -loglevel quiet -y')
+print('downloaded SDO latest_1024_0193.jpg converted to png')
+#delete jpg
+os.system('rm latest_1024_0193.jpg')
 
 
 
@@ -431,6 +453,16 @@ log.write('\n')
 [dst_burton, dst_obrien, dst_temerin_li]=make_dst_from_wind(com_btot, com_bx,com_by, \
                                          com_bz, com_vr,com_vr, com_den, com_time)
 
+
+
+#make_kp_from_wind(btot_in,by_in,bz_in,v_in,density_in) and round to 1 decimal
+kp_newell=np.round(make_kp_from_wind(com_btot,com_by,com_bz,com_vr, com_den),1)
+
+#make_kp_from_wind(btot_in,by_in,bz_in,v_in,density_in) and round to 2 decimals in GW
+aurora_power=np.round(make_aurora_power_from_wind(com_btot,com_by,com_bz,com_vr, com_den),2)
+#make sure that no values are < 0
+aurora_power[np.where(aurora_power < 0)]=0.0
+
 #get NOAA Dst for comparison 
 [dst_time,dst]=get_noaa_dst()
 print('Loaded Kyoto Dst from NOAA for last 7 days.')
@@ -464,8 +496,8 @@ wide=1
 fsize=11
 msize=5
 
-plotstart=np.floor(dism.time[-1]-realtime_plot_leftadd)
-plotend=np.floor(dis.time[-1]+realtime_plot_timeadd)
+plotstart=dism.time[-1]-realtime_plot_leftadd
+plotend=dis.time[-1]+realtime_plot_timeadd
 
 
 
@@ -701,15 +733,15 @@ plt.savefig(filename)
 ###################################### (4) WRITE OUT RESULTS AND VARIABLES ###############
 
 
-############# (4a) write prediction variables (plot) to pickle and txt file
+############# (4a) write prediction variables (plot) to pickle and txt ASCII file
 
 filename_save=outputdirectory+'/savefiles/predstorm_v1_realtime_stereo_a_save_'+ \
               timeutcstr[0:10]+'-'+timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.p'
 
 #make recarrays
-combined=np.rec.array([com_time,dst_temerin_li,com_btot,com_bx,com_by,com_bz,com_den,com_vr], \
-dtype=[('time','f8'),('dst_temerin_li','f8'),('btot','f8'),\
-        ('bx','f8'),('by','f8'),('bz','f8'),('den','f8'),('vr','f8')])
+combined=np.rec.array([com_time,com_btot,com_bx,com_by,com_bz,com_den,com_vr,dst_temerin_li,kp_newell,aurora_power,], \
+dtype=[('time','f8'),('btot','f8'),('bx','f8'),('by','f8'),('bz','f8'),('den','f8'),\
+       ('vr','f8'),('dst_temerin_li','f8'),('kp_newell','f8'),('aurora_power','f8')])
         
 pickle.dump(combined, open(filename_save, 'wb') )
 
@@ -719,22 +751,48 @@ log.write('PICKLE: Variables saved in: \n'+ filename_save+ '\n')
 
 filename_save=outputdirectory+'/savefiles/predstorm_v1_realtime_stereo_a_save_'+ \
               timenowstr[0:10]+'-'+timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.txt'
-vartxtout=np.zeros([np.size(com_time),8])
 
-#com_time_str= [''  for com_time_str in np.arange(10)]
-#for i in np.arange(size(com_time)):
-#   com_time_str[i]=str(mdates.num2date(com_time[i]))[0:16]
 
-#vartxtout[:,0]=com_time_str
-vartxtout[:,0]=com_time
-vartxtout[:,1]=dst_temerin_li
-vartxtout[:,2]=com_btot
-vartxtout[:,3]=com_bx
-vartxtout[:,4]=com_by
-vartxtout[:,5]=com_bz
-vartxtout[:,6]=com_den
-vartxtout[:,7]=com_vr
-np.savetxt(filename_save, vartxtout, delimiter='',fmt='%8.6f %5.0i %5.1f %5.1f %5.1f %5.1f %5.1f %5.0i') 
+########## ASCII file
+
+vartxtout=np.zeros([np.size(com_time),16])
+
+#create array of time strings
+#com_time_str= [''  for com_time_str in np.arange(np.size(com_time))]
+
+#get date in ascii
+for i in np.arange(np.size(com_time)):
+   #for format 2019-03-13 23:59
+   #com_time_str[i]=str(mdates.num2date(com_time[i]))[0:16]
+   #com_time_str[i]=time_dummy.strftime("%Y %m %d %H %M %M")
+
+   time_dummy=mdates.num2date(com_time[i]) 
+   vartxtout[i,0]=time_dummy.year  
+   vartxtout[i,1]=time_dummy.month  
+   vartxtout[i,2]=time_dummy.day 
+   vartxtout[i,3]=time_dummy.hour  
+   vartxtout[i,4]=time_dummy.minute  
+   vartxtout[i,5]=time_dummy.second
+
+
+vartxtout[:,6]=com_time
+vartxtout[:,7]=com_btot
+vartxtout[:,8]=com_bx
+vartxtout[:,9]=com_by
+vartxtout[:,10]=com_bz
+vartxtout[:,11]=com_den
+vartxtout[:,12]=com_vr
+vartxtout[:,13]=dst_temerin_li
+vartxtout[:,14]=kp_newell
+vartxtout[:,15]=aurora_power
+
+#description
+#np.savetxt(filename_save, ['time     Dst [nT]     Kp     aurora [GW]   B [nT]    Bx [nT]     By [nT]     Bz [nT]    N [ccm-3]   V [km/s]    ']) 
+np.savetxt(filename_save, vartxtout, delimiter='',fmt='%4i %2i %2i %2i %2i %2i %10.6f %5.1f %5.1f %5.1f %5.1f   %7.0i %7.0i   %5.0f %5.1f %5.1f', \
+           header='        time      matplotlib_time B[nT] Bx   By     Bz   N[ccm-3] V[km/s] Dst[nT]   Kp   aurora [GW]') 
+
+
+
 
 print('TXT: Variables saved in: \n', filename_save, ' \n ')
 log.write('TXT: Variables saved in: \n'+ filename_save+ '\n')
