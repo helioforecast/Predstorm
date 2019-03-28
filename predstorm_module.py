@@ -11,7 +11,7 @@ import json
 import os
 import pdb
 import cdflib
-import netCDF4
+#import netCDF4
 import sys  
 
 
