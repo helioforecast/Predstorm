@@ -508,9 +508,7 @@ plt.plot(X_test,y_test,'ko')
 
 
 print('Example for prediction of average Btot - linear model trained, new value observed 10,15,20 nT:')
-print(lr.predict(10))
-print(lr.predict(15))
-print(lr.predict(20))
+print(lr.predict(np.array([10,15,20]).reshape(-1,1)) )
 
 filename='mfr_predict/bmean.png'
 plt.savefig(filename)
@@ -535,9 +533,7 @@ print()
 print()
 
 print('Example for prediction of Bmax - linear model trained, new value observed 10,15,20 nT:')
-print(lrm.predict(10))
-print(lrm.predict(15))
-print(lrm.predict(20))
+print(lrm.predict(np.array([10,15,20]).reshape(-1,1)) )
 
 print('Scores for Bmax: mean absolute error, mean squared, median absolute, R2: Btot in nT')
 print(mean_absolute_error(ym_pred,ym_test))
@@ -573,9 +569,7 @@ print()
 print()
 
 print('Example for prediction of V_MO - linear model trained, new value observed 400, 600, 800 km/s:')
-print(lrv.predict(400))
-print(lrv.predict(600))
-print(lrv.predict(800))
+print(lrm.predict(np.array([400,600,800]).reshape(-1,1)) )
 
 print('Scores for V_MO: mean absolute error, mean squared, median absolute, R2: V_MO in km/s')
 print(mean_absolute_error(yv_pred,yv_test))
