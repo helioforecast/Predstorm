@@ -1,0 +1,81 @@
+HEADER FILE FOR: /home/cmoestl/helcats/products/ICMECAT/HELCATS_ICMECAT_v20_SCEQ.txt
+ 
+AUTHORS: 
+Christian Moestl, Peter Boakes, University of Graz, Austria and SRI, Austrian Academy of Sciences, Graz, Austria.
+Alexey Isavnin, Emilia Kilpua, University of Helsinki, Finland.
+Benoit Lavraud, IRAP, Toulouse, France.
+We sincerely thank the providers of individual ICME lists: Simon Good, Reka Winslow, Lan Jian and Teresa Nieves-Chinchilla.
+ 
+FILE CREATION DATE: Mon May 28 12:09:36 2018
+ 
+INPUT FILE:/home/cmoestl/helcats/products/ICMECAT/HELCATS_ICMECAT_v20_master.txt
+ 
+Number of events in ICMECAT: 704
+ 
+ICME observatories: Wind STEREO-A STEREO-B VEX MESSENGER ULYSSES MAVEN
+           
+Time range: January 2007 - December 2017.
+           
+Coordinate system for all spacecraft except Ulysses (RTN) and MAVEN (MSO):  SCEQ
+           
+SpaceCraft Equatorial Coordinates (SCEQ):
+	Z is the solar rotation axis.
+	X points from the Sun to the spacecraft, projected in the solar equatorial plane. 
+	Y completes the right handed triad and points to solar west.
+ This system is thus centered on the respective in situ spacecraft. 
+ The solar equatorial plane as the reference plane is similar for all spacecraft.
+           
+Notes: 
+(1) For all spacecraft: If there is no sheath region, so the ICME starts immediately with a magnetic obstacle, the ICME_START_TIME is similar to MO_START_TIME.
+(2) For all spacecraft the times that are given are: the ICME_START_TIME (defined by shock or elevated magnetic field start), the MO_START_TIME,
+    and the MO_END_TIME (MO for magnetic obstacle, defined by elevated field and smooth magnetic field rotations, but also includes (few) complex ejecta).
+    Only for Wind the ICME_END_TIME is given extra, which contains interval of disturbed solar wind by the ICME until the values return to slow solar wind.
+(3) MESSENGER: For ICME events catalogued by Winslow et al. the end time of the ICME is used for MO_END_TIME (not ICME_END_TIME). 
+    Caution: after 2011 March 18 when MESSENGER is in orbit around Mercury the times are sometimes not exact because 
+(4) MESSENGER and VEX: For events cataloged by Simon Good ICME_START_TIME has been added by V. Krupar (Imperial College) and C. Moestl (Graz).
+(5) For the calculation of the parameters at MESSENGER during the orbit around Mercury, all data points inside the bowshock of Mercury have been removed.
+    (according to a list thankfully provided to us by by R. Winslow, UNH, B. Anderson, APL, Lydia Philpott, UBC).
+(6) For MVA to be applied to the MO interval, up to 25% of the MO data points may be NaN. Otherwise MVA results are set to NaN.
+    This is relevant to MESSENGER in orbit around Mercury and VEX at Venus, where the ICME observation in the solar wind sometimes contains too few data points.
+(7) Calculation of the MO parameters at VEX is done with an approximate removal of the induced magnetosphere, with a modified equation
+    according to the one in the discussion of Zhang et al. 2008 (doi: 10.1016/j.pss.2007.09.012), with a constant of 3.5 instead of 2.14/2.364,
+    in order to account for a larger bowshock distance during solar maximum than studied in this paper. 
+(8) Similarly, for MAVEN data, all data inside the bow shock were removed with the model from Edberg et al. 2008 (JGR), including one standard deviation.
+    For the remaining data the median for each orbit is taken as 1 data point. 4.5 hour time resolution.
+
+updates in this version 20 compared to version 10: added MAVEN events, extended the Wind catalog to end of 2017 and added dynamic pressure parameters.
+VARIABLES: 
+ 	1: ICMECAT_ID: The unique identifier for the observed ICME. unit: string.
+ 	2: SC_INSITU: The name of the in situ observatory. unit: string.
+ 	3: ICME_START_TIME: The shock arrival or density enhancement time, can be similar to MO_START_TIME. unit: UTC.
+ 	4: MO_START_TIME: The start time of the magnetic obstacle (MO), including flux ropes, flux-rope-like, and ejecta signatures. unit: UTC.
+ 	5: MO_END_TIME: The end time of the magnetic obstacle. unit: UTC.
+ 	6: ICME_END_TIME: The end time of the ICME, can be similar to MO_END_TIME. unit: UTC.
+ 	7: MO_BMAX: The maximum total magnetic field in the magnetic obstacle. unit: nT.
+ 	8: MO_BMEAN: The mean total magnetic field of the magnetic obstacle. unit: nT.
+ 	9: MO_BSTD: The standard deviation of the total magnetic field of the magnetic obstacle. unit: nT.
+	10: MO_BZMEAN: The mean magnetic field Bz component in the magnetic obstacle. unit: nT.
+	11: MO_BZMIN: The minimum magnetic field Bz component of the magnetic obstacle. unit: nT.
+	12: MO_DURATION: Duration of interval between MO_START_TIME and MO_END_TIME. unit: hours.
+	13: SC_HELIODISTANCE: Average heliocentric distance of the spacecraft during the MO. unit: AU.
+	14: SC_LONG_HEEQ: Average heliospheric longitude of the spacecraft during the MO, range [-180,180]. unit: degree (HEEQ).
+	15: SC_LAT_HEEQ: Average heliospheric latitude of the spacecraft during the MO, range [-90,90]. unit: degree (HEEQ).
+	16: MO_MVA_AXIS_LONG: Longitude of axis from minimum variance analysis with magnetic field unit vectors (MVA): X=0 deg, Y=90 deg, range [0,360]. unit: degree (SCEQ).
+	17: MO_MVA_AXIS_LAT: Latitude of axis from MVA, +Z=-90 deg, -Z=-90, range [-90,90]. unit: degree (SCEQ).
+	18: MO_MVA_RATIO: Eigenvalue 2 over 3 ratio as indicator of reliability of MVA, must be > 2, otherwise NaN. unit: number.
+	19: SHEATH_SPEED: For STEREO-A/B, Wind, MAVEN: average proton speed from ICME_START_TIME to MO_START_TIME, NaN if these times are similar. unit: km/s.
+	20: SHEATH_SPEED_STD: For STEREO-A/B, Wind, MAVEN: standard deviation of proton speed from ICME_START_TIME to MO_START_TIME, NaN if these times are similar. unit: km/s.
+	21: MO_SPEED: For STEREO-A/B, Wind, MAVEN: average proton speed from MO_START_TIME to MO_END_TIME. unit: km/s.
+	22: MO_SPEED_STD: For STEREO-A/B, Wind, MAVEN: standard deviation of proton speed from MO_START_TIME to MO_END_TIME. unit: km/s.
+	23: SHEATH_DENSITY: For STEREO-A/B, Wind, MAVEN: average proton density from ICME_START_TIME to MO_START_TIME, NaN if these times are similar. unit: ccm^-3.
+	24: SHEATH_DENSITY_STD: For STEREO-A/B, Wind, MAVEN: standard deviation of proton density from ICME_START_TIME to MO_START_TIME, NaN if these times are similar. unit: cm^-3.
+	25: MO_DENSITY: For STEREO-A/B, Wind, MAVEN: average proton density from MO_START_TIME to MO_END_TIME. unit: cm^-3.
+	26: MO_DENSITY_STD: For STEREO-A/B, Wind, MAVEN: standard deviation of proton density from MO_START_TIME to MO_END_TIME. unit: cm^-3.
+	27: SHEATH_TEMPERATURE: For STEREO-A/B, Wind, MAVEN:average proton temperature from ICME_START_TIME to MO_START_TIME, NaN if these times are similar. unit: K.
+	28: SHEATH_TEMPERATURE_STD: For STEREO-A/B, Wind, MAVEN: standard deviation of proton temperature from ICME_START_TIME to MO_START_TIME, NaN if these times are similar. unit: K.
+	29: MO_TEMPERATURE: For STEREO-A/B, Wind, MAVEN: average proton temperature from MO_START_TIME to MO_END_TIME. unit: K.
+	30: SHEATH_PDYN_MEAN: For STEREO-A/B, Wind, MAVEN: mean of dynamic pressure assuming only protons contribute, from ICME_START_TIME to MO_START_TIME. unit: nPa.
+	31: SHEATH_PDYN_STD: For STEREO-A/B, Wind, MAVEN: standard deviation of dynamic pressure assuming only protons contribute, from ICME_START_TIME to MO_START_TIME. unit: nPa.
+	32: MO_PDYN_MEAN: For STEREO-A/B, Wind, MAVEN: mean of dynamic pressure assuming only protons contribute, from MO_START_TIME to MO_END_TIME. unit: nPa.
+	33: MO_PDYN_STD: For STEREO-A/B, Wind, MAVEN: standard deviation of dynamic pressure assuming only protons contribute, from MO_START_TIME to MO_END_TIME. unit: nPa.
+

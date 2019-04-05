@@ -266,7 +266,7 @@ log.write('\n')
 
 #get spacecraft position
 print('load spacecraft and planetary positions')
-pos=getpositions('cats/positions_2007_2023_HEEQ_6hours.sav')
+pos=getpositions('data/positions_2007_2023_HEEQ_6hours.sav')
 pos_time_num=time_to_num_cat(pos.time)
 #take position of STEREO-A for time now from position file
 pos_time_now_ind=np.where(timenow < pos_time_num)[0][0]
