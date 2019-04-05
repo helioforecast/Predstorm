@@ -178,7 +178,7 @@ def get_omni_data():
  #omni2_url='ftp://nssdcftp.gsfc.nasa.gov/pub/data/omni/low_res_omni/omni2_all_years.dat'
  
  #check how many rows exist in this file
- f=open('omni2_all_years.dat')
+ f=open('data/omni2_all_years.dat')
  dataset= len(f.readlines())
  #print(dataset)
  #global Variables
@@ -208,7 +208,7 @@ def get_omni_data():
  
  j=0
  print('Read OMNI2 data ...')
- with open('omni2_all_years.dat') as f:
+ with open('data/omni2_all_years.dat') as f:
   for line in f:
    line = line.split() # to deal with blank 
    #print line #41 is Dst index, in nT

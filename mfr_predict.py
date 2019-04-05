@@ -23,6 +23,7 @@ import time
 import pickle
 import seaborn as sns
 import pandas as pd
+import os
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -122,7 +123,10 @@ print('MFR classify.')
 Rs_in_AU=7e5/149.5e6
 
 
-filename_icmecat='../catpy/ALLCATS/HELCATS_ICMECAT_v20_SCEQ.sav'
+
+if os.path.isdir('mfr_predict') == False: os.mkdir('mfr_predict')
+
+filename_icmecat='data/HELCATS_ICMECAT_v20_SCEQ.sav'
 i=getcat(filename_icmecat)
 
 #now this is a scipy structured array  
@@ -134,7 +138,7 @@ i=getcat(filename_icmecat)
 
 
 #get spacecraft and planet positions
-pos=getcat('../catpy/DATACAT/positions_2007_2018_HEEQ_6hours.sav')
+pos=getcat('data/positions_2007_2023_HEEQ_6hours.sav')
 pos_time_num=time_to_num_cat(pos.time)[0]
 
 #----------------- get all parameters from ICMECAT for easier handling
@@ -342,7 +346,7 @@ print( 'read data done.')
 
 
 #get_features=True
-get_features=False
+get_features=True
 
 if get_features:
 

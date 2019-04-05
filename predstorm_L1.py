@@ -322,7 +322,7 @@ plt.annotate('super-storm',xy=(rtimes7[0],-250+2),xytext=(rtimes7[0],-250+2),col
 
 
 
-plt.tight_layout()
+if os.path.isdir('real') == False: os.mkdir('real')
 
 #save plot 
 filename='real/predstorm_realtime_input_1_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.jpg'
@@ -357,25 +357,28 @@ plt.savefig(filename)
 #download from  ftp://nssdcftp.gsfc.nasa.gov/pub/data/omni/low_res_omni/omni2_all_years.dat
 
 # if not here download OMNI2 data (only needed first time running the program, currently 155 MB)
-if not os.path.exists('omni2_all_years.dat'):
+
+
+if os.path.isdir('data') == False: os.mkdir('data')
+if not os.path.exists('data/omni2_all_years.dat'):
 
   #see http://omniweb.gsfc.nasa.gov/html/ow_data.html
   print('download OMNI2 data from')
   omni2_url='ftp://nssdcftp.gsfc.nasa.gov/pub/data/omni/low_res_omni/omni2_all_years.dat'
   print(omni2_url)
-  try: urllib.request.urlretrieve(omni2_url, 'omni2_all_years.dat')
+  try: urllib.request.urlretrieve(omni2_url, 'data/omni2_all_years.dat')
   except urllib.error.URLError as e:
       print(' ', omni2_url,' ',e.reason)
 
 #if omni2 hourly data is not yet converted and saved as pickle, do it:
-if not os.path.exists('omni2_all_years_pickle.p'):
+if not os.path.exists('data/omni2_all_years_pickle.p'):
  #load OMNI2 dataset from .dat file with a function from dst_module.py
  o=get_omni_data()
  #contains: o. time,day,hour,btot,bx,by,bz,bygsm,bzgsm,speed,speedx,den,pdyn,dst,kp
  #save for faster loading later
- pickle.dump(o, open('omni2_all_years_pickle.p', 'wb') )
+ pickle.dump(o, open('data/omni2_all_years_pickle.p', 'wb') )
 
-else:  o=pickle.load(open('omni2_all_years_pickle.p', 'rb') )
+else:  o=pickle.load(open('data/omni2_all_years_pickle.p', 'rb') )
 print('loaded OMNI2 data')
 #######################
 ### slice data for comparison of solar wind to Dst conversion
@@ -1039,6 +1042,8 @@ plt.savefig(filename)
 #plt.savefig(filename)
 
 #save variables
+
+if os.path.isdir('real/savefiles') == False: os.mkdir('real/savefiles')
 
 filename_save='real/savefiles/predstorm_realtime_pattern_save_v1_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.p'
 print('All variables for plot saved in ', filename_save, ' for later verification usage.')
