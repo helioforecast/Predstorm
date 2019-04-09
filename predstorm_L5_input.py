@@ -1,16 +1,6 @@
 # PREDSTORM L5 input parameters file
 # ----------------------------------
 
-# If True, show interpolated data points on the DSCOVR input plot
-showinterpolated = True
-
-# Time interval for both the observed and predicted windDelta T (hours), start with 24 hours here (covers 1 night of aurora)#the , 
-deltat = 24
-
-# Time range of training data (four solar minimum years as training data for 2018)      # TODO remove this, not in use?
-trainstart = '2006-Jan-01 00:00'
-trainend =   '2010-Jan-01 00:00'
-
 # Synodic solar rotation (= 26.24 days (equator), 27.28 days for Carrington rotation, 26 deg latitude)
 # --> use other values for equatorial coronal holes?
 sun_syn = 26.24

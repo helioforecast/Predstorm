@@ -1,14 +1,15 @@
-# MFR classification
-#
-# analyses HELCATS ICMECAT for predicting labels of CME MFRs
-# Author: C. Moestl, Space Research Institute IWF Graz, Austria
-# last update: May 2018
+"""
+Prediction of flux rope magnetic fields
+
+analyses HELCATS ICMECAT for predicting labels of CME MFRs
+Author: C. Moestl, Space Research Institute IWF Graz, Austria
+last update: May 2018
+
+how to predict the rest of the MFR if first 10, 20, 30, 40, 50% are seen?
+everything should be automatically with a deep learning method or ML fit methods
 
 
-
-#2 how to predict the rest of the MFR if first 10, 20, 30, 40, 50% are seen?
-#everything should be automatically with a deep learning method or ML fit methods
-
+"""
 
 from scipy import stats
 import scipy.io
@@ -33,7 +34,8 @@ sns.set_style("darkgrid")
 
 plt.close('all')
 
-######## functions
+######################## functions ###############################################
+
 
 def getcat(filename):
   print('reading CAT')
@@ -42,8 +44,10 @@ def getcat(filename):
   return cat  
   
 def decode_array(bytearrin):
- #for decoding the strings from the IDL .sav file to a list of python strings, not bytes 
- #make list of python lists with arbitrary length
+ '''
+ for decoding the strings from the IDL .sav file to a list of python strings, not bytes 
+ make list of python lists with arbitrary length
+ '''
  bytearrout= ['' for x in range(len(bytearrin))]
  for i in range(0,len(bytearrin)-1):
   bytearrout[i]=bytearrin[i].decode()
@@ -53,8 +57,8 @@ def decode_array(bytearrin):
   
 
 def time_to_num_cat(time_in):  
-
-  #for time conversion from catalogue .sav to numerical time
+  '''
+  for time conversion from catalogue .sav to numerical time
   #this for 1-minute data or lower time resolution
 
   #for all catalogues
@@ -62,6 +66,7 @@ def time_to_num_cat(time_in):
   #for times help see: 
   #http://docs.sunpy.org/en/latest/guide/time.html
   #http://matplotlib.org/examples/pylab_examples/date_demo2.html
+  '''
   
   j=0
   #time_str=np.empty(np.size(time_in),dtype='S19')
@@ -111,23 +116,23 @@ def dynamic_pressure(density, speed):
 
 
 
+
+
 #####################################################################################
 ######################## main program ###############################################
+#####################################################################################
 
 plt.close('all')
 print('MFR classify.')
 
-#-------------------------------------------------------- get cats
-
 #solar radius
 Rs_in_AU=7e5/149.5e6
-
-
 
 if os.path.isdir('mfr_predict') == False: os.mkdir('mfr_predict')
 
 filename_icmecat='data/HELCATS_ICMECAT_v20_SCEQ.sav'
 i=getcat(filename_icmecat)
+
 
 #now this is a scipy structured array  
 #access each element of the array see http://docs.scipy.org/doc/numpy/user/basics.rec.html

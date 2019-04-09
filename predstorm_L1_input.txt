@@ -1,2 +1,0 @@
-#PREDSTORM L1 input file
-

@@ -1,54 +1,58 @@
-##predstorm real time solar wind forecasting
+"""
+PREDSTORM real time solar wind forecasting from L1 solar wind data
 
-#predicting the L1 solar wind and Dst index with unsupervised pattern recognition
-#algorithms Riley et al. 2017, Owens et al. 2017
+predicting the L1 solar wind and Dst index with analogue ensembles
+for similar algorithms see Riley et al. 2017, Owens et al. 2017
 
-#Author: C. Moestl, IWF Graz, Austria
-#twitter @chrisoutofspace, https://github.com/cmoestl
-#started April 2018, last update November 2018
+Author: C. Moestl, IWF Graz, Austria
+twitter @chrisoutofspace, https://github.com/IWF-helio
 
-#python 3.5.2 with sunpy and seaborn, ipython 4.2.0
+started April 2018, last update April 2019
 
-#method
-#semi-supervised learning: add known intervals of ICMEs, MFRs and CIRs in the training data
-#helcats lists for ICMEs at Wind since 2007
-#HSS e.g. https://link.springer.com/article/10.1007%2Fs11207-013-0355-z
-#https://en.wikipedia.org/wiki/Pattern_recognition
+python 3.7 with sunpy 
 
-
-#Things to do:
-#use recarrays!
-
-#DSCOVR data:
-#Nans for missing data should be handled better and interpolated over, OBrien stops with Nans
-
-#training data:
-#use stereo one hour data as training data set, corrected for 1 AU
-#use VEX and MESSENGER as tests for HelioRing like forecasts, use STEREO at L5 for training data of the last few days
-
-#forecast plot:
-#add approximate levels of Dst for each location to see aurora, taken from ovation prime/worldview and Dst 
-#add Temerin and Li method and kick out Burton/OBrien; make error bars for Dst
-#take mean of ensemble forecast for final blue line forecast or only best match?
+method
+semi-supervised learning: add known intervals of ICMEs, MFRs and CIRs in the training data
+helcats lists for ICMEs at Wind since 2007
+HSS e.g. https://link.springer.com/article/10.1007%2Fs11207-013-0355-z
+https://en.wikipedia.org/wiki/Pattern_recognition
 
 
+Things to do:
+use recarrays!
 
-## MIT LICENSE
-## Copyright 2018, Christian Moestl 
-## Permission is hereby granted, free of charge, to any person obtaining a copy of this 
-## software and associated documentation files (the "Software"), to deal in the Software
-## without restriction, including without limitation the rights to use, copy, modify, 
-## merge, publish, distribute, sublicense, and/or sell copies of the Software, and to 
-## permit persons to whom the Software is furnished to do so, subject to the following 
-## conditions:
-## The above copyright notice and this permission notice shall be included in all copies 
-## or substantial portions of the Software.
-## THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
-## INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-## PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT 
-## HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF 
-## CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE 
-## OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+DSCOVR data:
+Nans for missing data should be handled better and interpolated over, OBrien stops with Nans
+
+training data:
+use stereo one hour data as training data set, corrected for 1 AU
+use VEX and MESSENGER as tests for HelioRing like forecasts, use STEREO at L5 for training data of the last few days
+
+forecast plot:
+add approximate levels of Dst for each location to see aurora, taken from ovation prime/worldview and Dst 
+add Temerin and Li method and kick out Burton/OBrien; make error bars for Dst
+take mean of ensemble forecast for final blue line forecast or only best match?
+
+
+
+MIT LICENSE
+Copyright 2018, Christian Moestl 
+Permission is hereby granted, free of charge, to any person obtaining a copy of this 
+software and associated documentation files (the "Software"), to deal in the Software
+without restriction, including without limitation the rights to use, copy, modify, 
+merge, publish, distribute, sublicense, and/or sell copies of the Software, and to 
+permit persons to whom the Software is furnished to do so, subject to the following 
+conditions:
+The above copyright notice and this permission notice shall be included in all copies 
+or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT 
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF 
+CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE 
+OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+"""
 
 ##########################################################################################
 ####################################### CODE START #######################################
@@ -59,27 +63,8 @@
 ################################## INPUT PARAMETERS ######################################
 
 
-
-inputfilename='predstorm_L5_input.txt'
-
-#reads all lines as strings
-lines = open(inputfilename).read().splitlines()
-
-
-
-#whether to show interpolated data points on the DSCOVR input plot
-showinterpolated=1
-
-#the time interval for both the observed and predicted wind (** could be longer for predicted wind)
-#Delta T in hours, start with 24 hours here (covers 1 night of aurora)
-deltat=24
-
-#take 4 solar minimum years as training data for 2018
-trainstart='2006-Jan-01 00:00'
-trainend='2010-Jan-01 00:00'
-
-
-#######################################################
+#load all constants from predstorm_L1_input.py
+from predstorm_l1_input import *
 
 
 #IMPORT 
@@ -98,7 +83,6 @@ import copy
 import pdb
 import urllib
 import json
-import ephem
 import seaborn as sns
 import sunpy.time
 
@@ -107,11 +91,22 @@ from predstorm_module import get_omni_data
 from predstorm_module import get_dscovr_data_real
 from predstorm_module import get_noaa_dst
 
-######################################## MAIN PROGRAM ####################################
 
-#get current directory
-#os.system('pwd')
-#closes all plots
+
+
+#========================================================================================
+#--------------------------------- FUNCTIONS --------------------------------------------
+#========================================================================================
+
+
+#none so far
+
+
+#========================================================================================
+#--------------------------------- MAIN PROGRAM -----------------------------------------
+#========================================================================================
+
+
 plt.close('all')
 
 print()
@@ -120,25 +115,23 @@ print()
 print('------------------------------------------------------------------------')
 print()
 print('PREDSTORM L1 v1 method for geomagnetic storm and aurora forecasting. ')
-print('Christian Moestl, IWF Graz, last update November 2018.')
+print('Christian Moestl, IWF Graz, last update April 2019.')
 print()
 print('Based on results by Riley et al. 2017 Space Weather, and')
 print('Owens, Riley and Horbury 2017 Solar Physics. ')
 print()
 print('This is a pattern recognition technique that searches ')
-print('for similar intervals in historic data as the current solar wind.')
+print('for similar intervals in historic data as the current solar wind - also known as Analogue Ensembles (AnEn).')
 print()
-print('It is currently an unsupervised learning method.')
-print()
-print('This is the real time version by Christian Moestl, IWF Graz, Austria. Last update: April 2018. ')
+print('This is the real time version by Christian Moestl, IWF Graz, Austria. Last update: April 2019. ')
 print()
 print('-------------------------------------------------')
 
 
+#================================== (1) GET DATA ========================================
 
-######################### (1) get real time DSCOVR data ##################################
 
-
+######################### (1a) get real time DSCOVR data ##################################
 
 
 #get real time DSCOVR data with minute/hourly time resolution as recarray
@@ -224,9 +217,9 @@ msize=5
 #panel 1
 ax4 = fig.add_subplot(411)
 plt.plot_date(dism.time, dism.btot,'-k', label='B total', linewidth=weite)
-if showinterpolated > 0: plt.plot_date(rbtimes24, btot24,'ro', label='B total interpolated last 24 hours',linewidth=weite,markersize=msize)
+if showinterpolated: plt.plot_date(rbtimes24, btot24,'ro', label='B total interpolated last 24 hours',linewidth=weite,markersize=msize)
 plt.plot_date(dism.time, dism.bzgsm,'-g', label='Bz GSM',linewidth=weite)
-if showinterpolated > 0: plt.plot_date(rbtimes24, bzgsm24,'go', label='Bz GSM interpolated last 24 hours',linewidth=weite,markersize=msize)
+if showinterpolated: plt.plot_date(rbtimes24, bzgsm24,'go', label='Bz GSM interpolated last 24 hours',linewidth=weite,markersize=msize)
 
 
 #indicate 0 level for Bz
@@ -256,7 +249,7 @@ plt.plot_date([rtimes7[0], rtimes7[-1]], [800,800],'--k', alpha=0.3, linewidth=1
 plt.annotate('fast',xy=(rtimes7[0],800),xytext=(rtimes7[0],800),color='k', fontsize=10	)
 
 plt.plot_date(dism.time, dism.speed,'-k', label='V observed',linewidth=weite)
-if showinterpolated > 0: plt.plot_date(rptimes24, rpv24,'ro', label='V interpolated last 24 hours',linewidth=weite,markersize=msize)
+if showinterpolated: plt.plot_date(rptimes24, rpv24,'ro', label='V interpolated last 24 hours',linewidth=weite,markersize=msize)
 plt.xlim([np.ceil(dism.time)[0],dism.time[-1]])
 #plt.plot_date(rtimes7, rpv7,'-ko', label='B7',linewidth=weite)
 
@@ -272,7 +265,7 @@ plt.yticks(fontsize=fsize)
 #panel 3
 ax6 = fig.add_subplot(413)
 plt.plot_date(dism.time, dism.den,'-k', label='N observed',linewidth=weite)
-if showinterpolated > 0:  plt.plot_date(rptimes24, rpn24,'ro', label='N interpolated last 24 hours',linewidth=weite,markersize=msize)
+if showinterpolated:  plt.plot_date(rptimes24, rpn24,'ro', label='N interpolated last 24 hours',linewidth=weite,markersize=msize)
 plt.ylabel('Density $\mathregular{[ccm^{-3}]}$',fontsize=fsize+2)
 ax6.xaxis.set_major_formatter(myformat)
 ax6.legend(loc=2,ncol=2,fontsize=fsize-2)
@@ -339,20 +332,7 @@ plt.savefig(filename)
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-################################# (2) get OMNI training data ##############################
+################################# (1b) get OMNI training data ##############################
 
 #download from  ftp://nssdcftp.gsfc.nasa.gov/pub/data/omni/low_res_omni/omni2_all_years.dat
 
@@ -431,9 +411,9 @@ print()
 
 
 
+#================================== (2) SLIDING window pattern recognition ==============
 
 
-########################### (3)SLIDING window pattern recognition ##########################
 # search for matches of the now wind with the training data
 
 calculation_start=time.time()
@@ -647,15 +627,10 @@ print('Calculation Time in seconds: ', calculation_time)
 
 
 
+#================================== ((3) plot FORECAST results ========================================
 
 
 
-
-
-
-
-
-########################################### (4) plot FORECAST results
 
 sns.set_context("talk")     
 sns.set_style("darkgrid")  
@@ -934,6 +909,8 @@ plt.annotate('super-storm',xy=(timesnp[0],-250+2),xytext=(timesnp[0],-250+2),col
 """
 
 plt.annotate('Horizontal lines are sunset to sunrise intervals ',xy=(timesnp[0],45),xytext=(timesnp[0],45),color='k', fontsize=10)
+
+#don't use ephem - use astropy!
 
 #https://chrisramsay.co.uk/posts/2017/03/fun-with-the-sun-and-pyephem/
 #get sunrise/sunset times for Reykjavik Iceland and Edmonton Kanada, and Dunedin New Zealand with ephem package

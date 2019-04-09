@@ -1,4 +1,32 @@
-#This is the module for the predstorm package containing functions and procedures
+"""
+This is the module for the predstorm package containing functions and procedures
+
+
+use
+>> import importlib
+>> importlib.reload(predstorm_module)
+to update module while working in ipython
+
+
+LIST OF FUNCTIONS
+getpositions
+sphere2cart
+time_to_num_cat
+converttime
+get_noaa_dst
+sunriseset
+get_omni_data
+convert_GSE_to_GSM
+convert_RTN_to_GSE_sta_l1
+make_kp_from_wind
+aurora_power
+make_dst_from_wind
+epoch_to_num
+get_stereoa_data_beacon
+get_dscovr_data_real
+get_dscovr_data_all
+"""
+
 
 import numpy as np
 import scipy
@@ -13,31 +41,6 @@ import pdb
 import cdflib
 #import netCDF4
 import sys  
-
-
-# use
-# import importlib
-# importlib.reload(predstorm_module)
-# to update module while working in command line 
-
-
-# LIST OF FUNCTIONS
-# getpositions
-# sphere2cart
-# time_to_num_cat
-# converttime
-# get_noaa_dst
-# sunriseset
-# get_omni_data
-# convert_GSE_to_GSM
-# convert_RTN_to_GSE_sta_l1
-# make_kp_from_wind
-# aurora_power
-# make_dst_from_wind
-# epoch_to_num
-# get_stereoa_data_beacon
-# get_dscovr_data_real
-# get_dscovr_data_all
 
 
 

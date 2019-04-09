@@ -6,21 +6,59 @@ The package is used for research on predicting the background solar wind,
 high speed solar wind streams and solar storm magnetic flux ropes, 
 based on data from solar wind monitors at the Sun-Earth L1 and L5 points, 
 as well as from any spacecraft positioned east of the Sun-Earth line around or < 1 AU.
+We also derive predictions of the geomagnetic Dst index, Kp and auroral power.
 
-Status: work in progress, November 2018 
-issues: 
-- predstorm_L5_stereob_errors.py needs to be rewritten for new data structures (recarrays)
-- rewrite verification in predstorm_L5.py  
-- use astropy instead of ephem in predstorm_module.py
+Status: work in progress, 9 April 2019.
 
-If you plan to use this code for generating results for 
-peer-reviewed scientific publications, please contact me (see bio).
-
+If you want to use parts of these codes for generating results for 
+peer-reviewed scientific publications, please contact us per email (see contributor biographies)
+or via twitter @chrisoutofspace (Christian Moestl).
 
 ## Dependencies
 
-* seaborn, sunpy, urllib, json, cdflib (https://github.com/MAVENSDC/cdflib)
+To install the packages that need to be added to an existing anaconda installation, 
+
+* sunpy (https://github.com/sunpy/sunpy), cdflib (https://github.com/MAVENSDC/cdflib),
+
+* predstorm_l5.py checks for an ffmpeg (for converting images, making movies) executable 
+in the current directory, otherwise the system-wide available version is used.
+
+use this on a command line:
+
+```
+conda config --append channels conda-forge
+conda install sunpy
+pip install cdflib
+```
 
 ## Running the code
 
-* ....
+* On the command line:
+
+```
+python predstorm_l1.py
+python predstorm_l5.py
+python mfr_predict.py
+```
+
+* use 
+```
+python predstorm_l5.py --server 
+```
+for Agg backend. 
+
+* In ipython:
+
+```
+run predstorm_l1
+run predstorm_l5
+run mfr_predict
+```
+
+
+
+* Folder "data/" contains a position file for planets and spacecraft 
+(to be replaced with positions in spiceypy/heliopy) and an unpublished v2.0 of the HELCATS ICME catalog.
+OMNI2 data are automatically downloaded in this folder.
+
+
