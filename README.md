@@ -36,14 +36,14 @@ in the current directory, otherwise the system-wide available version is used.
 * On the command line:
 
 ```
-python predstorm_l1.py
-python predstorm_l5.py
+python predstorm_L1.py
+python predstorm_L5.py
 python mfr_predict.py
 ```
 
 * use 
 ```
-python predstorm_l5.py --server 
+python predstorm_L5.py --server 
 ```
 for Agg backend. 
 
