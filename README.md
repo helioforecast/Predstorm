@@ -16,12 +16,9 @@ or via twitter @chrisoutofspace (Christian Moestl).
 
 ## Dependencies
 
-To install the packages that need to be added to an existing anaconda installation, 
+To install the packages that need to be added to an existing anaconda python3 installation (https://www.anaconda.com/distribution/), 
 
 * sunpy (https://github.com/sunpy/sunpy), cdflib (https://github.com/MAVENSDC/cdflib),
-
-* predstorm_l5.py checks for an ffmpeg (for converting images, making movies) executable 
-in the current directory, otherwise the system-wide available version is used.
 
 use this on a command line:
 
@@ -30,6 +27,9 @@ conda config --append channels conda-forge
 conda install sunpy
 pip install cdflib
 ```
+
+* predstorm_l5.py checks for an ffmpeg (for converting images, making movies) executable 
+in the current directory, otherwise the system-wide available version is used.
 
 ## Running the code
 
