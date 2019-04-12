@@ -9,7 +9,7 @@ twitter @chrisoutofspace, https://github.com/IWF-helio
 
 started April 2018, last update April 2019
 
-python 3.7 with sunpy 
+python 3.7 with sunpy
 
 method
 semi-supervised learning: add known intervals of ICMEs, MFRs and CIRs in the training data
@@ -29,27 +29,27 @@ use stereo one hour data as training data set, corrected for 1 AU
 use VEX and MESSENGER as tests for HelioRing like forecasts, use STEREO at L5 for training data of the last few days
 
 forecast plot:
-add approximate levels of Dst for each location to see aurora, taken from ovation prime/worldview and Dst 
+add approximate levels of Dst for each location to see aurora, taken from ovation prime/worldview and Dst
 add Temerin and Li method and kick out Burton/OBrien; make error bars for Dst
 take mean of ensemble forecast for final blue line forecast or only best match?
 
 
 
 MIT LICENSE
-Copyright 2018, Christian Moestl 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this 
+Copyright 2018, Christian Moestl
+Permission is hereby granted, free of charge, to any person obtaining a copy of this
 software and associated documentation files (the "Software"), to deal in the Software
-without restriction, including without limitation the rights to use, copy, modify, 
-merge, publish, distribute, sublicense, and/or sell copies of the Software, and to 
-permit persons to whom the Software is furnished to do so, subject to the following 
+without restriction, including without limitation the rights to use, copy, modify,
+merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to the following
 conditions:
-The above copyright notice and this permission notice shall be included in all copies 
+The above copyright notice and this permission notice shall be included in all copies
 or substantial portions of the Software.
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
 INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT 
-HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF 
-CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE 
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 """
@@ -61,24 +61,40 @@ OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ################################## INPUT PARAMETERS ######################################
-
+import os
+import sys
+import getopt
 
 #load all constants from predstorm_L1_input.py
 from predstorm_l1_input import *
 
 
-#IMPORT 
+#IMPORT
 import scipy
 from scipy import stats
 import sys
 import datetime
+
+# READ INPUT OPTIONS FROM COMMAND LINE
+argv = sys.argv[1:]
+opts, args = getopt.getopt(argv,"h",["server", "help"])
+
+server = False
+if "--server" in [o for o, v in opts]:
+    server = True
+    print("In server mode!")
+
 import matplotlib
+if server:
+    matplotlib.use('Agg') # important for server version, otherwise error when making figures
+else:
+    matplotlib.use('Qt5Agg') # figures are shown on mac
+
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import numpy as np
 import time
 import pickle
-import os
 import copy
 import pdb
 import urllib
@@ -162,14 +178,14 @@ print()
 
 #this is the last 24 hours in 1 hour timesteps, 25 data points
 #for field
-rbtimes24=np.arange(dism.time[-1]-1,dism.time[-1]+1/24,1/24) 
+rbtimes24=np.arange(dism.time[-1]-1,dism.time[-1]+1/24,1/24)
 btot24=np.interp(rbtimes24,dism.time,dism.btot)
 bzgsm24=np.interp(rbtimes24,dism.time,dism.bzgsm)
 bygsm24=np.interp(rbtimes24,dism.time,dism.bygsm)
 bxgsm24=np.interp(rbtimes24,dism.time,dism.bxgsm)
 
 #for plasma
-rptimes24=np.arange(dism.time[-1]-1,dism.time[-1]+1/24,1/24) 
+rptimes24=np.arange(dism.time[-1]-1,dism.time[-1]+1/24,1/24)
 rpv24=np.interp(rptimes24,dism.time,dism.speed)
 rpn24=np.interp(rptimes24,dism.time,dism.den)
 
@@ -189,14 +205,14 @@ bxgsm7=np.interp(rtimes7,dism.time,dism.bxgsm)
 rpv7=np.interp(rtimes7,dism.time,dism.speed)
 rpn7=np.interp(rtimes7,dism.time,dism.den)
 
-#interpolate NaN values in the hourly interpolated data ******* to add 
+#interpolate NaN values in the hourly interpolated data ******* to add
 
 
 
 print('load real time Dst from Kyoto via NOAA')
 
 
-#get NOAA Dst for comparison 
+#get NOAA Dst for comparison
 [dst_time,dst]=get_noaa_dst()
 print('Loaded Kyoto Dst from NOAA for last 7 days.')
 
@@ -207,8 +223,8 @@ print('Loaded Kyoto Dst from NOAA for last 7 days.')
 
 
 ##################### plot DSCOVR data
-sns.set_context("talk")     
-sns.set_style("darkgrid")  
+sns.set_context("talk")
+sns.set_style("darkgrid")
 fig=plt.figure(1,figsize=(12,10)) #fig=plt.figure(1,figsize=(14,14))
 weite=1
 fsize=11
@@ -317,7 +333,7 @@ plt.annotate('super-storm',xy=(rtimes7[0],-250+2),xytext=(rtimes7[0],-250+2),col
 
 if os.path.isdir('real') == False: os.mkdir('real')
 
-#save plot 
+#save plot
 filename='real/predstorm_realtime_input_1_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.jpg'
 plt.savefig(filename)
 #filename='real/predstorm_realtime_input_1_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.eps'
@@ -444,7 +460,7 @@ dist_count_v=np.zeros(trainsize)
 dist_count_n=np.zeros(trainsize)
 
 ##  sliding window analysis
-for i in np.arange(0,trainsize): 
+for i in np.arange(0,trainsize):
 
   #go forward in time from start of training set in 1 hour increments
   #timeslidenum=trainstartnum+i/24
@@ -453,10 +469,10 @@ for i in np.arange(0,trainsize):
   #*** this can be optimized with the startindex from above (so where is not necessary)
   #look this time up in the omni data and extract the next deltat hours
   #inds=np.where(timeslidenum==times1)[0][0]
-  
+
   #simpler method:
   inds=startindex+i
-  
+
   #for btotal field
   btots=o.btot[inds:inds+deltat+1]
   #get correlation of training data btots with now-wind btotn
@@ -475,23 +491,23 @@ for i in np.arange(0,trainsize):
   #same for bx
   bxs=o.bx[inds:inds+deltat+1]
   dist_count_bx[i]=np.sqrt(np.sum((bxn-bxs)**2))/np.size(bxn)
-  
+
 
   #same for speed
   speeds=o.speed[inds:inds+deltat+1]
-  
+
   #when there is no nan:
   #if np.sum(np.isnan(speeds)) == 0:
   dist_count_v[i]=np.sqrt(np.sum((speedn-speeds)**2))/np.size(speedn)
   #corr_count_v[i]=np.corrcoef(speedn,speeds)[0][1]
-  #see Riley et al. 2017 equation 1 but divided by size 
+  #see Riley et al. 2017 equation 1 but divided by size
   #so this measure is the average rms error
-  
+
   #same for density
   dens=o.den[inds:inds+deltat+1]
   #corr_count_n[i]=np.corrcoef(denn,dens)[0][1]
   dist_count_n[i]=np.sqrt(np.sum((denn-dens)**2))/np.size(denn)
-  
+
 ### done
 
 
@@ -500,7 +516,7 @@ for i in np.arange(0,trainsize):
 #maxpos=np.argmax(corr_count_b)
 #get top 50 of all correlations, they are at the end of the array
 #top50_b=np.argsort(corr_count_b)[-50:-1]
-#go forward in time from training data set start to the position of the best match + deltat hours 
+#go forward in time from training data set start to the position of the best match + deltat hours
 #(so you take the future part coming after wind where the best match is seen)
 
 #method with minimum rms distance
@@ -525,7 +541,7 @@ top50_bx=np.argsort(dist_count_bx)[0:49]
 
 print('find minimum of BzGSM distance at index:')
 print(round(maxval_bx,1), ' nT   index: ',maxpos_bx)
-#go forward in time from training data set start to the position of the best match + deltat hours 
+#go forward in time from training data set start to the position of the best match + deltat hours
 #(so you take the future part coming after wind where the best match is seen)
 indp_bx=startindex+maxpos_bx+deltat
 #select array from OMNI data for predicted wind - predictions all have a p at the end
@@ -543,7 +559,7 @@ top50_by=np.argsort(dist_count_by)[0:49]
 
 print('find minimum of BzGSM distance at index:')
 print(round(maxval_by,1), ' nT   index: ',maxpos_by)
-#go forward in time from training data set start to the position of the best match + deltat hours 
+#go forward in time from training data set start to the position of the best match + deltat hours
 #(so you take the future part coming after wind where the best match is seen)
 indp_by=startindex+maxpos_by+deltat
 #select array from OMNI data for predicted wind - predictions all have a p at the end
@@ -567,7 +583,7 @@ top50_bz=np.argsort(dist_count_bz)[0:49]
 
 print('find minimum of BzGSM distance at index:')
 print(round(maxval_bz,1), ' nT   index: ',maxpos_bz)
-#go forward in time from training data set start to the position of the best match + deltat hours 
+#go forward in time from training data set start to the position of the best match + deltat hours
 #(so you take the future part coming after wind where the best match is seen)
 indp_bz=startindex+maxpos_bz+deltat
 #select array from OMNI data for predicted wind - predictions all have a p at the end
@@ -591,8 +607,8 @@ print(round(maxval_v), ' km/s   index: ',maxpos_v)
 #select array from OMNI data for predicted wind - all with p at the end
 indp_v=startindex+maxpos_v+deltat
 speedp=o.speed[indp_v:indp_v+deltat+1]
-    
-    
+
+
 #for N
 #maxval_n=np.max(corr_count_n)
 #maxpos_n=np.argmax(corr_count_n)
@@ -609,8 +625,8 @@ print(round(maxval_n,1), ' ccm-3     index: ',maxpos_n)
 #select array from OMNI data for predicted wind - all with p at the end
 indp_n=startindex+maxpos_n+deltat
 denp=o.den[indp_n:indp_n+deltat+1]
-    
-    
+
+
 
 #---------- sliding window analysis end
 calculation_time=round(time.time()-calculation_start,2)
@@ -632,8 +648,8 @@ print('Calculation Time in seconds: ', calculation_time)
 
 
 
-sns.set_context("talk")     
-sns.set_style("darkgrid")  
+sns.set_context("talk")
+sns.set_style("darkgrid")
 #fig=plt.figure(3,figsize=(15,13))
 
 #for testing
@@ -643,11 +659,11 @@ weite=1
 fsize=11
 
 
-#------------------- Panel 1 Btotal 
+#------------------- Panel 1 Btotal
 
 ax1 = fig.add_subplot(411)
 
-#for previous plot best 50 correlations 
+#for previous plot best 50 correlations
 for j in np.arange(49):
  #search for index in OMNI data for each of the top50 entries
  indp_b50=startindex+top50_b[j]
@@ -664,22 +680,22 @@ plt.plot_date(0,0, 'g', linewidth=weite, alpha=0.8)#,label='B predictions from 5
 
 #for future plot best 50 correlations
 for j in np.arange(49):
- #search for index in OMNI data for each of the top50 entries, 
+ #search for index in OMNI data for each of the top50 entries,
  #add a deltat for selecting the deltat after the data
  indp_b50=startindex+top50_b[j]+deltat
  btot50=o.btot[indp_b50:indp_b50+deltat+1]
  #plot for future time
  plt.plot_date(timesfb,btot50, 'g', linewidth=weite, alpha=0.4)
- 
+
 #predicted wind best match
 plt.plot_date(timesfb,btotp, 'b', linewidth=weite+1, label='prediction')
- 
+
 plt.ylabel('Magnetic field B [nT]', fontsize=fsize+2)
 plt.xlim((timesnb[0], timesfb[-1]))
 
 #indicate average level of training data btot
-btraining_mean=np.nanmean(o.btot[startindex:endindex]) 
-plt.plot_date([timesnp[0], timesfp[-1]], [btraining_mean,btraining_mean],'--k', alpha=0.5, linewidth=1) 
+btraining_mean=np.nanmean(o.btot[startindex:endindex])
+plt.plot_date([timesnp[0], timesfp[-1]], [btraining_mean,btraining_mean],'--k', alpha=0.5, linewidth=1)
 plt.annotate('average',xy=(timesnp[0],btraining_mean),xytext=(timesnp[0],btraining_mean),color='k', fontsize=10)
 
 #add *** make ticks in 6h distances starting with 0, 6, 12 UT
@@ -695,8 +711,8 @@ plt.annotate('now',xy=(timenow,max(btotp)+12-3),xytext=(timenow+0.01,max(btotp)+
 plt.annotate('observation',xy=(timenow,max(btotp)+12-3),xytext=(timenow-0.55,max(btotp)+12-3),color='k', fontsize=15)
 plt.annotate('prediction',xy=(timenow,max(btotp)+12-3),xytext=(timenow+0.45,max(btotp)+12-3),color='b', fontsize=15)
 
-plt.yticks(fontsize=fsize) 
-plt.xticks(fontsize=fsize) 
+plt.yticks(fontsize=fsize)
+plt.xticks(fontsize=fsize)
 
 plt.title('PREDSTORM L1 solar wind and magnetic storm prediction with unsupervised pattern recognition for '+ str(mdates.num2date(timenow))[0:16]+ ' UT', fontsize=15)
 
@@ -730,14 +746,14 @@ for j in np.arange(49):
  bz50=o.bzgsm[indp_bz50:indp_bz50+deltat+1]
  #plot for future time
  plt.plot_date(timesfb,bz50, 'g', linewidth=weite, alpha=0.4)
- 
+
 
 #predicted wind
 plt.plot_date(timesfb,bzp, 'b', linewidth=weite+1, label='Bz best match prediction')
 
 #0 level
-plt.plot_date([timesnp[0], timesfp[-1]], [0,0],'--k', alpha=0.5, linewidth=1) 
- 
+plt.plot_date([timesnp[0], timesfp[-1]], [0,0],'--k', alpha=0.5, linewidth=1)
+
 
 plt.ylabel('Bz [nT] GSM')
 plt.xlim((timesnb[0], timesfb[-1]))
@@ -747,13 +763,13 @@ plt.plot_date([timesnb[-1],timesnb[-1]],[min(bzgsmn)-15,max(bzgsmn)+15],'-r', li
 plt.ylim(min(bzgsmn)-15,max(bzgsmn)+15)
 #ax2.legend(loc=2, fontsize=fsize-2)
 
-plt.yticks(fontsize=fsize) 
-plt.xticks(fontsize=fsize) 
+plt.yticks(fontsize=fsize)
+plt.xticks(fontsize=fsize)
 
 
 
 
-#------------------------- Panel 3 SPEED 
+#------------------------- Panel 3 SPEED
 
 ax3 = fig.add_subplot(413)
 
@@ -793,8 +809,8 @@ plt.plot_date([timesnp[-1],timesnp[-1]],[0,2500],'-r', linewidth=3)
 plt.ylim(250,np.nanmax(speedp)+400)
 #ax3.legend(loc=2, fontsize=fsize-2)
 
-plt.yticks(fontsize=fsize) 
-plt.xticks(fontsize=fsize) 
+plt.yticks(fontsize=fsize)
+plt.xticks(fontsize=fsize)
 
 
 #add speed levels
@@ -806,13 +822,13 @@ plt.annotate('fast',xy=(timesnp[0],800),xytext=(timesnp[0],800),color='k', fonts
 
 
 
-#--------------------------------- PANEL 4 Dst 
+#--------------------------------- PANEL 4 Dst
 
 #make Dst index from solar wind observed+prediction in single array
 #[dst_burton]=make_predstorm_dst(btoti, bygsmi, bzgsmi, speedi, deni, timesi)
 
 #btotal timesnb btotn  timesfb btotp
-#bzgsm timesnb bzgsmn timesfb bzp 
+#bzgsm timesnb bzgsmn timesfb bzp
 #speed: timesnp, speedn; dann  timesfp, speedp
 #density timesnp denn timesfp denp
 #times timesnp timesfp
@@ -892,8 +908,8 @@ ax8.xaxis.set_major_formatter(myformat)
 plt.plot_date([timesnp[-1],timesnp[-1]],[-1500, +500],'-r', linewidth=3)
 ax8.legend(loc=3, fontsize=fsize-2,ncol=3)
 
-plt.yticks(fontsize=fsize) 
-plt.xticks(fontsize=fsize) 
+plt.yticks(fontsize=fsize)
+plt.xticks(fontsize=fsize)
 
 
 #add geomagnetic storm levels
@@ -934,12 +950,12 @@ if iceprevset < iceprevrise:
  #next night
  plt.plot_date([mdates.date2num(icenextset), mdates.date2num(icenextrise)], [nightlevels_iceland,nightlevels_iceland],'-k', alpha=0.8, linewidth=1)
  plt.annotate('Iceland',xy=(mdates.date2num(icenextset),nightlevels_iceland+2),xytext=(mdates.date2num(icenextset),nightlevels_iceland+2),color='k', fontsize=12)
- 
+
  #indicate boxes for aurora visibility
  #matplotlib.patches.Rectangle(xy, width, height)
- #ax8.add_patch( matplotlib.patches.Rectangle([mdates.date2num(icenextset),-500], mdates.date2num(icenextrise)-mdates.date2num(icenextset), 475, linestyle='--', facecolor='g',edgecolor='k', alpha=0.3)) 
- 
- 
+ #ax8.add_patch( matplotlib.patches.Rectangle([mdates.date2num(icenextset),-500], mdates.date2num(icenextrise)-mdates.date2num(icenextset), 475, linestyle='--', facecolor='g',edgecolor='k', alpha=0.3))
+
+
 #if night now make a line from prevset to nextrise ****(not sure if this is correct to make the night touch the edge of the plot!
 if iceprevset > iceprevrise:
  #night now
@@ -949,7 +965,7 @@ if iceprevset > iceprevrise:
  #next night from nextset to plot limit
  plt.plot_date([mdates.date2num(icenextset), timesfp[-1]], [nightlevels_iceland,nightlevels_iceland],'-k', alpha=0.8, linewidth=1)
  plt.annotate('Iceland',xy=(mdates.date2num(iceprevset),nightlevels_iceland+2),xytext=(mdates.date2num(iceprevset),nightlevels_iceland+2),color='k', fontsize=12)
- 
+
 
 
 #NEW ZEALAND
@@ -961,15 +977,15 @@ if dunprevset < dunprevrise:
 if dunprevset > dunprevrise:
  #night now
  plt.plot_date([mdates.date2num(dunprevset), mdates.date2num(dunnextrise)], [nightlevels_dunedin,nightlevels_dunedin],'-k', alpha=0.8, linewidth=1)
- #ax8.add_patch( matplotlib.patches.Rectangle([mdates.date2num(dunprevset),-500], mdates.date2num(dunnextrise)-mdates.date2num(dunprevset), 475, linestyle='--', facecolor='g',edgecolor='k', alpha=0.3)) 
+ #ax8.add_patch( matplotlib.patches.Rectangle([mdates.date2num(dunprevset),-500], mdates.date2num(dunnextrise)-mdates.date2num(dunprevset), 475, linestyle='--', facecolor='g',edgecolor='k', alpha=0.3))
  #previous night from left limit to prevrise
  plt.plot_date([timesnp[0], mdates.date2num(dunprevrise)], [nightlevels_dunedin,nightlevels_dunedin],'-k', alpha=0.8, linewidth=1)
  #next night from nextset to plot limit
  plt.plot_date([mdates.date2num(dunnextset), timesfp[-1]], [nightlevels_dunedin,nightlevels_dunedin],'-k', alpha=0.8, linewidth=1)
  plt.annotate('Dunedin, New Zealand',xy=(mdates.date2num(dunprevset),nightlevels_dunedin+2),xytext=(mdates.date2num(dunprevset),nightlevels_dunedin+2),color='k', fontsize=12)
- 
 
-#CANADA 
+
+#CANADA
 if edprevset < edprevrise:
  plt.plot_date([mdates.date2num(edprevset), mdates.date2num(edprevrise)], [nightlevels_edmonton,nightlevels_edmonton],'-k', alpha=0.8, linewidth=1)
  plt.annotate('Edmonton, Canada',xy=(mdates.date2num(edprevset),nightlevels_edmonton+2),xytext=(mdates.date2num(edprevset),nightlevels_edmonton+2),color='k', fontsize=12)
@@ -982,7 +998,7 @@ if edprevset > edprevrise:
  plt.plot_date([timesnp[0], mdates.date2num(edprevrise)], [nightlevels_edmonton,nightlevels_edmonton],'-k', alpha=0.8, linewidth=1)
  plt.plot_date([mdates.date2num(ednextset), timesfp[-1]], [nightlevels_edmonton,nightlevels_edmonton],'-k', alpha=0.8, linewidth=1)
  plt.annotate('Edmonton, Canada',xy=(mdates.date2num(edprevset),nightlevels_edmonton+2),xytext=(mdates.date2num(edprevset),nightlevels_edmonton+2),color='k', fontsize=12)
- 
+
 
 #********** add level for aurora as rectangle plots
 

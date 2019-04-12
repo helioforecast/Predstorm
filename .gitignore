@@ -1,4 +1,7 @@
 __pycache__
 results
+real
 sta_beacon
 *.png
+omni2*.*
+.DS*

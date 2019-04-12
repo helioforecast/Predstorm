@@ -1,36 +1,36 @@
 """
-PREDSTORM is a real time solar wind and magnetic storm forecasting python package 
+PREDSTORM is a real time solar wind and magnetic storm forecasting python package
 using time-shifted data from a spacecraft east of the Sun-Earth line.
-Currently STEREO-A beacon data is used, but it is also suited for using data from a 
+Currently STEREO-A beacon data is used, but it is also suited for using data from a
 possible future L5 mission or interplanetary CubeSats.
 
 Author: C. Moestl, R. Bailey, IWF Graz, Austria
 twitter @chrisoutofspace, https://github.com/cmoestl
 started April 2018, last update April 2019
 
-python 3.7 
+python 3.7
 packages needed to add to anaconda installation: sunpy, cdflib (https://github.com/MAVENSDC/cdflib)
 
 
-issues: 
+issues:
 - predstorm_L5_stereob_errors.py needs to be rewritten for new data structures (recarrays)
-- rewrite verification in predstorm_l5.py  
+- rewrite verification in predstorm_l5.py
 - use astropy instead of ephem in predstorm_module.py
 
 
 current status:
-The code works with STEREO-A beacon and DSCOVR data and downloads STEREO-A beacon files 
-into the sta_beacon directory 14 days prior to current time 
+The code works with STEREO-A beacon and DSCOVR data and downloads STEREO-A beacon files
+into the sta_beacon directory 14 days prior to current time
 tested for correctly handling missing PLASTIC files
 
-things to add: 
+things to add:
 - add verification mode
 - add error bars for the Temerin/Li Dst model with 1 and 2 sigma
 - fill data gaps from STEREO-A beacon data with reasonable Bz fluctuations etc.
   based on a assessment of errors with the ... stereob_errors program
 - add timeshifts from L1 to Earth
 - add approximate levels of Dst for each location to see the aurora (depends on season)
-  taken from correlations of ovation prime, SuomiNPP data in NASA worldview and Dst 
+  taken from correlations of ovation prime, SuomiNPP data in NASA worldview and Dst
 - check coordinate conversions again, GSE to GSM is ok
 - deal with CMEs at STEREO, because systematically degrades prediction results
 - add metrics ROC for verification etc.
@@ -39,30 +39,30 @@ things to add:
 future larger steps:
 (1) add the semi-supervised learning algorithm from the predstorm_L1 program; e.g. with older
 	STEREO data additionally, so a #combined L1/L5 forecast
-	most important: implement pattern recognition for STEREO-A streams, 
+	most important: implement pattern recognition for STEREO-A streams,
 	and link this to the most probably outcome days later at L1
 	train with STB data around the location where STA is at the moment
 (2) fundamental issue: by what amount is Bz stable for HSS from L5 to L1? are there big changes?
-is Bz higher for specific locations with respect to the HCS and the solar equator? 
+is Bz higher for specific locations with respect to the HCS and the solar equator?
 temporal and spatial coherence of Bz
 (3) probabilities for magnetic storm magnitude, probabilities for aurora for many locations
 
 -----------------
 MIT LICENSE
-Copyright 2019, Christian Moestl 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this 
+Copyright 2019, Christian Moestl
+Permission is hereby granted, free of charge, to any person obtaining a copy of this
 software and associated documentation files (the "Software"), to deal in the Software
-without restriction, including without limitation the rights to use, copy, modify, 
-merge, publish, distribute, sublicense, and/or sell copies of the Software, and to 
-permit persons to whom the Software is furnished to do so, subject to the following 
+without restriction, including without limitation the rights to use, copy, modify,
+merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to the following
 conditions:
-The above copyright notice and this permission notice shall be included in all copies 
+The above copyright notice and this permission notice shall be included in all copies
 or substantial portions of the Software.
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
 INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT 
-HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF 
-CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE 
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
@@ -182,15 +182,15 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, Dst, dst_label=
     plt.savefig : .png file
         File saved to XXX
     """
-    
+
     # Set style:
-    sns.set_context("talk")     
-    sns.set_style("darkgrid")  
-    
+    sns.set_context("talk")
+    sns.set_style("darkgrid")
+
     # Make figure object:
     fig=plt.figure(1,figsize=figsize)
     axes = []
-    
+
     # Set data objects:
     stam, sta = STEREOA_data
     dism, dis = DSCOVR_data
@@ -207,7 +207,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, Dst, dst_label=
     plt.plot_date(dism.time, dism.btot,'-k', label='B total L1', linewidth=lw)
     plt.plot_date(dism.time, dism.bzgsm,'-g', label='Bz GSM L1',linewidth=lw)
 
-    # STEREO-A minute resolution data with timeshift    
+    # STEREO-A minute resolution data with timeshift
     plt.plot_date(stam.time[sta_index_future], stam.btot[sta_index_future],
                   '-r', linewidth=lw, label='B STEREO-Ahead')
     plt.plot_date(stam.time[sta_index_future], stam.bn[sta_index_future], markersize=0,
@@ -233,8 +233,8 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, Dst, dst_label=
     # Plot solar wind speed (DSCOVR):
     plt.plot_date(dism.time, dism.speed,'-k', label='speed L1',linewidth=lw)
     plt.ylabel('Speed $\mathregular{[km \\ s^{-1}]}$', fontsize=fs+2)
-    
-   
+
+
     # Plot STEREO-A data with timeshift and savgol filter
     try:
         plt.plot_date(stam.time[sta_index_future],savgol_filter(stam.speedr[sta_index_future],11,1),'-r', linewidth=lw, label='speed STEREO-Ahead')
@@ -245,7 +245,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, Dst, dst_label=
 
     # Add speed levels:
     for hline, linetext in zip([400, 800], ['slow', 'fast']):
-        plt.plot_date([dis.time[0], dis.time[-1]+future_days], 
+        plt.plot_date([dis.time[0], dis.time[-1]+future_days],
                     [hline, hline],'--k', alpha=0.3, linewidth=1)
         plt.annotate(linetext,xy=(dis.time[0]+past_days,hline),
                     xytext=(dis.time[0]+past_days,hline),
@@ -259,7 +259,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, Dst, dst_label=
         vplotmax=np.nanmax(np.concatenate((dism.speed,stam.speedr[sta_index_future])))+100
         vplotmin=np.nanmin(np.concatenate((dism.speed,stam.speedr[sta_index_future]))-50)
     plt.ylim(vplotmin, vplotmax)
-    
+
 
     plt.annotate('now',xy=(timeutc,vplotmax-100),xytext=(timeutc+0.05,vplotmax-100),color='k', fontsize=14)
 
@@ -267,7 +267,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, Dst, dst_label=
     # -----------------------------
     ax3 = fig.add_subplot(413)
     axes.append(ax3)
-    
+
     # Plot solar wind density:
     plt.plot_date(dism.time, dism.den,'-k', label='density L1',linewidth=lw)
     plt.ylabel('Density $\mathregular{[ccm^{-3}]}$',fontsize=fs+2)
@@ -291,23 +291,23 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, Dst, dst_label=
     plt.plot_date(dst_time, dst,'ko', label='Dst observed',markersize=4)
     plt.ylabel('Dst [nT]', fontsize=fs+2)
     plt.ylim([np.nanmin(Dst)-50,np.nanmax(Dst)+20])
-        
+
     if not verification_mode:
         plt.plot_date(com_time, Dst,'-r', label=dst_label,markersize=3, linewidth=1)
         # Add generic error bars of +/-15 nT:
         error=15
-        plt.fill_between(com_time, Dst-error, Dst+error, alpha=0.2, 
+        plt.fill_between(com_time, Dst-error, Dst+error, alpha=0.2,
                          label='Error for high speed streams')
     else:
         #load saved data l prefix is for loaded - WARNING This will crash if called right now
-        [timenowb, sta_ptime, sta_vr, sta_btime, sta_btot, sta_br,sta_bt, sta_bn, rbtime_num, rbtot, rbzgsm, rptime_num, rpv, rpn, lrdst_time, lrdst, lcom_time, ldst_burton, ldst_obrien,ldst_temerin_li]=pickle.load(open(verify_filename,'rb') )  
+        [timenowb, sta_ptime, sta_vr, sta_btime, sta_btot, sta_br,sta_bt, sta_bn, rbtime_num, rbtot, rbzgsm, rptime_num, rpv, rpn, lrdst_time, lrdst, lcom_time, ldst_burton, ldst_obrien,ldst_temerin_li]=pickle.load(open(verify_filename,'rb') )
         plt.plot_date(lcom_time, ldst_burton,'-b', label='Forecast Dst Burton et al. 1975',markersize=3, linewidth=1)
         plt.plot_date(lcom_time, ldst_obrien,'-r', label='Forecast Dst OBrien & McPherron 2000',markersize=3, linewidth=1)
-    
+
     # Label plot with geomagnetic storm levels
     plt.plot_date([dis.time[0], dis.time[-1]+future_days], [0,0],'--k', alpha=0.3, linewidth=1)
     for hline, linetext in zip([-50, -100, -250], ['moderate', 'intense', 'super-storm']):
-        plt.plot_date([dis.time[0], dis.time[-1]+future_days], 
+        plt.plot_date([dis.time[0], dis.time[-1]+future_days],
                       [hline,hline],'--k', alpha=0.3, linewidth=1)
         plt.annotate(linetext,xy=(dis.time[0]+past_days,hline+2),
                      xytext=(dis.time[0]+past_days,hline+2),color='k', fontsize=10)
@@ -319,34 +319,34 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, Dst, dst_label=
         ax.tick_params(axis="x", labelsize=fs)
         ax.tick_params(axis="y", labelsize=fs)
         ax.legend(loc=2,ncol=3,fontsize=fs-2)
-        
+
         # Dates on x-axes:
         myformat = mdates.DateFormatter('%b %d %Hh')
         ax.xaxis.set_major_formatter(myformat)
-        
+
         # Vertical line for NOW:
         ax.plot_date([timeutc,timeutc],[-2000,2000],'-k', linewidth=2)
-    
+
     # Liability text:
     plt.figtext(0.99,0.05,'C. Moestl, IWF Graz, Austria', fontsize=12, ha='right')
     plt.figtext(0.99,0.025,'https://twitter.com/chrisoutofspace', fontsize=12, ha='right')
     plt.figtext(0.01,0.03,'We take no responsibility or liability for the frequency of provision and accuracy of this forecast.' , fontsize=8, ha='left')
     plt.figtext(0.01,0.01,'We will not be liable for any losses and damages in connection with using the provided information.' , fontsize=8, ha='left')
 
-    #save plot 
+    #save plot
     if not verification_mode:
         plot_label = 'realtime'
     else:
         plot_label = 'verify'
-        
+
     filename = os.path.join(outputdirectory,'predstorm_v1_{}_stereo_a_plot_{}-{}_{}.png'.format(
                             plot_label, timeutcstr[0:10], timeutcstr[11:13], timeutcstr[14:16]))
     filename_eps = filename.replace('png', 'eps')
-        
+
     if not verification_mode:
         plt.savefig('predstorm_real.png')
         print('Real-time plot saved as predstorm_real.png!')
-        
+
     #if not server: # Just plot and exit
     #    plt.show()
     #    sys.exit()
@@ -354,11 +354,11 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, Dst, dst_label=
     print('Plot saved as png:\n', filename)
     log.write('\n')
     log.write('Plot saved as png:\n'+ filename)
-    
+
 
 def return_stereoa_details(positions, DSCOVR_lasttime):
     """Returns a string describing STEREO-A's current whereabouts.
-    
+
     Parameters
     ==========
     positions : ???
@@ -372,33 +372,33 @@ def return_stereoa_details(positions, DSCOVR_lasttime):
         Nicely formatted string with info on STEREO-A's location with
         with respect to Earth and L5/L1.
     """
-    
+
     # Find index of current position:
     pos_time_num = time_to_num_cat(positions.time)
     pos_time_now_ind = np.where(timenow < pos_time_num)[0][0]
     sta_r=positions.sta[0][pos_time_now_ind]
-    
+
     # Get longitude and latitude
     sta_long_heeq = positions.sta[1][pos_time_now_ind]*180./np.pi
     sta_lat_heeq = positions.sta[2][pos_time_now_ind]*180./np.pi
-    
-    # Define time lag from STEREO-A to Earth 
+
+    # Define time lag from STEREO-A to Earth
     timelag_sta_l1=abs(sta_long_heeq)/(360./sun_syn)
     arrival_time_l1_sta=DSCOVR_lasttime + timelag_sta_l1
     arrival_time_l1_sta_str=str(mdates.num2date(arrival_time_l1_sta))
-    
+
     stereostr = ''
     stereostr += 'STEREO-A HEEQ longitude wrt Earth is {:.1f} degrees.\n'.format(sta_long_heeq)
     stereostr += 'This is {:.2f} times the location of L5.\n'.format(abs(sta_long_heeq)/60.)
-    stereostr += 'STEREO-A HEEQ latitude is {:.1f} degrees.\n'.format(sta_lat_heeq) 
+    stereostr += 'STEREO-A HEEQ latitude is {:.1f} degrees.\n'.format(sta_lat_heeq)
     stereostr += 'Earth L1 HEEQ latitude is {:.1f} degrees.\n'.format(positions.earth_l1[2][pos_time_now_ind]*180./np.pi,1)
     stereostr += 'Difference HEEQ latitude is {:.1f} degrees.\n'.format(abs(
                 sta_lat_heeq-positions.earth_l1[2][pos_time_now_ind]*180./np.pi))
     stereostr += 'STEREO-A heliocentric distance is {:.3f} AU.\n'.format(sta_r)
-    stereostr += 'The solar rotation period with respect to Earth is chosen as {:.2f} days.\n'.format(sun_syn) 
+    stereostr += 'The solar rotation period with respect to Earth is chosen as {:.2f} days.\n'.format(sun_syn)
     stereostr += 'This is a time lag of {:.2f} days.\n'.format(timelag_sta_l1)
     stereostr += 'Arrival time of now STEREO-A wind at L1: {}\n'.format(arrival_time_l1_sta_str[0:16])
-    
+
     return stereostr
 
 
@@ -432,9 +432,9 @@ sdo_latest='https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_0193.jpg'
 try: urllib.request.urlretrieve(sdo_latest,'latest_1024_0193.jpg')
 except urllib.error.URLError as e:
     print('Failed downloading ', sdo.latest,' ',e.reason)
-#convert to png    
-#check if ffmpeg is available locally in the folder or systemwide  
-if os.path.isfile('ffmpeg'): 
+#convert to png
+#check if ffmpeg is available locally in the folder or systemwide
+if os.path.isfile('ffmpeg'):
     os.system('./ffmpeg -i latest_1024_0193.jpg latest_1024_0193.png -loglevel quiet -y')
     ffmpeg_avail=True
     print('downloaded SDO latest_1024_0193.jpg converted to png')
@@ -444,7 +444,7 @@ else:
     os.system('rm latest_1024_0193.jpg')
 
 #TO DO: at some point make own PFSS model with heliopy
- 
+
 #------------------------ (1b) Get real-time DSCOVR data --------------------------------
 
 # Get real time DSCOVR data with minute/hourly time resolution as recarray
@@ -484,7 +484,7 @@ log.write('\n')
 
 #get real time STEREO-A data with minute/hourly time resolution as recarray
 [stam,sta]=get_stereoa_data_beacon()
-#use hourly interpolated data - the 'sta' recarray for further calculations, 
+#use hourly interpolated data - the 'sta' recarray for further calculations,
 #'stam' for plotting
 
 #get spacecraft position
@@ -512,7 +512,7 @@ print()
 sta_long_heeq = pos.sta[1][pos_time_now_ind]*180./np.pi
 sta_lat_heeq = pos.sta[2][pos_time_now_ind]*180./np.pi
 
-# define time lag from STEREO-A to Earth 
+# define time lag from STEREO-A to Earth
 timelag_sta_l1=abs(sta_long_heeq)/(360/sun_syn) #days
 arrival_time_l1_sta=dis.time[-1]+timelag_sta_l1
 arrival_time_l1_sta_str=str(mdates.num2date(arrival_time_l1_sta))
@@ -534,7 +534,7 @@ log.write('\n')
 #------------------------ (2b) Corrections to time-shifted STEREO-A data ----------------
 
 # (1) make correction for heliocentric distance of STEREO-A to L1 position
-# take position of Earth and STEREO-A from positions file 
+# take position of Earth and STEREO-A from positions file
 # for B and N, makes a difference of about -5 nT in Dst
 earth_r=pos.earth_l1[0][pos_time_now_ind]
 sta.btot=sta.btot*(earth_r/sta_r)**-2
@@ -551,14 +551,14 @@ log.write('\n')
 log.write('1: decline of B and N by factor '+str(round(((earth_r/sta_r)**-2),3)))
 log.write('\n')
 
-# (2) correction for timing for the Parker spiral see 
+# (2) correction for timing for the Parker spiral see
 # Simunac et al. 2009 Ann. Geophys. equation 1, see also Thomas et al. 2018 Space Weather
-# difference in heliocentric distance STEREO-A to Earth, 
+# difference in heliocentric distance STEREO-A to Earth,
 # actually different for every point so take average of solar wind speed
-# Omega is 360 deg/sun_syn in days, convert to seconds; sta_r in AU to m to km; 
+# Omega is 360 deg/sun_syn in days, convert to seconds; sta_r in AU to m to km;
 # convert to degrees
-# minus sign: from STEREO-A to Earth the diff_r_deg needs to be positive  
-# because the spiral leads to a later arrival of the solar wind at larger 
+# minus sign: from STEREO-A to Earth the diff_r_deg needs to be positive
+# because the spiral leads to a later arrival of the solar wind at larger
 # heliocentric distances (this is reverse for STEREO-B!)
 #************** problem -> MEAN IS NOT FULLY CORRECT
 AU=149597870.700 #AU in km
@@ -612,12 +612,12 @@ com_den=np.concatenate((dis.den, sta_den))
 
 
 #if there are nans interpolate them (important for Temerin/Li method)
-if sum(np.isnan(com_den)) > 0: 
-    good = np.where(np.isfinite(com_den)) 
+if sum(np.isnan(com_den)) > 0:
+    good = np.where(np.isfinite(com_den))
     com_den=np.interp(com_time,com_time[good],com_den[good])
 
-if sum(np.isnan(com_vr)) > 0: 
-    good = np.where(np.isfinite(com_vr)) 
+if sum(np.isnan(com_vr)) > 0:
+    good = np.where(np.isfinite(com_vr))
     com_vr=np.interp(com_time,com_time[good],com_vr[good])
 
 
@@ -643,7 +643,7 @@ aurora_power=np.round(make_aurora_power_from_wind(com_btot,com_by,com_bz,com_vr,
 #make sure that no values are < 0
 aurora_power[np.where(aurora_power < 0)]=0.0
 
-#get NOAA Dst for comparison 
+#get NOAA Dst for comparison
 [dst_time,dst]=get_noaa_dst()
 print('Loaded Kyoto Dst from NOAA for last 7 days.')
 log.write('\n')
@@ -689,7 +689,7 @@ filename_save=outputdirectory+'/savefiles/predstorm_v1_realtime_stereo_a_save_'+
 combined=np.rec.array([com_time,com_btot,com_bx,com_by,com_bz,com_den,com_vr,dst_temerin_li,kp_newell,aurora_power,], \
 dtype=[('time','f8'),('btot','f8'),('bx','f8'),('by','f8'),('bz','f8'),('den','f8'),\
        ('vr','f8'),('dst_temerin_li','f8'),('kp_newell','f8'),('aurora_power','f8')])
-        
+
 pickle.dump(combined, open(filename_save, 'wb') )
 
 print('PICKLE: Variables saved in: \n', filename_save, ' \n')
@@ -713,12 +713,12 @@ for i in np.arange(np.size(com_time)):
    #com_time_str[i]=str(mdates.num2date(com_time[i]))[0:16]
    #com_time_str[i]=time_dummy.strftime("%Y %m %d %H %M %M")
 
-   time_dummy=mdates.num2date(com_time[i]) 
-   vartxtout[i,0]=time_dummy.year  
-   vartxtout[i,1]=time_dummy.month  
-   vartxtout[i,2]=time_dummy.day 
-   vartxtout[i,3]=time_dummy.hour  
-   vartxtout[i,4]=time_dummy.minute  
+   time_dummy=mdates.num2date(com_time[i])
+   vartxtout[i,0]=time_dummy.year
+   vartxtout[i,1]=time_dummy.month
+   vartxtout[i,2]=time_dummy.day
+   vartxtout[i,3]=time_dummy.hour
+   vartxtout[i,4]=time_dummy.minute
    vartxtout[i,5]=time_dummy.second
 
 
@@ -734,9 +734,9 @@ vartxtout[:,14]=kp_newell
 vartxtout[:,15]=aurora_power
 
 #description
-#np.savetxt(filename_save, ['time     Dst [nT]     Kp     aurora [GW]   B [nT]    Bx [nT]     By [nT]     Bz [nT]    N [ccm-3]   V [km/s]    ']) 
+#np.savetxt(filename_save, ['time     Dst [nT]     Kp     aurora [GW]   B [nT]    Bx [nT]     By [nT]     Bz [nT]    N [ccm-3]   V [km/s]    '])
 np.savetxt(filename_save, vartxtout, delimiter='',fmt='%4i %2i %2i %2i %2i %2i %10.6f %5.1f %5.1f %5.1f %5.1f   %7.0i %7.0i   %5.0f %5.1f %5.1f', \
-           header='        time      matplotlib_time B[nT] Bx   By     Bz   N[ccm-3] V[km/s] Dst[nT]   Kp   aurora [GW]') 
+           header='        time      matplotlib_time B[nT] Bx   By     Bz   N[ccm-3] V[km/s] Dst[nT]   Kp   aurora [GW]')
 
 
 
@@ -751,13 +751,13 @@ log.write('TXT: Variables saved in: \n'+ filename_save+ '\n')
 #######**********************
 if verification_mode:
   print('Verification results for interval:')
-  
+
 
   #rdst_time rdst includes the observed Dst of the event
   verify_ind_obs=np.where(np.logical_and(rdst_time > verify_int_start,rdst_time < verify_int_end))
   #lcom_time ldst_burton ldst_obrien are the forecasted indices
   verify_ind_for=np.where(np.logical_and(lcom_time > verify_int_start,lcom_time < verify_int_end-1/24))
- 
+
   print('Scores:')
   print()
   print('How well was the magnitude?')
@@ -771,9 +771,9 @@ if verification_mode:
   print('Mean absolute difference real Dst to Dst forecast OBrien:', int(round(np.mean(abs(ldst_obrien[verify_ind_for]-rdst[verify_ind_obs])))), ' +/- ', int(round(np.std(abs(ldst_obrien[verify_ind_for]-rdst[verify_ind_obs])))), ' nT' )
   print('Mean absolute difference real Dst to Dst forecast TemerinLi:', int(round(np.mean(abs(ldst_temerin_li[verify_ind_for]-rdst[verify_ind_obs])))), ' +/- ', int(round(np.std(abs(ldst_temerin_li[verify_ind_for]-rdst[verify_ind_obs])))), ' nT' )
 
-  
+
   print('minimum in real Dst and Burton / OBrien: ')
-  print('real: ', int(round(np.min(rdst[verify_ind_obs]))) ,' forecast: ', int(round(np.min(ldst_burton[verify_ind_for]))), ' ',int(round(np.min(ldst_obrien[verify_ind_for]))) ) 
+  print('real: ', int(round(np.min(rdst[verify_ind_obs]))) ,' forecast: ', int(round(np.min(ldst_burton[verify_ind_for]))), ' ',int(round(np.min(ldst_obrien[verify_ind_for]))) )
   print()
   print('How well was the timing?')
 
@@ -785,30 +785,30 @@ if verification_mode:
   print('Time difference of Dst minimum OBrien:', int( (lcom_time[verify_ind_for][np.argmin(ldst_obrien[verify_ind_for])]-rdst_time[verify_ind_obs][np.argmin(rdst[verify_ind_obs])])*24), ' hours' )
 
 
-  print('')  
+  print('')
   print('Best correlation time-shift, at max +/- 24 hours are allowed:')
-  
+
   timecorr=np.zeros(48)
   for k in np.arange(0,48):
     r=rdst[verify_ind_obs]
     p=ldst_burton[verify_ind_for]
-  
-    #shift by up to 12 hours and cut ends off 
+
+    #shift by up to 12 hours and cut ends off
     r=np.roll(r,k-24)[24:-24]
     p=np.roll(p,k-24)[24:-24]
     timecorr[k]=np.corrcoef(r,p)[0,1]
     #print(k,timecorr[k])
-  
+
   print('correlation of forecast in time:',round(timecorr[24],2))
   print('best correlation of forecast in time:',round(np.max(timecorr),2))
   print('correlation difference:',round(np.max(timecorr)-timecorr[24],2))
   print('best correlation time difference:',np.argmax(timecorr)-24, ' hours')
-  
+
 
   print()
   print('----------------------------')
-  
-  
+
+
   sys.exit()
 
 
@@ -878,11 +878,11 @@ log.write('\n')
 log.write('Predicted times of moderate storm levels (-50 to -100 nT):\n')
 storm_times_ind=np.where(np.logical_and(dst_temerin_li[future_times] < -50, dst_temerin_li[future_times] > -100))[0]
 #when there are storm times above this level, indicate:
-if len(storm_times_ind) >0:   
+if len(storm_times_ind) >0:
  for i in np.arange(0,len(storm_times_ind),1):
   print(str(mdates.num2date(com_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16])
   log.write(str(mdates.num2date(com_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16]+'\n')
-else: 
+else:
   print('None')
   log.write('None')
 print()
@@ -894,11 +894,11 @@ log.write('\n')
 log.write('Predicted times of intense storm levels (-100 to -200 nT):\n')
 storm_times_ind=np.where(np.logical_and(dst_temerin_li[future_times] < -100, dst_temerin_li[future_times] > -200))[0]
 #when there are storm times above this level, indicate:
-if len(storm_times_ind) >0:   
+if len(storm_times_ind) >0:
   for i in np.arange(0,len(storm_times_ind),1):
    print(str(mdates.num2date(com_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16])
    log.write(str(mdates.num2date(com_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16]+'\n')
-else: 
+else:
   print('None')
   log.write('None')
 print()
@@ -910,11 +910,11 @@ log.write('\n')
 log.write('Predicted times of super storm levels (< -200 nT):\n')
 storm_times_ind=np.where(dst_temerin_li[future_times] < -200)[0]
 #when there are storm times above this level, indicate:
-if len(storm_times_ind) >0:   
+if len(storm_times_ind) >0:
   for i in np.arange(0,len(storm_times_ind),1):
    print(str(mdates.num2date(com_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16])
    log.write(str(mdates.num2date(com_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16]+'\n')
-else: 
+else:
   print('None')
   log.write('None')
 
@@ -1004,7 +1004,7 @@ log.write(str(round(np.nanmin(com_bz[future_times]),1))+ ' nT at '+ \
       str(mdates.num2date(minbz_time+1/(24*60)))[0:16])
 log.write('\n \n')
 
-log.close() 
+log.close()
 
 
 
@@ -1013,4 +1013,4 @@ log.close()
 ##########################################################################################
 
 
-  
+
