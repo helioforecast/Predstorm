@@ -29,8 +29,8 @@ import os
 import warnings
 warnings.filterwarnings('ignore')
 
-sns.set_context("talk")     
-sns.set_style("darkgrid")  
+sns.set_context("talk")
+sns.set_style("darkgrid")
 
 plt.close('all')
 
@@ -39,13 +39,13 @@ plt.close('all')
 
 def getcat(filename):
   print('reading CAT')
-  cat=scipy.io.readsav(filename, verbose='true')  
+  cat=scipy.io.readsav(filename, verbose='true')
   print('done CAT')
-  return cat  
-  
+  return cat
+
 def decode_array(bytearrin):
  '''
- for decoding the strings from the IDL .sav file to a list of python strings, not bytes 
+ for decoding the strings from the IDL .sav file to a list of python strings, not bytes
  make list of python lists with arbitrary length
  '''
  bytearrout= ['' for x in range(len(bytearrin))]
@@ -53,27 +53,27 @@ def decode_array(bytearrin):
   bytearrout[i]=bytearrin[i].decode()
  #has to be np array so to be used with numpy "where"
  bytearrout=np.array(bytearrout)
- return bytearrout  
-  
+ return bytearrout
 
-def time_to_num_cat(time_in):  
+
+def time_to_num_cat(time_in):
   '''
   for time conversion from catalogue .sav to numerical time
   #this for 1-minute data or lower time resolution
 
   #for all catalogues
   #time_in is the time in format: 2007-11-17T07:20:00 or 2007-11-17T07:20Z
-  #for times help see: 
+  #for times help see:
   #http://docs.sunpy.org/en/latest/guide/time.html
   #http://matplotlib.org/examples/pylab_examples/date_demo2.html
   '''
-  
+
   j=0
   #time_str=np.empty(np.size(time_in),dtype='S19')
   time_str= ['' for x in range(len(time_in))]
   #=np.chararray(np.size(time_in),itemsize=19)
   time_num=np.zeros(np.size(time_in))
-  
+
   for i in time_in:
 
    #convert from bytes (output of scipy.readsav) to string
@@ -85,21 +85,21 @@ def time_to_num_cat(time_in):
    #pdb.set_trace()
    if year < 2100:
     	  time_num[j]=mdates.date2num(sunpy.time.parse_time(time_str[j]))
-   j=j+1  
+   j=j+1
    #the date format in matplotlib is e.g. 735202.67569444
    #this is time in days since 0001-01-01 UTC, plus 1.
-   
+
    #return time_num which is already an array and convert the list of strings to an array
   return time_num, np.array(time_str)
 
 
-def IDL_time_to_num(time_in):  
+def IDL_time_to_num(time_in):
  #convert IDL time to matplotlib datetime
  time_num=np.zeros(np.size(time_in))
  for ii in np.arange(0,np.size(time_in)):
-   time_num[ii]=mdates.date2num(sunpy.time.parse_time(time_in[ii]))   
- return time_num 
-  
+   time_num[ii]=mdates.date2num(sunpy.time.parse_time(time_in[ii]))
+ return time_num
+
 
 def gaussian(x, amp, mu, sig):
      return amp * exp(-(x-cen)**2 /wid)
@@ -134,7 +134,7 @@ filename_icmecat='data/HELCATS_ICMECAT_v20_SCEQ.sav'
 i=getcat(filename_icmecat)
 
 
-#now this is a scipy structured array  
+#now this is a scipy structured array
 #access each element of the array see http://docs.scipy.org/doc/numpy/user/basics.rec.html
 #access variables
 #i.icmecat['id']
@@ -285,7 +285,7 @@ print( 'read data done.')
 
 
 ############ List of features - go through each MFR and extract values characterising them
-# 
+#
 # winmfrbzmean=np.zeros(np.size(iwinind))
 # winmfrbzstd=np.zeros(np.size(iwinind))
 # winmfrbymean=np.zeros(np.size(iwinind))
@@ -294,38 +294,38 @@ print( 'read data done.')
 # winmfrbxstd=np.zeros(np.size(iwinind))
 # winmfrbtotmean=np.zeros(np.size(iwinind))
 # winmfrbtotstd=np.zeros(np.size(iwinind))
-# 
-# 
+#
+#
 # winmfrvtotmean=np.zeros(np.size(iwinind))
 # winmfrvtotstd=np.zeros(np.size(iwinind))
-# 
+#
 # for p in np.arange(0,np.size(iwinind)):
-# 
-#     #extract values from MFR data    
-#     winmfrbz=win.bz[np.where(np.logical_and(win_time > mo_start_time_num[iwinind[0][p]],win_time < mo_end_time_num[iwinind[0][p]]) )] 
+#
+#     #extract values from MFR data
+#     winmfrbz=win.bz[np.where(np.logical_and(win_time > mo_start_time_num[iwinind[0][p]],win_time < mo_end_time_num[iwinind[0][p]]) )]
 #     winmfrbzmean[p]=np.nanmean(winmfrbz)
 #     winmfrbzstd[p]=np.nanstd(winmfrbz)
-# 
-#     winmfrby=win.by[np.where(np.logical_and(win_time > mo_start_time_num[iwinind[0][p]],win_time < mo_end_time_num[iwinind[0][p]]) )] 
+#
+#     winmfrby=win.by[np.where(np.logical_and(win_time > mo_start_time_num[iwinind[0][p]],win_time < mo_end_time_num[iwinind[0][p]]) )]
 #     winmfrbymean[p]=np.nanmean(winmfrby)
 #     winmfrbystd[p]=np.nanstd(winmfrby)
-#     
-#     winmfrbx=win.bx[np.where(np.logical_and(win_time > mo_start_time_num[iwinind[0][p]],win_time < mo_end_time_num[iwinind[0][p]]) )] 
+#
+#     winmfrbx=win.bx[np.where(np.logical_and(win_time > mo_start_time_num[iwinind[0][p]],win_time < mo_end_time_num[iwinind[0][p]]) )]
 #     winmfrbxmean[p]=np.nanmean(winmfrbx)
 #     winmfrbxstd[p]=np.nanstd(winmfrbx)
-#     
-#     winmfrbtot=win.btot[np.where(np.logical_and(win_time > mo_start_time_num[iwinind[0][p]],win_time < mo_end_time_num[iwinind[0][p]]) )] 
+#
+#     winmfrbtot=win.btot[np.where(np.logical_and(win_time > mo_start_time_num[iwinind[0][p]],win_time < mo_end_time_num[iwinind[0][p]]) )]
 #     winmfrbtotmean[p]=np.nanmean(winmfrbtot)
 #     winmfrbtotstd[p]=np.nanstd(winmfrbtot)
-# 
-#     winmfrvtot=win.vtot[np.where(np.logical_and(win_time > mo_start_time_num[iwinind[0][p]],win_time < mo_end_time_num[iwinind[0][p]]) )] 
+#
+#     winmfrvtot=win.vtot[np.where(np.logical_and(win_time > mo_start_time_num[iwinind[0][p]],win_time < mo_end_time_num[iwinind[0][p]]) )]
 #     winmfrvtotmean[p]=np.nanmean(winmfrvtot)
 #     winmfrvtotstd[p]=np.nanstd(winmfrvtot)
-#     
+#
 #     #more values from fits? if Bz is ascending, descending, what are other features to derive?
-#  
-#   
-#collect all derived features in pandas dataframe  
+#
+#
+#collect all derived features in pandas dataframe
 
 #d = {'btot_mean': winmfrbtotmean, 'btot_std': winmfrbtotstd, 'bx_mean': winmfrbxmean, 'bx_std': winmfrbxstd,'by_mean': winmfrbymean, 'by_std': winmfrbystd,'bz_mean': winmfrbzmean, 'bz_std': winmfrbzstd,'vtot_mean': winmfrvtotmean, 'vtot_std': winmfrvtotstd}
 #df = pd.DataFrame(data=d)
@@ -366,7 +366,7 @@ if get_features:
 
 		btotmeanfeature=np.zeros(np.size(iwinind))
 		btotmeanlabel=np.zeros(np.size(iwinind))
-		
+
 		btotmaxfeature=np.zeros(np.size(iwinind))
 		btotmaxlabel=np.zeros(np.size(iwinind))
 
@@ -375,26 +375,26 @@ if get_features:
 
 						#extract values from MFR data   for first feature_hours
 						feature_bz=win.bz[np.where(np.logical_and(win_time > mo_start_time_num[iwinind[0][p]],
-																																														win_time < mo_start_time_num[iwinind[0][p]]+feature_hours/24.0) )] 
+																																														win_time < mo_start_time_num[iwinind[0][p]]+feature_hours/24.0) )]
 						bzmeanfeature[p]=np.nanmean(feature_bz)
-				
+
 						feature_btot=win.btot[np.where(np.logical_and(win_time > mo_start_time_num[iwinind[0][p]],
-																																														win_time < mo_start_time_num[iwinind[0][p]]+feature_hours/24.0) )] 
+																																														win_time < mo_start_time_num[iwinind[0][p]]+feature_hours/24.0) )]
 						btotmeanfeature[p]=np.nanmean(feature_btot)
 						btotmaxfeature[p]=np.nanmax(feature_btot)
 
 
 						#time is extracted from feature_hours to end of MFR
 						label_bz=win.bz[np.where(np.logical_and(win_time > mo_start_time_num[iwinind[0][p]]+feature_hours/24.0,
-																																														win_time < mo_end_time_num[iwinind[0][p]]))] 
+																																														win_time < mo_end_time_num[iwinind[0][p]]))]
 						bzmeanlabel[p]=np.nanmean(label_bz)
 
 						label_btot=win.btot[np.where(np.logical_and(win_time > mo_start_time_num[iwinind[0][p]]+feature_hours/24.0,
-																																														win_time < mo_end_time_num[iwinind[0][p]]))] 
+																																														win_time < mo_end_time_num[iwinind[0][p]]))]
 						btotmeanlabel[p]=np.nanmean(label_btot)
 						btotmaxlabel[p]=np.nanmax(label_btot)
-						
-						
+
+
 
 
 		#correct nans with mean of array
@@ -409,43 +409,43 @@ if get_features:
 
 		nans=np.where(np.isnan(btotmeanfeature) == True)
 		btotmeanfeature[nans]=np.nanmean(btotmeanfeature)
-		
-		#crazy error in pandas - > convert because of endian issue	
-		#https://pandas-docs.github.io/pandas-docs-travis/gotchas.html
-		v_mo=mo_speed[iwinind].byteswap().newbyteorder() 
 
-		v_sheath=sheath_speed[iwinind].byteswap().newbyteorder() 
-		
+		#crazy error in pandas - > convert because of endian issue
+		#https://pandas-docs.github.io/pandas-docs-travis/gotchas.html
+		v_mo=mo_speed[iwinind].byteswap().newbyteorder()
+
+		v_sheath=sheath_speed[iwinind].byteswap().newbyteorder()
+
 		nans=np.where(np.isnan(v_sheath) == True)
 		v_sheath[nans]=np.nanmean(v_sheath)
 
-		
 
-		#fl feature labels 
+
+		#fl feature labels
 		fl = {'<Bz> feature': bzmeanfeature, '<Bz> label': bzmeanlabel, '<B> feature': btotmeanfeature,  '<B> label': btotmeanlabel,'B_max feature': btotmaxfeature,  'B_max label': btotmaxlabel, 'V_MO label':v_mo,'V_sheath feature':v_sheath}
 
 		#fl frame
 		flf = pd.DataFrame(data=fl)
 		print(flf.describe())
 
-		#features 
+		#features
 		#convert to correct format
 		#X=btotmeanfeature
 		#X=X.reshape(-1,1)
 		#labels
 		X=flf['<B> feature'] #reshape for sklearn later
 		y=flf['<B> label']
-		
+
 		Xm=flf['B_max feature'] #reshape for sklearn
 		ym=flf['B_max label']
-		
+
 		Xv=flf['V_sheath feature'] #reshape for sklearn
 		yv=flf['V_MO label']
 
 
 		#save extracted features and labels
-#	pickle.dump([btotmeanfeature, btotmeanlabel,bzmeanfeature,bzmeanlabel,btotmaxlabel,btotmaxfeature,X,y,Xm,ym,flf], open( "mfr_features_labels_save.p", "wb" ) ) 
-		pickle.dump([flf,X,y,Xm,ym, Xv,yv], open( "mfr_predict/mfr_features_labels_save.p", "wb" ) ) 
+#	pickle.dump([btotmeanfeature, btotmeanlabel,bzmeanfeature,bzmeanlabel,btotmaxlabel,btotmaxfeature,X,y,Xm,ym,flf], open( "mfr_features_labels_save.p", "wb" ) )
+		pickle.dump([flf,X,y,Xm,ym, Xv,yv], open( "mfr_predict/mfr_features_labels_save.p", "wb" ) )
 
 		print('saved features and labels')
 
@@ -681,7 +681,7 @@ sys.exit()
 
 #die feature sind die Zeitserien über die ersten 20% und die parameter - label ist die gesamte Zeitserie
 
-#aufteilen in training und 
+#aufteilen in training und
 
 
 
