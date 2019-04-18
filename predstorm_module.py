@@ -5,10 +5,11 @@ This is the module for the predstorm package containing functions and procedures
 use
 >> import importlib
 >> importlib.reload(predstorm_module)
-to update module while working in ipython
+to update module while working on other predstorm programs in ipython
 
 
 LIST OF FUNCTIONS
+
 getpositions
 sphere2cart
 time_to_num_cat
@@ -25,6 +26,27 @@ epoch_to_num
 get_stereoa_data_beacon
 get_dscovr_data_real
 get_dscovr_data_all
+round_to_hour
+
+
+
+-----------------
+MIT LICENSE
+Copyright 2019, Christian Moestl
+Permission is hereby granted, free of charge, to any person obtaining a copy of this
+software and associated documentation files (the "Software"), to deal in the Software
+without restriction, including without limitation the rights to use, copy, modify,
+merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to the following
+conditions:
+The above copyright notice and this permission notice shall be included in all copies
+or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
 
@@ -41,6 +63,7 @@ import pdb
 import cdflib
 #import netCDF4
 import sys  
+from datetime import timedelta
 
 
 
@@ -858,7 +881,14 @@ def get_dscovr_data_real():
 
 
     #interpolate to minutes 
-    rtimes_m=np.arange(rbtime_num[0],rbtime_num[-1],1.0000/(24*60))
+    
+    #rtimes_m=np.arange(rbtime_num[0],rbtime_num[-1],1.0000/(24*60))
+    rtimes_m= round_to_hour(mdates.num2date(rbtime_num[0])) + np.arange(0,len(rbtime_num)) * timedelta(minutes=1) 
+    #convert back to matplotlib time
+    rtimes_m=mdates.date2num(rtimes_m)
+
+    
+    
     rbtot_m=np.interp(rtimes_m,rbtime_num,rbtot)
     rbzgsm_m=np.interp(rtimes_m,rbtime_num,rbzgsm)
     rbygsm_m=np.interp(rtimes_m,rbtime_num,rbygsm)
@@ -869,7 +899,11 @@ def get_dscovr_data_real():
     
 
     #interpolate to hours 
-    rtimes_h=np.arange(np.ceil(rbtime_num)[0],rbtime_num[-1],1.0000/24.0000)
+    #rtimes_h=np.arange(np.ceil(rbtime_num)[0],rbtime_num[-1],1.0000/24.0000)
+    rtimes_h= round_to_hour(mdates.num2date(rbtime_num[0])) + np.arange(0,len(rbtime_num)/(60)) * timedelta(hours=1) 
+    rtimes_h=mdates.date2num(rtimes_h)
+
+    
     rbtot_h=np.interp(rtimes_h,rbtime_num,rbtot)
     rbzgsm_h=np.interp(rtimes_h,rbtime_num,rbzgsm)
     rbygsm_h=np.interp(rtimes_h,rbtime_num,rbygsm)
@@ -1292,3 +1326,19 @@ def get_stereoa_data_beacon():
     
     return data_minutes, data_hourly
 
+
+
+def round_to_hour(dt):
+    '''
+    round datetime objects to nearest hour
+    '''
+    dt_start_of_hour = dt.replace(minute=0, second=0, microsecond=0)
+    dt_half_hour = dt.replace(minute=30, second=0, microsecond=0)
+
+    if dt >= dt_half_hour:
+        # round up
+        dt = dt_start_of_hour + datetime.timedelta(hours=1)
+    else:
+        # round down
+        dt = dt_start_of_hour
+    return dt
