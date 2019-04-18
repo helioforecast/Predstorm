@@ -595,10 +595,13 @@ log.write('\n')
 #interpolate one more time after time shifts, so that the time is in full hours
 #and the STEREO-A data now start with the end of the dscovr data +1 hour
 
-#*this also comes from dism.time[-1]this leads to shifts in < seconds that result in hours and minutes like 19 59 instead of 20 00
+#deleted: this leads to shifts in < seconds that result in hours and minutes like 19 59 instead of 20 00
 #sta_time=np.arange(dis.time[-1]+1.000/24,sta.time[-1],1.0000/(24))
 
-sta_time= mdates.num2date(dis.time[-1])+ timedelta(hours=1) + np.arange(0,len(sta.time)) * timedelta(hours=1) 
+#count how many hours until end of sta.time 
+sta_time_array_len=len(np.arange(dis.time[-1]+1.000/24,sta.time[-1],1.0000/(24)))  
+#make time array with exact full hours
+sta_time= mdates.num2date(dis.time[-1])+ timedelta(hours=1) + np.arange(0,sta_time_array_len) * timedelta(hours=1) 
 #convert back to matplotlib time
 sta_time=mdates.date2num(sta_time)
 
@@ -749,6 +752,9 @@ np.savetxt(filename_save, vartxtout, delimiter='',fmt='%4i %2i %2i %2i %2i %2i %
            header='        time      matplotlib_time B[nT] Bx   By     Bz   N[ccm-3] V[km/s] Dst[nT]   Kp   aurora [GW]')
 
 
+#save the file with the same name to be overwritten and in working directory
+np.savetxt('predstorm_real.txt', vartxtout, delimiter='',fmt='%4i %2i %2i %2i %2i %2i %10.6f %5.1f %5.1f %5.1f %5.1f   %7.0i %7.0i   %5.0f %5.1f %5.1f', \
+           header='        time      matplotlib_time B[nT] Bx   By     Bz   N[ccm-3] V[km/s] Dst[nT]   Kp   aurora [GW]')
 
 
 print('TXT: Variables saved in: \n', filename_save, ' \n ')
