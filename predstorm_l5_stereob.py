@@ -1,42 +1,36 @@
 '''
 Testing PREDSTORM solar wind prediction with STEREO-B
 Author: C. Moestl 
-started April 2018
+last update April 2019
 
-python 3.7 with sunpy 
+python 3.7 anaconda with sunpy, predstorm_module
 
-
-training data:
-use stereo one hour data as training data set, corrected for 1 AU
-use VEX and MESSENGER as tests for HelioRing like forecasts, use STEREO at L5 for training data of the last few days
-
-forecast plot:
-add approximate levels of Dst for each location to see aurora, taken from ovation prime/worldview and Dst 
-add Temerin and Li method and kick out Burton/OBrien; make error bars for Dst
-take mean of ensemble forecast for final blue line forecast or only best match?
+to do: 
+- remove CMEs in situ at STB from test time range
+- add conversion STB HEEQ to GSE to GSM
+- more error analyses (point (4))
+- ....
 
 
-combined L1/L5 forecast
-most important: implement pattern recognition for STEREO-A streams, and link this to the most probably outcome days later at L1
-train with STB data around the location where STA is at the moment
-das ist sofort ein paper!
 
- - prediction als txt file und variables rauschreiben
- - coordinate conversions checken (GSE to GSM ok)
- - problem sind cmes bei stereo, mit listen ausschliessen aus training data
- - eigene tests mit semi-supervised, also sodass known intervals benutzt werden)
- - eigenes programm zum hindsight testen mit stereo-a und omni (da ist dst auch drin)
- (das ist alles ein proposal... zb h2020, erc)
- irgendwann forecast wie wetter app machen auf website und verschiedene locations und ovation (aber eben nur für background wond)
- CCMC Bz berücksichtigen
- fundamental: how much is Bz stable for HSS from L5 to L1? are there big changes?
- is Bz higher for specific locations with respect to the HCS and the solar equator? 
- probabilities for magnetic storm magnitude, probabilities for aurora for many locations
- link with weather forcecast, wie am Handy in der app 
- am wichtigsten: validation sodass die % stimmen!!
-
-temporal and spatial coherence
-(1) STEREO-A and Earth are within 0.1° heliospheric latitude, so they could see similar parts of the stream + (2) the coronal hole hasn't changed much in the last few days.
+-----------------
+MIT LICENSE
+Copyright 2019, Christian Moestl
+Permission is hereby granted, free of charge, to any person obtaining a copy of this
+software and associated documentation files (the "Software"), to deal in the Software
+without restriction, including without limitation the rights to use, copy, modify,
+merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to the following
+conditions:
+The above copyright notice and this permission notice shall be included in all copies
+or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+"""
 
 '''
 
@@ -51,16 +45,10 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import numpy as np
 import sunpy.time
-import time
 import pickle
+import scipy.io
 import seaborn as sns
 import os
-import copy
-import pdb
-import urllib
-import json
-import ephem
-import scipy.io
 import pdb
 
 from predstorm_module import getpositions
@@ -69,32 +57,14 @@ from predstorm_module import time_to_num_cat
 from predstorm_module import converttime
 from predstorm_module import get_omni_data
 from predstorm_module import convert_GSE_to_GSM
-
+from predstorm_module import round_to_hour
 
 ################################## INPUT PARAMETERS ######################################
 
 # GET INPUT PARAMETERS
 from predstorm_l5_input import *
-#######################################################
+##########################################################################################
 
-
-
-def round_to_hour(dt):
-    '''
-    round datetime objects to nearest hour
-    '''
-
-    dt_start_of_hour = dt.replace(minute=0, second=0, microsecond=0)
-    dt_half_hour = dt.replace(minute=30, second=0, microsecond=0)
-
-    if dt >= dt_half_hour:
-        # round up
-        dt = dt_start_of_hour + datetime.timedelta(hours=1)
-    else:
-        # round down
-        dt = dt_start_of_hour
-
-    return dt
 
 
 def convert_HEEQ_to_GSE_stb_l1(cbr,cbt,cbn,ctime,pos_stereo_heeq):
@@ -207,15 +177,17 @@ print('Christian Moestl, IWF-helio, Graz, last update April 2019.')
 
 
 
-
+##########################################################################################
 ########################################## (1) GET DATA ##################################
+##########################################################################################
 
 
 
 ########### get STEREO-B in situ data
 
-print( 'read STEREO-B data. Change directory if necessary.')
+print( 'read STEREO-B data. Change path to the data file if necessary.')
 stb= pickle.load( open( "../catpy/DATACAT/STB_2007to2014_HEEQ.p", "rb" ) )
+#convert time - takes a while, so save pickle and reload when done
 #stb_time=IDL_time_to_num(stb.time)
 #pickle.dump([stb_time], open( "../catpy/DATACAT/insitu_times_mdates_stb_2007_2014.p", "wb" ) )
 [stb_time]=pickle.load( open( "../catpy/DATACAT/insitu_times_mdates_stb_2007_2014.p", "rb" ) )
@@ -274,26 +246,16 @@ sir_start=np.zeros(len(sir))
 sir_end=np.zeros(len(sir))                  
 sir_sc=np.empty(len(sir), dtype='str')     
       
-    
-#############          *************************
 #make matplotlib times for SIR start and end times                  
-
-
-#b'2007', b'A',  56, b'02/25', b'17:40',  60, b'03/01', b'01:10'
-
-
+#format: b'2007', b'A',  56, b'02/25', b'17:40',  60, b'03/01', b'01:10'
 for i in np.arange(len(sir)):                  
-    
     #STEREO A or B
     sir_sc[i]=str(sir[i][1])[2]
-    
     #extract hours with minutes as fraction of day 
     hours=int(sir[i][4][0:2])/24+int(sir[i][4][3:5])/(24*60)
     sir_start[i]=mdates.date2num(datetime.datetime(int(sir[i][0]),1,1,)+datetime.timedelta(int(sir[i][2])-1)+datetime.timedelta(hours) )
-
     hours=int(sir[i][7][0:2])/24+int(sir[i][7][3:5])/(24*60)
     sir_end[i]=mdates.date2num(datetime.datetime(int(sir[i][0]),1,1,)+datetime.timedelta(int(sir[i][5])-1)+datetime.timedelta(hours) )
-
     
 #extract SIRs only for STB
 stbsirs=np.where(sir_sc=='B')
@@ -301,27 +263,29 @@ sir_start_b=sir_start[stbsirs]
 sir_end_b=sir_end[stbsirs] 
 
 
-#########################################################################################
 
 
 
-############################### (2) Interpolate STEREO-B to 1 hour ##################################
 
 
-#convert STB to 1 hour time resolution and add time shift
+
+
+##########################################################################################
+############################### (2) Interpolate STEREO-B to 1 hour #######################
+##########################################################################################
+
 
 # extract intervals from STB data, from -10 to -120 degree HEEQ longitude
 #first get the selected times from the position data 
 min_time=(pos_time_num[np.where(stb_long_heeq < -10)[0][0]])
 max_time=(pos_time_num[np.where(stb_long_heeq < -110)[0][0]])
 
-#then extract the position data and in situ data indices for these times
-pos_ind=np.where(np.logical_and(pos_time_num > min_time, pos_time_num< max_time))
-dat_ind=np.where(np.logical_and(stb_time > min_time, stb_time< max_time))
+#then extract the position data and in situ data indices for these times, cut 1 array dimension
+pos_ind=np.where(np.logical_and(pos_time_num > min_time, pos_time_num< max_time))[0]
+dat_ind=np.where(np.logical_and(stb_time > min_time, stb_time< max_time))[0]
 
 
-
-     
+#select data only for interval
 stb_time_sel=stb_time[dat_ind]
 stb_btot_sel=stb.btot[dat_ind]
 stb_bx_sel=stb.bx[dat_ind]
@@ -332,9 +296,9 @@ stb_vtot_sel=stb.vtot[dat_ind]
 
 
 #interpolate STB data
-#need to round the start time so it starts with full hours
-start_time=round(stb_time[dat_ind][0],1)
-end_time=round(stb_time[dat_ind][-1],1)
+#round the start time so it starts and ends with 00:00 UT
+start_time=np.round(stb_time_sel[0],0)  
+end_time=np.round(stb_time_sel[-1],0)  
 
 #make time array, hourly steps starting with start time and finishing at end time
 #do this with datetime objects
@@ -364,7 +328,10 @@ stb_r_1h=np.interp(stb_time_1h,pos_time_num,stb_r)
 stb_long_1h=np.interp(stb_time_1h,pos_time_num,stb_long_heeq)
 stb_lat_1h=np.interp(stb_time_1h,pos_time_num,stb_lat_heeq)
 l1_r_1h=np.interp(stb_time_1h,pos_time_num,l1_r)
+l1_lon_1h=np.interp(stb_time_1h,pos_time_num,l1_long_heeq)
+l1_lat_1h=np.interp(stb_time_1h,pos_time_num,l1_lat_heeq)
 
+#plot data
 plt.figure(3)
 plt.plot_date(stb_time_1h,stb_btot_1h,'-k',label='Btot')
 plt.plot_date(stb_time_1h,stb_bx_1h,'-r',label='Bx')
@@ -376,18 +343,7 @@ plt.legend()
 mngr = plt.get_current_fig_manager()
 mngr.window.setGeometry(700,50,600, 500)
 
-
-
-print()
-print('get times STB inside SIR')
-
-########################
-
-
-
-
-    
-
+#plot data
 plt.figure(4)
 plt.plot_date(stb_time_1h,stb_den_1h*5,'-r',label='Den*5')
 plt.plot_date(stb_time_1h,stb_vtot_1h,'-k',label='Vtot')
@@ -398,11 +354,9 @@ mngr = plt.get_current_fig_manager()
 mngr.window.setGeometry(700,600,600, 500)
 
 
-
-
-
-
-
+print()
+print('get times STB inside SIR')
+    
 #go through all SIRs and check for times when STEREO-B is inside a SIR
 
 #round SIR start times to nearest hour
@@ -414,7 +368,7 @@ for i in sir_ind:
   sir_start_1h=np.append(sir_start_1h,mdates.date2num(round_to_hour(mdates.num2date(sir_start_b[i]))))
   sir_end_1h=np.append(sir_end_1h,mdates.date2num(round_to_hour(mdates.num2date(sir_end_b[i]))))
 
-#get indices for STEREO-B data start and end (better inside) SIRs
+######### get indices for STEREO-B data inside SIRs
 stb_sir_ind_1h=np.int(0)
 
 for p in sir_ind:
@@ -426,141 +380,115 @@ for p in sir_ind:
     if np.min(abs(sir_start_1h[p]-stb_time_1h)) < 1: 
         #print(inds,'  ',inde,np.arange(inds,inde,1))
         stb_sir_ind_1h=np.append(stb_sir_ind_1h,np.arange(inds,inde,1)) 
-  
 #delete 0 from array definition  
 np.delete(stb_sir_ind_1h,0)  
-
-print('Data points inside SIRs, percent: ',len(stb_time_1h[stb_sir_ind_1h])/len(stb_time_1h)*100 )
-
-stb_500_1h=np.zeros(len(stb_time_1h))
-for k in np.arange(0,len(stb_time_1h),1):
-    if stb_vtot_1h[k] > 500: stb_500_1h[k]=500
-    if stb_vtot_1h[k] < 500: stb_500_1h[k]=np.nan
+print('Data points inside SIRs, percent: ',np.round(len(stb_time_1h[stb_sir_ind_1h])/len(stb_time_1h)*100,1) )
+###########
 
 
-stb_600_1h=np.zeros(len(stb_time_1h))
-for k in np.arange(0,len(stb_time_1h),1):
-    if stb_vtot_1h[k] > 600: stb_600_1h[k]=600
-    if stb_vtot_1h[k] < 600: stb_600_1h[k]=np.nan
-         
-                 
-plt.plot(stb_time_1h,stb_500_1h,'g',linestyle='-',linewidth=5)
-plt.plot(stb_time_1h,stb_600_1h,'y',linestyle='-',linewidth=5)
+####### get intervals for different HSS cutoffs (note: includes CMEs, but very few anyway in this timeframe)
+
+print()
+print('STEREO-B ...')
+
+stb_450_ind_1h=np.where(stb_vtot_1h>450)[0]  
+print('Data points inside > 450 km/s, percent: ',np.round(len(stb_time_1h[stb_450_ind_1h])/len(stb_time_1h)*100,1) )
+
+stb_500_ind_1h=np.where(stb_vtot_1h>500)[0]  
+print('Data points inside > 500 km/s, percent: ',np.round(len(stb_time_1h[stb_500_ind_1h])/len(stb_time_1h)*100,1) )
+
+stb_550_ind_1h=np.where(stb_vtot_1h>550)[0]  
+print('Data points inside > 550 km/s, percent: ',np.round(len(stb_time_1h[stb_550_ind_1h])/len(stb_time_1h)*100,1) )
+
+stb_600_ind_1h=np.where(stb_vtot_1h>600)[0]  
+print('Data points inside > 600 km/s, percent: ',np.round(len(stb_time_1h[stb_600_ind_1h])/len(stb_time_1h)*100,1) )
+
+stb_650_ind_1h=np.where(stb_vtot_1h>650)[0]  
+print('Data points inside > 650 km/s, percent: ',np.round(len(stb_time_1h[stb_650_ind_1h])/len(stb_time_1h)*100,1) )
 
 
-sys.exit()
+#plot with markers to indicate intervals
+plt.plot(stb_time_1h[stb_500_ind_1h],np.zeros(len(stb_500_ind_1h))+500,'g',marker='o',markersize=3,linestyle='None')
+
+
+################ get selected data interval in 1h OMNI2 data
+o_stb_interval_ind=np.where(np.logical_and(o.time > min_time , o.time < max_time))[0]
+
+#get dst only for interval
+odst=o.dst[o_stb_interval_ind]   
 
 
 
 
 
+##########################################################################################
+########################### (3) APPLY STEREO-B MAPPING TO L1 #############################
+##########################################################################################
 
 
+# (1) make correction for heliocentric distance of STEREO-B to L1 position
+#go through all data points of the selected interval:
+for i in np.arange(0,len(l1_r_1h),1):
+    stb_btot_1h[i]=stb_btot_1h[i]   *(l1_r_1h[i]/stb_r_1h[i])**-2
+    stb_bx_1h[i]  =stb_bx_1h[i]     *(l1_r_1h[i]/stb_r_1h[i])**-2
+    stb_by_1h[i]  =stb_by_1h[i]     *(l1_r_1h[i]/stb_r_1h[i])**-2
+    stb_bz_1h[i]  =stb_bz_1h[i]     *(l1_r_1h[i]/stb_r_1h[i])**-2
+    stb_den_1h[i] =stb_den_1h[i]    *(l1_r_1h[i]/stb_r_1h[i])**-2
+    
+print()
+print('Mapping of STEREO-B data:')
+print('1: mean increase of B and N by factor ',np.round(np.mean((l1_r_1h/stb_r_1h)**-2),3)   )
 
 
+# (2) correction for timing for the Parker spiral see
+# Simunac et al. 2009 Ann. Geophys. equation 1, see also Thomas et al. 2018 Space Weather
+# difference in heliocentric distance STEREO-B to Earth,
+# actually different for every point so take average of solar wind speed
+# Omega is 360 deg/sun_syn in days, convert to seconds; sta_r in AU to m to km;
+# convert to degrees
+# minus sign: from STEREO-A to Earth the diff_r_deg needs to be positive
+# because the spiral leads to a later arrival of the solar wind at larger
+# heliocentric distances (this is reverse for STEREO-B!)
 
+AU=149597870.700 #AU in km
 
+#initialize array with correct size
+timelag_diff_r=np.zeros(len(l1_r_1h))
 
+# define time lag from STEREO-A to Earth
+timelag_stb_l1=abs(stb_long_1h)/(360/sun_syn) #days
 
+#got through all data points
+for i in np.arange(0,len(l1_r_1h),1):
+    diff_r_deg=(-360/(sun_syn*86400))*((stb_r_1h[i]-l1_r_1h[i])*AU)/stb_vtot_1h[i]
+    timelag_diff_r[i]=np.round(diff_r_deg/(360/sun_syn),3)
 
-####################################### APPLY CORRECTIONS TO STEREO-B data 
-#(1) make correction for heliocentric distance of L1 position - take position of Earth and STEREO from pos file 
-#(2) add timeshift for each datapoint
+## ADD BOTH time shifts to the stb_time_1h
+stb_time_1h_to_l1=stb_time_1h+timelag_stb_l1+timelag_diff_r
 
+print('2: time lag min to max , days:', np.round(np.min(timelag_stb_l1+timelag_diff_r),1),  '    ',  np.round(np.max(timelag_stb_l1+timelag_diff_r),1))
 
-dst_omni_int=np.interp(stb_time_1h,times1,dst)
+print('no 3: coordinate conversion of magnetic field components')
 
-stb_time_to_l1=np.zeros(np.size(stb_time_1h))
-
-#go through all STEREO-B 1 hour data points
-for q in np.arange(np.size(stb_time_1h)):
- timelag_stb_l1=abs(stb_long_int[q])/(360/sun_syn) #days
- stb_time_to_l1[q]=stb_time_1h[q]+timelag_stb_l1
- 
- 
- #stb_btot_int[q]=stb_btot_int[q]*(l1_r_int[q]/stb_r_int[q])**-2
- #stb_br_int[q]=stb_br_int[q]*(l1_r_int[q]/stb_r_int[q])**-2
- #stb_bt_int[q]=stb_bt_int[q]*(l1_r_int[q]/stb_r_int[q])**-2
- #stb_bn_int[q]=stb_bn_int[q]*(l1_r_int[q]/stb_r_int[q])**-2
- #stb_den_int[q]=stb_den_int[q]*(l1_r_int[q]/stb_r_int[q])**-2
-
-
-############parker spiral correction
-diff_r=l1_r_int-stb_r_int
-#difference in degree along 1 AU circle
-diff_r_deg=diff_r/(2*np.pi*1)*360
-#time lag due to the parker spiral near 1 AU	- this is negative?? because the spiral leads 
-#to an earlier arrival at larger heliocentric distances
-time_lag_diff_r=np.round(diff_r_deg/(360/sun_syn),2)
-stb_time_to_l1=stb_time_to_l1+time_lag_diff_r
-
-
-#convert STEREO-A RTN data to GSE as if STEREO-A was along the Sun-Earth line
-#[dbr,dbt,dbn]=convert_HEEQ_to_GSE_stb_l1(stb_br_int,stb_bt_int,stb_bn_int,stb_time_to_l1, pos.stb)
+########## TO DO: NEED TO CHECK
+#convert STEREO-B RTN data to GSM as if STEREO-B was along the Sun-Earth line
+#[dbx,dby,dbz]=convert_HEEQ_to_GSE_stb_l1(stb_bx_1h,stb_by_1h,stb_bz_1h,stb_time_1h_to_l1, pos.stb)
 #GSE to GSM
-#[stb_br_int,stb_bt_int,stb_bn_int]=convert_GSE_to_GSM(dbr,dbt,dbn,stb_time_to_l1)
-#stb_btot_int=np.sqrt(stb_br_int**2+stb_bt_int**2+stb_bn_int**2)        
+#[stb_bx_1h,stb_by_1h,stb_bz_1h]=convert_GSE_to_GSM(dbx,dby,dbz,stb_time_1h_to_l1)
 
-#make Dst 
-#[dst_burton, dst_obrien]=make_predstorm_dst(stb_btot_int, stb_bn_int, stb_vtot_int, stb_den_int, stb_time_1h)
-#[dst_burton, dst_obrien]=make_predstorm_dst(stb_btot_int, stb_bn_int, stb_vtot_int, stb_den_int, stb_time_to_l1)
-#(btot_in,bx_in, by_in,bz_in,v_in,vx_in,density_in,time_in):
-[dst_burton, dst_obrien, dst_temerinli]=make_predstorm_dst(stb_btot_int, stb_br_int,stb_bt_int,stb_bn_int, stb_vtot_int,stb_vtot_int, stb_den_int, stb_time_to_l1)
-
-
-dst_burton=np.interp(stb_time_1h,stb_time_to_l1,dst_burton)
-dst_temerinli=np.interp(stb_time_1h,stb_time_to_l1,dst_temerinli)
-
-
-#jetzt die CIR werte filtern
-sir_flag=np.zeros(np.size(stb_time_1h))
-
-#for i in np.arange(np.size(dat_ind)):
-   #nearest start point of SIR
-#   nears=np.argmin(abs(stb_time[dat_ind][i]-sir_start))
-   #nearest end point of SIR
-#   neare=np.argmin(abs(stb_time[dat_ind][i]-sir_end))
-
-
-#got through each SIR
-for i in np.arange(np.size(sir_start_b)):
-      ind_sir=np.where(np.logical_and(stb_time_1h > sir_start_b[i],stb_time_1h < sir_end_b[i]))
-      sir_flag[ind_sir]=1
-
-#reduce dat ind to only SIR intervals at STEREO-B
-sir_flag_ind=np.where(sir_flag==1) 
-
-
-plt.figure(3)
-plt.plot_date(stb_time_1h[sir_flag_ind],dst_temerinli[sir_flag_ind],'or',markersize=3)
-plt.plot_date(stb_time_1h[sir_flag_ind],dst_burton[sir_flag_ind],'ob',markersize=3)
-plt.plot_date(stb_time_1h[sir_flag_ind],dst_omni_int[sir_flag_ind],'ok',markersize=3)
-
-
-
-#diff=dst_burton[sir_flag_ind]-dst_omni_int[sir_flag_ind]
-
-diff=dst_temerinli[sir_flag_ind]-dst_omni_int[sir_flag_ind]
-
-
-sns.jointplot(stb_lat_int[sir_flag_ind],diff,kind='hex')
-sns.jointplot(stb_long_int[sir_flag_ind],diff,kind='hex')
-
-#sns.jointplot(dst_burton[sir_flag_ind],dst_omni_int[sir_flag_ind],kind='hex')
-sns.jointplot(dst_temerinli[sir_flag_ind],dst_omni_int[sir_flag_ind],kind='hex')
-
-
-
-#diffm=np.nanmean(dst_burton[sir_flag_ind]-dst_omni_int[sir_flag_ind])
-#diffs=np.nanstd(dst_burton[sir_flag_ind]-dst_omni_int[sir_flag_ind])
-
-diffm=np.nanmean(dst_temerinli[sir_flag_ind]-dst_omni_int[sir_flag_ind])
-diffs=np.nanstd(dst_temerinli[sir_flag_ind]-dst_omni_int[sir_flag_ind])
-
-
-print('Diff')
-print(diffm)
-print(diffs)
+## plot comparison to show timeshift mapping
+plt.figure(5)
+plt.plot_date(stb_time_1h_to_l1,stb_vtot_1h,'-b',label='V shift STB')
+plt.plot_date(stb_time_1h,stb_vtot_1h,'--g',label='V STB')
+plt.plot_date(o.time[o_stb_interval_ind],o.speed[o_stb_interval_ind],'-k',label='V L1')
+plt.xlabel('time')
+plt.ylabel('Vtot')
+plt.legend()
+plt.xlim([mdates.date2num(sunpy.time.parse_time('2010-Feb-1')), mdates.date2num(sunpy.time.parse_time('2010-Mar-1'))])
+mngr = plt.get_current_fig_manager()
+mngr.window.setGeometry(1350,600,600, 500)
+#mngr.window.setGeometry(50,50,1500, 800)
+plt.grid()
 
 
 
@@ -568,6 +496,112 @@ print(diffs)
 
 
 
+
+
+
+
+##########################################################################################
+########################## (4) ANALYSE results ###########################################
+##########################################################################################
+
+print()
+print('Dst calculation takes a few seconds')
+
+
+#make Dst calculation faster  usage: #def make_dst_from_wind(btot_in,bx_in, by_in,bz_in,v_in,vx_in,density_in,time_in):
+[dst_burton, dst_obrien, dst_temerinli]=make_dst_from_wind(stb_btot_1h, stb_bx_1h,stb_by_1h,stb_bz_1h, stb_vtot_1h,stb_vtot_1h, stb_den_1h, stb_time_1h_to_l1)
+
+
+
+############ Dst comparison plot
+
+plt.figure(6)
+plt.plot_date(stb_time_1h_to_l1,dst_temerinli,'-b',label='Dst shift STB')
+plt.plot_date(o.time[o_stb_interval_ind],odst,'-k',label='observed Dst')
+plt.xlabel('time')
+plt.ylabel('Dst')
+plt.legend()
+plt.xlim([mdates.date2num(sunpy.time.parse_time('2010-Feb-1')), mdates.date2num(sunpy.time.parse_time('2010-Mar-1'))])
+mngr = plt.get_current_fig_manager()
+mngr.window.setGeometry(1350,50,600, 500)
+#mngr.window.setGeometry(50,50,1500, 800)
+plt.grid()
+
+
+############ comparison observed/calculated for subintervals:
+print()
+
+print('Time range covered for analysis:')
+print('start:',mdates.num2date(min_time))
+print('end:',mdates.num2date(max_time))
+
+print('Parts of STEREO-B data for comparison: all data points')# > 500 km/s at STB')
+
+stb_all_ind_1h=np.where(stb_vtot_1h>0)[0]  
+
+#all above 500 km/s at STB (for other interval definitions see above)
+#indices_for_comparison=stb_500_ind_1h
+#all data points 
+indices_for_comparison=stb_all_ind_1h
+
+
+#difference predicted to observed Dst for > 500 km/s at STB
+dst_diff=dst_temerinli[indices_for_comparison]-odst[indices_for_comparison]
+dst_diffm=np.round(np.nanmean(dst_temerinli[indices_for_comparison]-odst[indices_for_comparison]),0)
+dst_diffs=np.round(np.nanstd(dst_temerinli[indices_for_comparison]-odst[indices_for_comparison]),0)
+print('Dst diff mean +/- std:', dst_diffm, ' +/- ',dst_diffs)
+
+
+
+##### dependence of Dst error on difference in latitude
+diff_lat_heeq=stb_lat_1h[indices_for_comparison]-l1_lat_1h[indices_for_comparison]
+
+plt.figure(7)
+#number of events per degree bin
+(histlat, bin_edges) = np.histogram(diff_lat_heeq, np.arange(-11,12,1))
+
+diff_lat_bin_mean_dst=np.zeros(len(bin_edges))
+diff_lat_bin_std_dst=np.zeros(len(bin_edges))
+
+for i in np.arange(0,len(bin_edges)-1,1):
+   diff_lat_bin_mean_dst[i]=np.mean(dst_diff[np.where(np.logical_and(diff_lat_heeq > bin_edges[i],diff_lat_heeq < bin_edges[i+1])    )  ])
+   diff_lat_bin_std_dst[i]=np.std(dst_diff[np.where(np.logical_and(diff_lat_heeq > bin_edges[i],diff_lat_heeq < bin_edges[i+1])    )  ])
+
+#plt.plot(bin_edges,diff_lat_bin_mean_dst,marker='o',markersize=10,color='r', linestyle='None')
+plt.errorbar(bin_edges,diff_lat_bin_mean_dst,diff_lat_bin_std_dst,marker='o',markersize=10,color='r', linestyle='None')
+plt.xlabel('Diff HEEQ latitude STB to L1', fontsize=10)
+plt.ylabel('Dst C-O', fontsize=10)
+
+
+#other way of plotting
+#h=sns.jointplot(diff_lat_heeq,dst_diff,kind='hex')
+#h.set_axis_labels('Diff HEEQ latitude STB to L1', 'Dst C-O', fontsize=10)
+plt.tight_layout()
+mngr = plt.get_current_fig_manager()
+mngr.window.setGeometry(50,300,600, 500)
+
+
+
+########### dependence of Dst error on longitude
+plt.figure(8)
+h=sns.jointplot(stb_long_1h[indices_for_comparison],dst_diff,kind='hex')
+h.set_axis_labels('HEEQ longitude STB', 'Dst C-O', fontsize=10)
+#plt.plot(stb_long_1h[indices_for_comparison],dst_diff)
+#plt.plot(diff_lat_heeq,odst[indices_for_comparison],kind='hex')
+plt.tight_layout()
+mngr = plt.get_current_fig_manager()
+mngr.window.setGeometry(700,300,600, 500)
+
+
+
+########### predicted vs observed Dst
+
+plt.figure(9)
+h=sns.jointplot(dst_temerinli[indices_for_comparison],odst[indices_for_comparison],kind='hex')
+h.set_axis_labels('Predicted Dst', 'Observed Dst', fontsize=10)
+plt.tight_layout()
+mngr = plt.get_current_fig_manager()
+mngr.window.setGeometry(1300,300,600, 500)
 
 
 

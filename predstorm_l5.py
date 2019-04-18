@@ -536,6 +536,9 @@ log.write('\n')
 # (1) make correction for heliocentric distance of STEREO-A to L1 position
 # take position of Earth and STEREO-A from positions file
 # for B and N, makes a difference of about -5 nT in Dst
+
+# ********* TO DO CHECK exponents - are others better?
+
 earth_r=pos.earth_l1[0][pos_time_now_ind]
 sta.btot=sta.btot*(earth_r/sta_r)**-2
 sta.br=sta.br*(earth_r/sta_r)**-2
@@ -591,7 +594,14 @@ log.write('\n')
 
 #interpolate one more time after time shifts, so that the time is in full hours
 #and the STEREO-A data now start with the end of the dscovr data +1 hour
-sta_time=np.arange(dis.time[-1]+1.000/24,sta.time[-1],1.0000/(24))
+
+#*this also comes from dism.time[-1]this leads to shifts in < seconds that result in hours and minutes like 19 59 instead of 20 00
+#sta_time=np.arange(dis.time[-1]+1.000/24,sta.time[-1],1.0000/(24))
+
+sta_time= mdates.num2date(dis.time[-1])+ timedelta(hours=1) + np.arange(0,len(sta.time)) * timedelta(hours=1) 
+#convert back to matplotlib time
+sta_time=mdates.date2num(sta_time)
+
 sta_btot=np.interp(sta_time,sta.time,sta.btot)
 sta_br=np.interp(sta_time,sta.time,sta.br)
 sta_bt=np.interp(sta_time,sta.time,sta.bt)
