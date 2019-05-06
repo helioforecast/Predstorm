@@ -727,9 +727,9 @@ def download_stereoa_data_beacon(filedir="sta_beacon", starttime=None, endtime=N
     None
     """
  
-    logger.info('download_stereoa_data_beacon: Downloading STEREO-A beacon data from STEREO SCIENCE CENTER...')
+    logger.info('download_stereoa_data_beacon: Starting download of STEREO-A beacon data from STEREO SCIENCE CENTER...')
 
-    # If folder sta_beacon is not here, create
+    # If folder is not here, create
     if os.path.isdir(filedir) == False: os.mkdir(filedir)
 
     plastic_location='https://stereo-ssc.nascom.nasa.gov/data/beacon/ahead/plastic'
@@ -740,14 +740,15 @@ def download_stereoa_data_beacon(filedir="sta_beacon", starttime=None, endtime=N
     if starttime == None and endtime == None:
         startdate = datetime.utcnow() - timedelta(days=ndays)
     elif starttime != None and endtime == None:
-        startdate = starttime
+        startdate = starttime - timedelta(days=ndays)
     elif starttime == None and endtime != None:
-        startdate = endtime - timedelta(days=ndays)
+        startdate = endtime
     elif starttime != None and endtime != None:
         startdate = starttime
         ndays = (endtime - starttime).days + 1
 
     dates = [startdate+timedelta(days=n) for n in range(0,ndays)]
+    logger.info("Following dates listed to be downloaded: {}".format(dates))
 
     for date in dates:
         stayear = datetime.strftime(date, "%Y")
@@ -767,13 +768,23 @@ def download_stereoa_data_beacon(filedir="sta_beacon", starttime=None, endtime=N
             # Check if url exists
             try: 
                 urllib.request.urlretrieve(http_sta_pla_file_str, os.path.join(filedir, sta_pla_file_str))
+                logger.info(sta_pla_file_str+" downloaded")
             except urllib.error.URLError as e:
                 logger.error("download_stereoa_data_beacon: Could not download {} for reason:".format(http_sta_pla_file_str, e.reason))
+                http_sta_pla_file_str = os.path.join(plastic_location, stayear, stamonth, sta_pla_file_str.replace("V12", "V11"))
+                logger.info("Trying file version V11...")
+                try: 
+                    urllib.request.urlretrieve(http_sta_pla_file_str, os.path.join(filedir, sta_pla_file_str))
+                    logger.info(sta_pla_file_str+" downloaded")
+                except:
+                    logger.error("download_stereoa_data_beacon: Could not download {} for reason:".format(http_sta_pla_file_str, e.reason))
+
         
         if not os.path.exists(os.path.join(filedir, sta_mag_file_str)):
             http_sta_mag_file_str = os.path.join(impact_location, stayear, stamonth, sta_mag_file_str)
             try: 
                 urllib.request.urlretrieve(http_sta_mag_file_str, os.path.join(filedir, sta_mag_file_str))
+                logger.info(sta_mag_file_str+" downloaded")
             except urllib.error.URLError as e:
                 logger.error("download_stereoa_data_beacon: Could not download {} for reason:".format(http_sta_mag_file_str, e.reason))
 
@@ -823,6 +834,8 @@ def read_stereoa_data_beacon(filepath="sta_beacon/", starttime=None, endtime=Non
 
     if starttime == None and endtime == None:
         startdate = datetime.utcnow() - timedelta(days=ndays)
+    elif starttime != None:
+        startdate = starttime - timedelta(days=ndays)
 
     readdates = [datetime.strftime(startdate+timedelta(days=n), "%Y%m%d") for n in range(0,ndays)]
 

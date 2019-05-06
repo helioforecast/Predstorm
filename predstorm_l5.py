@@ -442,26 +442,27 @@ def main():
     #------------------------ (1b) Get real-time DSCOVR data --------------------------------
 
     # Get real time DSCOVR data with minute/hourly time resolution as recarray
+    tstr_format = "%Y-%m-%d-%H_%M" # "%Y-%m-%d_%H%M" would be better
     if run_mode == 'normal':
         [dism,dis] = get_dscovr_data_real()
         # Get time of the last entry in the DSCOVR data
         timenow = dism.time[-1]
         # Get UTC time now
         timeutc = mdates.date2num(datetime.utcnow())
+        timeutcstr = datetime.strftime(datetime.utcnow(), tstr_format)
     elif run_mode == 'historic':
-        # TODO: add in function to download DSCOVR data
+        # TODO: add in function to download DSCOVR data... or at least add in warning
         [dism,dis] = get_dscovr_data_all(P_filepath="data/dscovrarchive/*",
                                          M_filepath="data/dscovrarchive/*",
                                          starttime=historic_date-timedelta(days=plot_past_days+1),
                                          endtime=historic_date)
         timeutc = mdates.date2num(historic_date)
+        timeutcstr = datetime.strftime(historic_date, tstr_format)
         timenow = timeutc
     elif run_mode == 'verification':
         print("Verification mode coming soon.")
 
-    tstr_format = "%Y-%m-%d-%H_%M" # "%Y-%m-%d_%H%M" would be better
     timenowstr = datetime.strftime(mdates.num2date(timenow), tstr_format)
-    timeutcstr = datetime.strftime(datetime.utcnow(), tstr_format)
 
     # Open file for logging results:        # TODO use logging module
     logfile=outputdirectory+'/predstorm_v1_realtime_stereo_a_results_'+timeutcstr[0:10]+'-' \
@@ -488,20 +489,12 @@ def main():
         download_stereoa_data_beacon()
         [stam,sta] = read_stereoa_data_beacon()
     elif run_mode == 'historic':
-        download_stereoa_data_beacon(starttime=mdates.num2date(timenow), 
-                                     endtime=mdates.num2date(timenow))
-        [stam,sta] = read_stereoa_data_beacon()
+        # TODO: Determining which days to read depends on angle between STEREO and DSCOVR...
+        download_stereoa_data_beacon(starttime=mdates.num2date(timenow))
+        [stam,sta] = read_stereoa_data_beacon(starttime=mdates.num2date(timenow))
 
     #use hourly interpolated data - the 'sta' recarray for further calculations,
     #'stam' for plotting
-
-    #get spacecraft position
-    logger.info('loading spacecraft and planetary positions')
-    pos=getpositions('data/positions_2007_2023_HEEQ_6hours.sav')
-    pos_time_num=time_to_num_cat(pos.time)
-    #take position of STEREO-A for time now from position file
-    pos_time_now_ind=np.where(timenow < pos_time_num)[0][0]
-    sta_r=pos.sta[0][pos_time_now_ind]
 
     laststa=stam.time[-1]
     laststa_time_str=str(mdates.num2date(laststa))[0:16]
@@ -512,6 +505,14 @@ def main():
     #========================== (2) PREDICTION CALCULATIONS ==================================
 
     #------------------------ (2a)  Time lag for solar rotation ------------------------------
+
+    # Get spacecraft position
+    logger.info('loading spacecraft and planetary positions')
+    pos=getpositions('data/positions_2007_2023_HEEQ_6hours.sav')
+    pos_time_num=time_to_num_cat(pos.time)
+    #take position of STEREO-A for time now from position file
+    pos_time_now_ind=np.where(timenow < pos_time_num)[0][0]
+    sta_r=pos.sta[0][pos_time_now_ind]
 
     # Get longitude and latitude
     sta_long_heeq = pos.sta[1][pos_time_now_ind]*180./np.pi
@@ -658,7 +659,8 @@ def main():
                                       [dst_time, dst, com_time, dst_pred],
                                       past_days=plot_past_days,
                                       future_days=plot_future_days,
-                                      dst_label=dst_label)
+                                      dst_label=dst_label,
+                                      timestamp=mdates.num2date(timeutc))
     # ********************************************************************
 
 
