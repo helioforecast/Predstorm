@@ -1,7 +1,10 @@
 __pycache__
 results
 real
+data
 sta_beacon
 *.png
+*.log
 omni2*.*
 .DS*
+predstorm_real.txt
