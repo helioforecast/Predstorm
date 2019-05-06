@@ -462,9 +462,15 @@ def get_dscovr_data_all(P_filepath=None, M_filepath=None, starttime=None, endtim
         time = np.array([mdates.date2num(datetime.utcfromtimestamp(x/1000.))
                          for x in ncdata.variables['time'][...]])
         dtype = [('time_tag', 'float'), ('density', 'float'), ('speed', 'float')]
-        density = (ncdata.variables['proton_density'])[...]
-        speed = (ncdata.variables['proton_speed'])[...]
-        temp = (ncdata.variables['proton_temperature'])[...]
+        density = np.array((ncdata.variables['proton_density'])[...])
+        speed = np.array((ncdata.variables['proton_speed'])[...])
+        temp = np.array((ncdata.variables['proton_temperature'])[...])
+
+        # Replace missing data:
+        # Note: original arrays are masked - this only works because they're converted to np.array before
+        density[np.where(density==float(ncdata.variables['proton_density'].missing_value))] = np.NaN
+        speed[np.where(speed==float(ncdata.variables['proton_speed'].missing_value))] = np.NaN
+        temp[np.where(temp==float(ncdata.variables['proton_temperature'].missing_value))] = np.NaN
 
         # Minute data:
         dp_v_m = np.hstack((dp_v_m, speed))
@@ -489,25 +495,32 @@ def get_dscovr_data_all(P_filepath=None, M_filepath=None, starttime=None, endtim
         ncdata = Dataset(filepath, 'r')
         time = np.array([mdates.date2num(datetime.utcfromtimestamp(x/1000.))
                          for x in ncdata.variables['time'][...]])
-        bx = (ncdata.variables['bx_gse'])[...]
-        by = (ncdata.variables['by_gse'])[...]
-        bz = (ncdata.variables['bz_gse'])[...]
-        bt = (ncdata.variables['bt'])[...]
+        bx = np.array((ncdata.variables['bx_gse'])[...])
+        by = np.array((ncdata.variables['by_gse'])[...])
+        bz = np.array((ncdata.variables['bz_gse'])[...])
+        bt = np.array((ncdata.variables['bt'])[...])
+
+        # Replace missing data:
+        # Note: original arrays are masked - this only works because they're converted to np.array before
+        bx[np.where(bx==float(ncdata.variables['bx_gse'].missing_value))] = np.NaN
+        by[np.where(by==float(ncdata.variables['by_gse'].missing_value))] = np.NaN
+        bz[np.where(bz==float(ncdata.variables['bz_gse'].missing_value))] = np.NaN
+        bt[np.where(bt==float(ncdata.variables['bt'].missing_value))] = np.NaN
 
         # Minute data:
-        dm_bx_m = np.hstack((dm_bx_m, speed))
-        dm_by_m = np.hstack((dm_by_m, density))
-        dm_bz_m = np.hstack((dm_bz_m, temp))
-        dm_bt_m = np.hstack((dm_bt_m, temp))
+        dm_bx_m = np.hstack((dm_bx_m, bx))
+        dm_by_m = np.hstack((dm_by_m, by))
+        dm_bz_m = np.hstack((dm_bz_m, bz))
+        dm_bt_m = np.hstack((dm_bt_m, bt))
         dm_time_m = np.hstack((dm_time_m, time))
 
         # Interpolated hourly data:
         dtime_h = round_to_hour(mdates.num2date(time[0])) + np.arange(0,len(time)/(60)) * timedelta(hours=1) 
         time_h = mdates.date2num(dtime_h)
-        dm_bx_h = np.hstack((dm_bx_h, np.interp(time_h, time, speed)))
-        dm_by_h = np.hstack((dm_by_h, np.interp(time_h, time, density)))
-        dm_bz_h = np.hstack((dm_bz_h, np.interp(time_h, time, temp)))
-        dm_bt_h = np.hstack((dm_bt_h, np.interp(time_h, time, temp)))
+        dm_bx_h = np.hstack((dm_bx_h, np.interp(time_h, time, bx)))
+        dm_by_h = np.hstack((dm_by_h, np.interp(time_h, time, by)))
+        dm_bz_h = np.hstack((dm_bz_h, np.interp(time_h, time, bz)))
+        dm_bt_h = np.hstack((dm_bt_h, np.interp(time_h, time, bt)))
         dm_time_h = np.hstack((dm_time_h, time_h))
 
     # Pack into recarrays:
@@ -519,7 +532,12 @@ def get_dscovr_data_all(P_filepath=None, M_filepath=None, starttime=None, endtim
     data_hourly=np.rec.array([dm_time_h, dm_bt_h, dm_bx_h, dm_by_h, dm_bz_h, dp_v_h, dp_p_h, dp_t_h], \
     dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
            ('speed','f8'),('den','f8'),('temp','f8')])
-    #data_hourly = data_hourly[np.where(L1_P['time_tag']>timeutc)]
+
+    # Cut to time frame:
+    data_minutes = data_minutes[np.where(data_minutes['time']>=mdates.date2num(starttime))]
+    data_minutes = data_minutes[np.where(data_minutes['time']<mdates.date2num(endtime))]
+    data_hourly = data_hourly[np.where(data_hourly['time']>=mdates.date2num(starttime))]
+    data_hourly = data_hourly[np.where(data_hourly['time']<mdates.date2num(endtime))]
     
     logger.info('get_dscovr_data_all: DSCOVR data read and interpolated to hour/minute resolution.')
             

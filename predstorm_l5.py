@@ -449,9 +449,10 @@ def main():
         # Get UTC time now
         timeutc = mdates.date2num(datetime.utcnow())
     elif run_mode == 'historic':
+        # TODO: add in function to download DSCOVR data
         [dism,dis] = get_dscovr_data_all(P_filepath="data/dscovrarchive/*",
                                          M_filepath="data/dscovrarchive/*",
-                                         starttime=historic_date-timedelta(days=plot_past_days),
+                                         starttime=historic_date-timedelta(days=plot_past_days+1),
                                          endtime=historic_date)
         timeutc = mdates.date2num(historic_date)
         timenow = timeutc
