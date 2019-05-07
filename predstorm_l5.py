@@ -121,7 +121,7 @@ from predstorm_module import getpositions
 from predstorm_module import convert_GSE_to_GSM
 from predstorm_module import sphere2cart
 from predstorm_module import convert_RTN_to_GSE_sta_l1
-from predstorm_module import get_noaa_dst
+from predstorm_module import get_noaa_dst, get_past_dst
 from predstorm_module import logger
 
 # GET INPUT PARAMETERS
@@ -184,6 +184,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, dst_l
 
     plotstart = dism.time[-1] - past_days
     plotend = dis.time[-1] + future_days
+    text_offset = 0.75 # days (for 'fast', 'intense', etc.)
 
     # For the minute data, check which are the intervals to show for STEREO-A until end of plot
     sta_index_future=np.where(np.logical_and(stam.time > dism.time[-1], \
@@ -242,9 +243,9 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, dst_l
     for hline, linetext in zip([400, 800], ['slow', 'fast']):
         plt.plot_date([dis.time[0], dis.time[-1]+future_days],
                     [hline, hline],'--k', alpha=0.3, linewidth=1)
-        plt.annotate(linetext,xy=(dis.time[0]+past_days,hline),
-                    xytext=(dis.time[0]+past_days,hline),
-                    color='k', fontsize=10)
+        plt.annotate(linetext,xy=(mdates.date2num(timestamp)-text_offset,hline),
+                     xytext=(mdates.date2num(timestamp)-text_offset,hline),
+                     color='k', fontsize=10)
 
     # For y limits check where the maximum and minimum are for DSCOVR and STEREO taken together:
     try:
@@ -285,7 +286,10 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, dst_l
     # Observed Dst Kyoto (past):
     plt.plot_date(dst_time, dst,'ko', label='Dst observed',markersize=4)
     plt.ylabel('Dst [nT]', fontsize=fs+2)
-    plt.ylim([np.nanmin(dst)-50,np.nanmax(dst)+20])
+    if np.nanmin(dst) > -100:   # Low activity (normal)
+        plt.ylim([-100,np.nanmax(dst)+20])
+    else:                       # High activity
+        plt.ylim([np.nanmin(dst)-50,np.nanmax(dst)+20])
 
     if not verification_mode:
         plt.plot_date(com_time, dst_pred,'-r', label=dst_label,markersize=3, linewidth=1)
@@ -304,8 +308,8 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, dst_l
     for hline, linetext in zip([-50, -100, -250], ['moderate', 'intense', 'super-storm']):
         plt.plot_date([dis.time[0], dis.time[-1]+future_days],
                       [hline,hline],'--k', alpha=0.3, linewidth=1)
-        plt.annotate(linetext,xy=(dis.time[0]+past_days,hline+2),
-                     xytext=(dis.time[0]+past_days,hline+2),color='k', fontsize=10)
+        plt.annotate(linetext,xy=(mdates.date2num(timestamp)-text_offset,hline+2),
+                     xytext=(mdates.date2num(timestamp)-text_offset,hline+2),color='k', fontsize=10)
 
     # GENERAL FORMATTING
     # ------------------
@@ -443,6 +447,7 @@ def main():
 
     # Get real time DSCOVR data with minute/hourly time resolution as recarray
     tstr_format = "%Y-%m-%d-%H_%M" # "%Y-%m-%d_%H%M" would be better
+    logger.info("Getting DSCOVR data...")
     if run_mode == 'normal':
         [dism,dis] = get_dscovr_data_real()
         # Get time of the last entry in the DSCOVR data
@@ -451,14 +456,16 @@ def main():
         timeutc = mdates.date2num(datetime.utcnow())
         timeutcstr = datetime.strftime(datetime.utcnow(), tstr_format)
     elif run_mode == 'historic':
-        # TODO: add in function to download DSCOVR data... or at least add in warning
-        [dism,dis] = get_dscovr_data_all(P_filepath="data/dscovrarchive/*",
-                                         M_filepath="data/dscovrarchive/*",
-                                         starttime=historic_date-timedelta(days=plot_past_days+1),
-                                         endtime=historic_date)
         timeutc = mdates.date2num(historic_date)
         timeutcstr = datetime.strftime(historic_date, tstr_format)
         timenow = timeutc
+        if (datetime.utcnow() - historic_date).days < (7.-plot_past_days):
+            [dism,dis] = get_dscovr_data_real()
+        else:
+            [dism,dis] = get_dscovr_data_all(P_filepath="data/dscovrarchive/*",
+                                             M_filepath="data/dscovrarchive/*",
+                                             starttime=historic_date-timedelta(days=plot_past_days+1),
+                                             endtime=historic_date)
     elif run_mode == 'verification':
         print("Verification mode coming soon.")
 
@@ -485,6 +492,7 @@ def main():
     #------------------------ (1c) Get real-time STEREO-A beacon data -----------------------
 
     #get real time STEREO-A data with minute/hourly time resolution as recarray
+    logger.info("Getting STEREO-A data...")
     if run_mode == 'normal':
         download_stereoa_data_beacon()
         [stam,sta] = read_stereoa_data_beacon()
@@ -501,6 +509,16 @@ def main():
     logger.info('UTC Time of last datapoint in STEREO-A beacon data')
     logger.info('\t'+laststa_time_str)
     logger.info('Time lag in hours: {}'.format(int(round((timeutc-laststa)*24))))
+
+    #------------------------- (1d) Load NOAA Dst for comparison ----------------------------
+
+    logger.info("Getting Kyoto Dst data...")
+    if run_mode == 'normal':
+        [dst_time,dst] = get_noaa_dst()
+    elif run_mode == 'historic':
+        [dst_time,dst] = get_past_dst(filepath="data/dstarchive/WWW_dstae00016185.dat",
+                                           starttime=mdates.num2date(timenow)-timedelta(days=plot_past_days+1),
+                                           endtime=mdates.num2date(timenow))
 
     #========================== (2) PREDICTION CALCULATIONS ==================================
 
@@ -634,10 +652,6 @@ def main():
     aurora_power=np.round(make_aurora_power_from_wind(com_btot,com_by,com_bz,com_vr, com_den),2)
     #make sure that no values are < 0
     aurora_power[np.where(aurora_power < 0)]=0.0
-
-    #get NOAA Dst for comparison
-    [dst_time,dst]=get_noaa_dst()
-    logger.info('Loaded Kyoto Dst from NOAA for last 7 days.')
 
     #========================== (3) PLOT RESULTS ============================================
 
@@ -922,7 +936,7 @@ if __name__ == '__main__':
             verbose = True
         elif opt == '--historic':
             run_mode = 'historic'
-            historic_date = datetime.strptime(arg, "%Y-%m-%d %H:%M")
+            historic_date = datetime.strptime(arg, "%Y-%m-%dT%H:%M")
             print("Using historic mode for date: {}".format(historic_date))
         elif opt == '-h' or opt == '--help':
             print("")
@@ -937,7 +951,7 @@ if __name__ == '__main__':
             print("                python predstorm_l5.py --server")
             print("--historic    : Run script with a historic data set. Must have")
             print("                archived data available.")
-            print("                python predstorm_l5.py --historic='2017-09-07 23:00'")
+            print("                python predstorm_l5.py --historic='2017-09-07T23:00'")
             print("GENERAL OPTIONS:")
             print("-h/--help     : print this help data")
             print("-v/--verbose  : print logging output to shell for debugging")

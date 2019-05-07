@@ -545,28 +545,81 @@ def get_dscovr_data_all(P_filepath=None, M_filepath=None, starttime=None, endtim
 
 
 def get_noaa_dst():
+    """Loads real-time Dst data from NOAA webpage:
+    http://services.swpc.noaa.gov/products/kyoto-dst.json
 
- #print('loaded real time Dst from Kyoto via NOAA')
- url_dst='http://services.swpc.noaa.gov/products/kyoto-dst.json'
- with urllib.request.urlopen(url_dst) as url:
-     dr = json.loads    (url.read().decode())
- dr=dr[1:]
- #define variables 
- #plasma
- rdst_time_str=['']*len(dr)
- rdst_time=np.zeros(len(dr))
- rdst=np.zeros(len(dr))
- #convert variables to numpy arrays
- #mag
- for k in np.arange(0,len(dr),1):
-  #handle missing data, they show up as None from the JSON data file
-  if dr[k][1] is None: dr[k][1]=np.nan
-  rdst[k]=float(dr[k][1])
-  #convert time from string to datenumber
-  rdst_time_str[k]=dr[k][0][0:16]
-  rdst_time[k]=mdates.date2num(sunpy.time.parse_time(rdst_time_str[k]))
+    Parameters
+    ==========
+    None
 
- return rdst_time,rdst
+    Returns
+    =======
+    [dst_time, dst] : list(np.array, np.array)
+        List containing arrays of time and dst values.
+    """
+
+    url_dst='http://services.swpc.noaa.gov/products/kyoto-dst.json'
+    with urllib.request.urlopen(url_dst) as url:
+        dr = json.loads    (url.read().decode())
+    dr=dr[1:]
+    #define variables 
+    #plasma
+    rdst_time_str=['']*len(dr)
+    rdst_time=np.zeros(len(dr))
+    rdst=np.zeros(len(dr))
+    #convert variables to numpy arrays
+    #mag
+    for k in np.arange(0,len(dr),1):
+        #handle missing data, they show up as None from the JSON data file
+        if dr[k][1] is None: dr[k][1]=np.nan
+        rdst[k]=float(dr[k][1])
+        #convert time from string to datenumber
+        rdst_time_str[k]=dr[k][0][0:16]
+        rdst_time[k]=mdates.date2num(sunpy.time.parse_time(rdst_time_str[k]))
+    logger.info("NOAA real-time Dst data loaded.")
+
+    return rdst_time, rdst
+
+
+def get_past_dst(filepath=None, starttime=None, endtime=None):
+    """Will read Dst values from IAGA2002-format file. Data can be 
+    downloaded from this webpage:
+    http://wdc.kugi.kyoto-u.ac.jp/dstae/index.html
+
+    Parameters
+    ==========
+    filepath : str
+        Direct filepath to file containing Dst. If None, realtime data is used.
+    starttime: datetime.datetime
+        Starttime of Dst data.
+    endtime : datetime.datetime
+        Endtime of Dst data.
+
+    Returns
+    =======
+    [dst_time, dst] : list(np.array, np.array)
+        List containing arrays of time and dst values.
+    """
+
+    f = open(filepath, 'r')
+    lines = f.readlines()
+
+    # Remove header data and split strings:
+    datastr = [c.strip().split(' ') for c in lines if (c[0] != ' ' and c[0] != 'D')]
+    dst_time = np.array([mdates.date2num(datetime.strptime(d[0]+d[1], "%Y-%m-%d%H:%M:%S.%f")) for d in datastr])
+    dst = np.array([float(d[-1]) for d in datastr])
+
+    # Cut to time frame:
+    if starttime != None:
+        icuts = np.where(dst_time >= mdates.date2num(starttime))
+        dst_time = dst_time[icuts]
+        dst = dst[icuts]
+    if endtime != None:
+        icute = np.where(dst_time < mdates.date2num(endtime))
+        dst_time = dst_time[icute]
+        dst = dst[icute]
+    
+    return dst_time, dst
 
 
 def get_omni_data():
@@ -919,8 +972,7 @@ def read_stereoa_data_beacon(filepath="sta_beacon/", starttime=None, endtime=Non
     data_hourly=np.rec.array([sta_time_h,sta_btot_h,sta_br_h,sta_bt_h,sta_bn_h,sta_vr_h,sta_den_h], \
     dtype=[('time','f8'),('btot','f8'),('br','f8'),('bt','f8'),('bn','f8'),\
             ('speedr','f8'),('den','f8')])
-    
-    
+
     logger.info('STEREO-A (RTN) beacon data interpolated to hour/minute resolution.')
     
     return data_minutes, data_hourly
