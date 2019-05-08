@@ -78,7 +78,7 @@ import getopt
 
 # READ INPUT OPTIONS FROM COMMAND LINE
 argv = sys.argv[1:]
-opts, args = getopt.getopt(argv,"hv",["server", "help", "historic=", "verbose"])
+opts, args = getopt.getopt(argv,"hv=",["server", "help", "historic=", "verbose="])
 
 server = False
 if "--server" in [o for o, v in opts]:
@@ -117,7 +117,7 @@ from predstorm_module import converttime
 from predstorm_module import make_dst_from_wind
 from predstorm_module import make_kp_from_wind
 from predstorm_module import make_aurora_power_from_wind
-from predstorm_module import getpositions
+from predstorm_module import getpositions, interp_nans
 from predstorm_module import convert_GSE_to_GSM
 from predstorm_module import sphere2cart
 from predstorm_module import convert_RTN_to_GSE_sta_l1
@@ -184,7 +184,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, dst_l
 
     plotstart = dism.time[-1] - past_days
     plotend = dis.time[-1] + future_days
-    text_offset = 0.75 # days (for 'fast', 'intense', etc.)
+    text_offset = past_days # days (for 'fast', 'intense', etc.)
 
     # For the minute data, check which are the intervals to show for STEREO-A until end of plot
     sta_index_future=np.where(np.logical_and(stam.time > dism.time[-1], \
@@ -229,7 +229,6 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, dst_l
     # Plot solar wind speed (DSCOVR):
     plt.plot_date(dism.time, dism.speed,'-k', label='speed L1',linewidth=lw)
     plt.ylabel('Speed $\mathregular{[km \\ s^{-1}]}$', fontsize=fs+2)
-
 
     # Plot STEREO-A data with timeshift and savgol filter
     try:
@@ -517,8 +516,8 @@ def main():
         [dst_time,dst] = get_noaa_dst()
     elif run_mode == 'historic':
         [dst_time,dst] = get_past_dst(filepath="data/dstarchive/WWW_dstae00016185.dat",
-                                           starttime=mdates.num2date(timenow)-timedelta(days=plot_past_days+1),
-                                           endtime=mdates.num2date(timenow))
+                                      starttime=mdates.num2date(timenow)-timedelta(days=plot_past_days+1),
+                                      endtime=mdates.num2date(timenow))
 
     #========================== (2) PREDICTION CALCULATIONS ==================================
 
@@ -562,7 +561,7 @@ def main():
     sta.bt=sta.bt*(earth_r/sta_r)**-2
     sta.bn=sta.bn*(earth_r/sta_r)**-2
     sta.den=sta.den*(earth_r/sta_r)**-2
-    resultslog.write('corrections to STEREO-A data:')
+    resultslog.write('corrections to STEREO-A data:\n')
     resultslog.write('\t1: decline of B and N by factor {}\n'.format(round(((earth_r/sta_r)**-2),3)))
 
     # (2) correction for timing for the Parker spiral see
@@ -618,21 +617,12 @@ def main():
 
     # make combined array of DSCOVR and STEREO-A data
     com_time=np.concatenate((dis.time, sta_time))
-    com_btot=np.concatenate((dis.btot, sta_btot))
-    com_bx=np.concatenate((dis.bxgsm, sta_br))
-    com_by=np.concatenate((dis.bygsm, sta_bt))
-    com_bz=np.concatenate((dis.bzgsm, sta_bn))
-    com_vr=np.concatenate((dis.speed, sta_speedr))
-    com_den=np.concatenate((dis.den, sta_den))
-
-    #if there are nans interpolate them (important for Temerin/Li method)
-    if sum(np.isnan(com_den)) > 0:
-        good = np.where(np.isfinite(com_den))
-        com_den=np.interp(com_time,com_time[good],com_den[good])
-
-    if sum(np.isnan(com_vr)) > 0:
-        good = np.where(np.isfinite(com_vr))
-        com_vr=np.interp(com_time,com_time[good],com_vr[good])
+    com_btot=interp_nans(np.concatenate((dis.btot, sta_btot)))
+    com_bx=interp_nans(np.concatenate((dis.bxgsm, sta_br)))
+    com_by=interp_nans(np.concatenate((dis.bygsm, sta_bt)))
+    com_bz=interp_nans(np.concatenate((dis.bzgsm, sta_bn)))
+    com_vr=interp_nans(np.concatenate((dis.speed, sta_speedr)))
+    com_den=interp_nans(np.concatenate((dis.den, sta_den)))
 
     #---------------------- (2d) calculate Dst for combined data ----------------------------
 
@@ -641,9 +631,7 @@ def main():
     #This function works as result=make_dst_from_wind(btot_in,bx_in, by_in,bz_in,v_in,vx_in,density_in,time_in):
     # ******* PROBLEM: USES vr twice (should be V and Vr in Temerin/Li 2002), take V from STEREO-A data too
     [dst_burton, dst_obrien, dst_temerin_li]=make_dst_from_wind(com_btot, com_bx,com_by, \
-                                             com_bz, com_vr,com_vr, com_den, com_time)
-
-
+                                             com_bz, com_vr, com_vr, com_den, com_time)
 
     #make_kp_from_wind(btot_in,by_in,bz_in,v_in,density_in) and round to 1 decimal
     kp_newell=np.round(make_kp_from_wind(com_btot,com_by,com_bz,com_vr, com_den),1)
@@ -928,12 +916,13 @@ def main():
 if __name__ == '__main__':
 
     run_mode = 'normal'
-    verbose = False
+    verbose = True
     for opt, arg in opts:
         if opt == "--server":
             server = True
         if opt == '-v' or opt == "--verbose":
-            verbose = True
+            if arg == 'False':
+                verbose = False
         elif opt == '--historic':
             run_mode = 'historic'
             historic_date = datetime.strptime(arg, "%Y-%m-%dT%H:%M")

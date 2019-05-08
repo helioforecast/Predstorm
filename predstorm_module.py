@@ -791,9 +791,9 @@ def download_stereoa_data_beacon(filedir="sta_beacon", starttime=None, endtime=N
     #system time now
     ndays = 14
     if starttime == None and endtime == None:
-        startdate = datetime.utcnow() - timedelta(days=ndays)
+        startdate = datetime.utcnow() - timedelta(days=ndays-1)
     elif starttime != None and endtime == None:
-        startdate = starttime - timedelta(days=ndays)
+        startdate = starttime - timedelta(days=ndays-1)
     elif starttime == None and endtime != None:
         startdate = endtime
     elif starttime != None and endtime != None:
@@ -886,13 +886,13 @@ def read_stereoa_data_beacon(filepath="sta_beacon/", starttime=None, endtime=Non
     sta_bn=np.zeros(0)
 
     if starttime == None and endtime == None:
-        startdate = datetime.utcnow() - timedelta(days=ndays)
+        startdate = datetime.utcnow() - timedelta(days=ndays-1)
     elif starttime != None:
-        startdate = starttime - timedelta(days=ndays)
+        startdate = starttime - timedelta(days=ndays-1)
 
     readdates = [datetime.strftime(startdate+timedelta(days=n), "%Y%m%d") for n in range(0,ndays)]
 
-    logger.info("read_stereoa_data_beacon: Starting data read for {} days from {}".format(ndays, startdate))
+    logger.info("read_stereoa_data_beacon: Starting data read for {} days from {} till {}".format(ndays, readdates[0], readdates[-1]))
 
     for date in readdates:
     
@@ -1057,6 +1057,13 @@ def round_to_hour(dt):
         dt = dt_start_of_hour
     return dt
 
+
+def interp_nans(ar):
+    """Linearly interpolates over nans in array."""
+
+    inds = np.isnan(ar)
+    ar[inds] = np.interp(inds.nonzero()[0], (~inds).nonzero()[0], ar[~inds])
+    return ar
 
 #def sunriseset(location_name):
 """
@@ -1283,8 +1290,6 @@ def make_dst_from_wind(btot_in,bx_in, by_in,bz_in,v_in,vx_in,density_in,time_in)
 
     #Note: vx has to be used with a positive sign throughout the calculation
     
-    
-    
     #----------------------------------------- loop over each timestep
     for i in np.arange(1,len(bz_in)-1):
 
@@ -1373,10 +1378,9 @@ def make_dst_from_wind(btot_in,bx_in, by_in,bz_in,v_in,vx_in,density_in,time_in)
         #The dst1, dst2, dst3, (pressure term), (direct IMF bz term), and (offset terms) are added (after interpolations) with time delays of 7.1, 21.0, 43.4, 2.0, 23.1 and 7.1 min, respectively, for comparison with the ‘‘Kyoto Dst.’’ 
 
         #dst1
-        
         dst_temerin_li_out[i]=dst1[i]+dst2[i]+dst3[i]+pressureterm[i]+directterm[i]+offset[i]
      
-    return (dstcalc1,dstcalc2, dst_temerin_li_out)   
+    return (dstcalc1, dstcalc2, dst_temerin_li_out)   
 
 
 def epoch_to_num(epoch):
@@ -1402,8 +1406,9 @@ def epoch_to_num(epoch):
     return (epoch - 31622400000.0) / (24 * 60 * 60 * 1000.0) + 1.0
  
 
-
-
+# ***************************************************************************************
+# E. Plotting functions:
+# ***************************************************************************************
 
 
 
