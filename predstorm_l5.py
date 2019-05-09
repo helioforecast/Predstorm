@@ -110,7 +110,7 @@ import sunpy.time
 import urllib
 from scipy.signal import savgol_filter
 
-from predstorm_module import get_dscovr_data_real, get_dscovr_data_all
+from predstorm_module import get_dscovr_data_real, get_dscovr_data_real2, get_dscovr_data_all
 from predstorm_module import download_stereoa_data_beacon, read_stereoa_data_beacon
 from predstorm_module import time_to_num_cat
 from predstorm_module import converttime
@@ -182,13 +182,13 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, dst_l
     dism, dis = DSCOVR_data
     dst_time, dst, com_time, dst_pred = DST_data
 
-    plotstart = dism.time[-1] - past_days
-    plotend = dis.time[-1] + future_days
+    plotstart = dism['time'][-1] - past_days
+    plotend = dis['time'][-1] + future_days
     text_offset = past_days # days (for 'fast', 'intense', etc.)
 
     # For the minute data, check which are the intervals to show for STEREO-A until end of plot
-    sta_index_future=np.where(np.logical_and(stam.time > dism.time[-1], \
-                              stam.time < dism.time[-1]+plot_future_days))
+    sta_index_future=np.where(np.logical_and(stam.time > dism['time'][-1], \
+                              stam.time < dism['time'][-1]+plot_future_days))
 
     if timestamp == None:
         timestamp = datetime.utcnow()
@@ -200,8 +200,8 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, dst_l
     axes.append(ax1)
 
     # Total B-field and Bz (DSCOVR)
-    plt.plot_date(dism.time, dism.btot,'-k', label='B total L1', linewidth=lw)
-    plt.plot_date(dism.time, dism.bzgsm,'-g', label='Bz GSM L1', linewidth=lw)
+    plt.plot_date(dism['time'], dism['bt'],'-k', label='B total L1', linewidth=lw)
+    plt.plot_date(dism['time'], dism['bz'],'-g', label='Bz GSM L1', linewidth=lw)
 
     # STEREO-A minute resolution data with timeshift
     plt.plot_date(stam.time[sta_index_future], stam.btot[sta_index_future],
@@ -214,8 +214,8 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, dst_l
     plt.ylabel('Magnetic field [nT]',  fontsize=fs+2)
 
     # For y limits check where the maximum and minimum are for DSCOVR and STEREO taken together:
-    bplotmax=np.nanmax(np.concatenate((dism.btot,stam.btot[sta_index_future])))+5
-    bplotmin=np.nanmin(np.concatenate((dism.bzgsm,stam.bn[sta_index_future]))-5)
+    bplotmax=np.nanmax(np.concatenate((dism['bt'],stam.btot[sta_index_future])))+5
+    bplotmin=np.nanmin(np.concatenate((dism['bz'],stam.bn[sta_index_future]))-5)
 
     plt.ylim(bplotmin, bplotmax)
 
@@ -227,7 +227,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, dst_l
     axes.append(ax2)
 
     # Plot solar wind speed (DSCOVR):
-    plt.plot_date(dism.time, dism.speed,'-k', label='speed L1',linewidth=lw)
+    plt.plot_date(dism['time'], dism['speed'],'-k', label='speed L1',linewidth=lw)
     plt.ylabel('Speed $\mathregular{[km \\ s^{-1}]}$', fontsize=fs+2)
 
     # Plot STEREO-A data with timeshift and savgol filter
@@ -240,7 +240,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, dst_l
 
     # Add speed levels:
     for hline, linetext in zip([400, 800], ['slow', 'fast']):
-        plt.plot_date([dis.time[0], dis.time[-1]+future_days],
+        plt.plot_date([dis['time'][0], dis['time'][-1]+future_days],
                     [hline, hline],'--k', alpha=0.3, linewidth=1)
         plt.annotate(linetext,xy=(mdates.date2num(timestamp)-text_offset,hline),
                      xytext=(mdates.date2num(timestamp)-text_offset,hline),
@@ -248,11 +248,11 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, dst_l
 
     # For y limits check where the maximum and minimum are for DSCOVR and STEREO taken together:
     try:
-        vplotmax=np.nanmax(np.concatenate((dism.speed,savgol_filter(stam.speedr[sta_index_future],11,1))))+100
-        vplotmin=np.nanmin(np.concatenate((dism.speed,savgol_filter(stam.speedr[sta_index_future],11,1)))-50)
+        vplotmax=np.nanmax(np.concatenate((dism['speed'],savgol_filter(stam.speedr[sta_index_future],11,1))))+100
+        vplotmin=np.nanmin(np.concatenate((dism['speed'],savgol_filter(stam.speedr[sta_index_future],11,1)))-50)
     except:
-        vplotmax=np.nanmax(np.concatenate((dism.speed,stam.speedr[sta_index_future])))+100
-        vplotmin=np.nanmin(np.concatenate((dism.speed,stam.speedr[sta_index_future]))-50)
+        vplotmax=np.nanmax(np.concatenate((dism['speed'],stam.speedr[sta_index_future])))+100
+        vplotmin=np.nanmin(np.concatenate((dism['speed'],stam.speedr[sta_index_future]))-50)
     plt.ylim(vplotmin, vplotmax)
 
 
@@ -264,10 +264,10 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, dst_l
     axes.append(ax3)
 
     # Plot solar wind density:
-    plt.plot_date(dism.time, dism.den,'-k', label='density L1',linewidth=lw)
+    plt.plot_date(dism['time'], dism['density'],'-k', label='density L1',linewidth=lw)
     plt.ylabel('Density $\mathregular{[ccm^{-3}]}$',fontsize=fs+2)
     # For y limits check where the maximum and minimum are for DSCOVR and STEREO taken together:
-    plt.ylim([0,np.nanmax(np.nanmax(np.concatenate((dism.den,stam.den[sta_index_future])))+10)])
+    plt.ylim([0,np.nanmax(np.nanmax(np.concatenate((dism['density'],stam.den[sta_index_future])))+10)])
 
     #plot STEREO-A data with timeshift and savgol filter
     try:
@@ -303,9 +303,9 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, dst_l
         plt.plot_date(lcom_time, ldst_obrien,'-r', label='Forecast Dst OBrien & McPherron 2000',markersize=3, linewidth=1)
 
     # Label plot with geomagnetic storm levels
-    plt.plot_date([dis.time[0], dis.time[-1]+future_days], [0,0],'--k', alpha=0.3, linewidth=1)
+    plt.plot_date([dis['time'][0], dis['time'][-1]+future_days], [0,0],'--k', alpha=0.3, linewidth=1)
     for hline, linetext in zip([-50, -100, -250], ['moderate', 'intense', 'super-storm']):
-        plt.plot_date([dis.time[0], dis.time[-1]+future_days],
+        plt.plot_date([dis['time'][0], dis['time'][-1]+future_days],
                       [hline,hline],'--k', alpha=0.3, linewidth=1)
         plt.annotate(linetext,xy=(mdates.date2num(timestamp)-text_offset,hline+2),
                      xytext=(mdates.date2num(timestamp)-text_offset,hline+2),color='k', fontsize=10)
@@ -448,9 +448,10 @@ def main():
     tstr_format = "%Y-%m-%d-%H_%M" # "%Y-%m-%d_%H%M" would be better
     logger.info("Getting DSCOVR data...")
     if run_mode == 'normal':
-        [dism,dis] = get_dscovr_data_real()
+        dism = get_dscovr_data_real2()
+        dis = dism.make_hourly_data()
         # Get time of the last entry in the DSCOVR data
-        timenow = dism.time[-1]
+        timenow = dism['time'][-1]
         # Get UTC time now
         timeutc = mdates.date2num(datetime.utcnow())
         timeutcstr = datetime.strftime(datetime.utcnow(), tstr_format)
@@ -537,11 +538,11 @@ def main():
 
     # define time lag from STEREO-A to Earth
     timelag_sta_l1=abs(sta_long_heeq)/(360/sun_syn) #days
-    arrival_time_l1_sta=dis.time[-1]+timelag_sta_l1
+    arrival_time_l1_sta=dis['time'][-1]+timelag_sta_l1
     arrival_time_l1_sta_str=str(mdates.num2date(arrival_time_l1_sta))
 
     #print a few important numbers for current prediction
-    stereostr = return_stereoa_details(pos, dism.time[-1])
+    stereostr = return_stereoa_details(pos, dism['time'][-1])
     resultslog.write('\n')
     resultslog.write(stereostr)
     resultslog.write('\n')
@@ -600,9 +601,9 @@ def main():
     #sta_time=np.arange(dis.time[-1]+1.000/24,sta.time[-1],1.0000/(24))
 
     #count how many hours until end of sta.time 
-    sta_time_array_len=len(np.arange(dis.time[-1]+1.000/24,sta.time[-1],1.0000/(24)))  
+    sta_time_array_len=len(np.arange(dis['time'][-1]+1.000/24,sta.time[-1],1.0000/(24)))  
     #make time array with exact full hours
-    sta_time= mdates.num2date(dis.time[-1])+ timedelta(hours=1) + np.arange(0,sta_time_array_len) * timedelta(hours=1) 
+    sta_time= mdates.num2date(dis['time'][-1])+ timedelta(hours=1) + np.arange(0,sta_time_array_len) * timedelta(hours=1) 
     #convert back to matplotlib time
     sta_time=mdates.date2num(sta_time)
 
@@ -616,13 +617,13 @@ def main():
     #------------------- (2c) COMBINE DSCOVR and time-shifted STEREO-A data -----------------
 
     # make combined array of DSCOVR and STEREO-A data
-    com_time=np.concatenate((dis.time, sta_time))
-    com_btot=interp_nans(np.concatenate((dis.btot, sta_btot)))
-    com_bx=interp_nans(np.concatenate((dis.bxgsm, sta_br)))
-    com_by=interp_nans(np.concatenate((dis.bygsm, sta_bt)))
-    com_bz=interp_nans(np.concatenate((dis.bzgsm, sta_bn)))
-    com_vr=interp_nans(np.concatenate((dis.speed, sta_speedr)))
-    com_den=interp_nans(np.concatenate((dis.den, sta_den)))
+    com_time=np.concatenate((dis['time'], sta_time))
+    com_btot=interp_nans(np.concatenate((dis['bt'], sta_btot)))
+    com_bx=interp_nans(np.concatenate((dis['bx'], sta_br)))
+    com_by=interp_nans(np.concatenate((dis['by'], sta_bt)))
+    com_bz=interp_nans(np.concatenate((dis['bz'], sta_bn)))
+    com_vr=interp_nans(np.concatenate((dis['speed'], sta_speedr)))
+    com_den=interp_nans(np.concatenate((dis['density'], sta_den)))
 
     #---------------------- (2d) calculate Dst for combined data ----------------------------
 

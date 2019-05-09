@@ -67,12 +67,83 @@ logger = logging.getLogger(__name__)
 # -------------------------------- I. CLASSES ------------------------------------------
 # =======================================================================================
 
-class SatData():
-    """Data object containing satellite data."""
+class SatData(np.ndarray):
+    """Data object containing satellite data.
 
-    def __init__(self, darray=None, metadata={}):
-        self.darray = darray
-        self.metadata = metadata
+    See https://docs.scipy.org/doc/numpy-1.15.0/user/basics.subclassing.html for some
+    details on how to make this class.
+
+    Potential problem: numpy.records are slow. Other data types may be faster for
+    heavy computations."""
+
+    default_keys = [('time', np.float64),
+                    ('speed', np.float64), ('density', np.float64), ('temp', np.float64), 
+                    ('bx', np.float64), ('by', np.float64), ('bz', np.float64), ('bt', np.float64),
+                    ('dst', np.float64)]
+
+    empty_header = {'DataSource': None,
+                    'SamplingRate': None,
+                    }
+
+    def __new__(cls, input_dict, satname=None, h=None):
+        """Create new instance of class."""
+
+        # Check input data
+        for k in input_dict.keys():
+            if not k in [x[0] for x in SatData.default_keys]: 
+                raise NotImplementedError("Key {} not implemented in SatData class!".format(k))
+        dt = [x for x in SatData.default_keys if x[0] in input_dict.keys()]
+        data = [input_dict[x[0]] for x in dt]
+        # Create array with relevant dtype
+        ar = np.rec.fromarrays(data, dtype=dt)
+        # Cast this to be our class type
+        obj = np.asarray(ar).view(cls)
+        # Add new attributes to the created instance
+        obj.satname = satname
+        if h == None:               # Inititalise empty header
+            obj.h = SatData.empty_header
+        else:
+            obj.h = h
+        obj.vars = [x[0] for x in dt if x != 'time']
+        # Return the newly created object:
+        return obj
+
+
+    def __array_finalize__(self, obj):
+        # see InfoArray.__array_finalize__ for comments
+        if obj is None: return
+
+        self.satname = getattr(obj, 'satname', None)
+        self.h = getattr(obj, 'h', None)
+
+
+    def interp_nans(self, keys=None):
+        """Linearly interpolates over nans in array."""
+
+        if keys==None:
+            keys = self.vars
+        for k in keys:
+            inds = np.isnan(self[k])
+            self[k][inds] = np.interp(inds.nonzero()[0], (~inds).nonzero()[0], self[k][~inds])
+
+
+    def make_hourly_data(self):
+        """Takes data with minute resolution and interpolates to hour."""
+
+        # Round to nearest hour
+        stime = self['time'][0] - self['time'][0]%(1./24.)
+        # Create new time array
+        time_h = np.array(stime + np.arange(0, len(self['time'])/60) * (1./24.))
+        data_dict = {'time': time_h}
+        for k in self.vars:
+            na = np.interp(time_h, self['time'], self[k])
+            data_dict[k] = na
+
+        # Create new data opject:
+        Data_h = SatData(data_dict, h=copy.copy(self.h))
+        Data_h.h['SamplingRate'] = 1./24.
+
+        return Data_h
 
 
 # =======================================================================================
@@ -379,6 +450,121 @@ def get_dscovr_data_real():
     logger.info('get_dscovr_data_real: DSCOVR data read and interpolated to hour/minute resolution.')
     
     return data_minutes, data_hourly
+
+
+def get_dscovr_data_real2():
+    """
+    Downloads and returns DSCOVR data 
+    data from http://services.swpc.noaa.gov/products/solar-wind/
+    if needed replace with ACE
+    http://legacy-www.swpc.noaa.gov/ftpdir/lists/ace/
+    get 3 or 7 day data
+    url_plasma='http://services.swpc.noaa.gov/products/solar-wind/plasma-3-day.json'
+    url_mag='http://services.swpc.noaa.gov/products/solar-wind/mag-3-day.json'
+    
+    Parameters
+    ==========
+    None
+
+    Returns
+    =======
+    (data_minutes, data_hourly)
+    data_minutes : np.rec.array
+         Array of interpolated minute data with format:
+         dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
+            ('speed','f8'),('den','f8'),('temp','f8')]
+    data_hourly : np.rec.array
+         Array of interpolated hourly data with format:
+         dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
+            ('speed','f8'),('den','f8'),('temp','f8')]
+    """
+    
+    url_plasma='http://services.swpc.noaa.gov/products/solar-wind/plasma-7-day.json'
+    url_mag='http://services.swpc.noaa.gov/products/solar-wind/mag-7-day.json'
+
+    #download, see URLLIB https://docs.python.org/3/howto/urllib2.html
+    with urllib.request.urlopen(url_plasma) as url:
+        pr = json.loads (url.read().decode())
+    with urllib.request.urlopen(url_mag) as url:
+        mr = json.loads(url.read().decode())
+    logger.info('get_dscovr_data_real: DSCOVR plasma data available')
+    logger.info(str(pr[0]))
+    logger.info('get_dscovr_data_real: DSCOVR MAG data available')
+    logger.info(str(mr[0]))
+    #kill first row which stems from the description part
+    pr=pr[1:]
+    mr=mr[1:]
+
+    #define variables 
+    #plasma
+    rptime_str=['']*len(pr)
+    rptime_num=np.zeros(len(pr))
+    rpv=np.zeros(len(pr))
+    rpn=np.zeros(len(pr))
+    rpt=np.zeros(len(pr))
+
+    #mag
+    rbtime_str=['']*len(mr)
+    rbtime_num=np.zeros(len(mr))
+    rbtot=np.zeros(len(mr))
+    rbzgsm=np.zeros(len(mr))
+    rbygsm=np.zeros(len(mr))
+    rbxgsm=np.zeros(len(mr))
+
+    #convert variables to numpy arrays
+    #mag
+    for k in np.arange(0,len(mr),1):
+
+        #handle missing data, they show up as None from the JSON data file
+        if mr[k][6] is None: mr[k][6]=np.nan
+        if mr[k][3] is None: mr[k][3]=np.nan
+        if mr[k][2] is None: mr[k][2]=np.nan
+        if mr[k][1] is None: mr[k][1]=np.nan
+
+        rbtot[k]=float(mr[k][6])
+        rbzgsm[k]=float(mr[k][3])
+        rbygsm[k]=float(mr[k][2])
+        rbxgsm[k]=float(mr[k][1])
+
+        #convert time from string to datenumber
+        rbtime_str[k]=mr[k][0][0:16]
+        rbtime_num[k]=mdates.date2num(sunpy.time.parse_time(rbtime_str[k]))
+    
+    #plasma
+    for k in np.arange(0,len(pr),1):
+        if pr[k][2] is None: pr[k][2]=np.nan
+        rpv[k]=float(pr[k][2]) #speed
+        rptime_str[k]=pr[k][0][0:16]
+        rptime_num[k]=mdates.date2num(sunpy.time.parse_time(rptime_str[k]))
+        if pr[k][1] is None: pr[k][1]=np.nan
+        rpn[k]=float(pr[k][1]) #density
+        if pr[k][3] is None: pr[k][3]=np.nan
+        rpt[k]=float(pr[k][3]) #temperature
+
+    #interpolate to minutes 
+    #rtimes_m=np.arange(rbtime_num[0],rbtime_num[-1],1.0000/(24*60))
+    rtimes_m= round_to_hour(mdates.num2date(rbtime_num[0])) + np.arange(0,len(rbtime_num)) * timedelta(minutes=1) 
+    #convert back to matplotlib time
+    rtimes_m=mdates.date2num(rtimes_m)
+
+    rbtot_m=np.interp(rtimes_m,rbtime_num,rbtot)
+    rbzgsm_m=np.interp(rtimes_m,rbtime_num,rbzgsm)
+    rbygsm_m=np.interp(rtimes_m,rbtime_num,rbygsm)
+    rbxgsm_m=np.interp(rtimes_m,rbtime_num,rbxgsm)
+    rpv_m=np.interp(rtimes_m,rptime_num,rpv)
+    rpn_m=np.interp(rtimes_m,rptime_num,rpn)
+    rpt_m=np.interp(rtimes_m,rptime_num,rpt)
+
+    # Pack into object
+    dscovr_data = SatData({'time': rtimes_m,
+                           'bt': rbtot_m, 'bx': rbxgsm_m, 'by': rbygsm_m, 'bz': rbzgsm_m,
+                           'speed': rpv_m, 'density': rpn_m, 'temp': rpt_m})
+    dscovr_data.h['DataSource'] = "DSCOVR (NOAA)"
+    dscovr_data.h['SamplingRate'] = 1./24./60.
+    
+    logger.info('get_dscovr_data_real: DSCOVR data read completed.')
+    
+    return dscovr_data
 
 
 def get_dscovr_data_all(P_filepath=None, M_filepath=None, starttime=None, endtime=None):
