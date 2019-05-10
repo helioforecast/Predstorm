@@ -98,6 +98,8 @@ class SatData(np.ndarray):
 
     Methods
     =======
+    .cut(starttime=None, endtime=None)
+        Cuts data to within timerange and returns.
     .interp_nans(keys=None)
         Linearly interpolates over nans in data.
     .make_hourly_data()
@@ -109,12 +111,15 @@ class SatData(np.ndarray):
 
     default_keys = [('time', np.float64),
                     ('speed', np.float64), ('density', np.float64), ('temp', np.float64), 
-                    ('bx', np.float64), ('by', np.float64), ('bz', np.float64), ('bt', np.float64),
+                    ('bx', np.float64), ('by', np.float64), ('bz', np.float64), ('btot', np.float64),
+                    ('br', np.float64), ('bt', np.float64), ('bn', np.float64),
                     ('dst', np.float64)]
 
     empty_header = {'DataSource': None,
                     'SamplingRate': None,
-                    'CoordinateSystem': None
+                    'CoordinateSystem': None,
+                    'FileVersion': None,
+                    'Instruments': None
                     }
 
     def __new__(cls, input_dict, source=None, header=None):
@@ -138,7 +143,8 @@ class SatData(np.ndarray):
             obj.h = SatData.empty_header
         else:
             obj.h = header
-        obj.vars = [x[0] for x in dt if x != 'time']
+        obj.vars = [x[0] for x in dt]
+        obj.vars.remove('time')
         # Return the newly created object:
         return obj
 
@@ -152,8 +158,211 @@ class SatData(np.ndarray):
         self.vars = getattr(obj, 'vars', None)
 
 
+    def __str__(self):
+        """Print string describing object."""
+
+        ostr = "Length of data:\t\t{}\n".format(len(self))
+        ostr += "Keys in data:\t\t{}\n".format(self.vars)
+        ostr += "First data point:\t{}\n".format(mdates.num2date(self['time'][0]))
+        ostr += "Last data point:\t{}\n".format(mdates.num2date(self['time'][-1]))
+        ostr += "\n"
+        ostr += "Header information:\n"
+        for j in self.h:
+            if self.h[j] != None: ostr += "    {}:\t{}\n".format(j, self.h[j])
+        ostr += "\n"
+        ostr += "Some variable statistics:\n"
+        ostr += "    VAR\tMEAN\tSTD\n"
+        for k in self.vars:
+            ostr += "    {}\t{:.2f}\t{:.2f}\n".format(k, np.nanmean(self[k]), np.nanstd(self[k]))
+
+        return ostr
+
+
+    def convert_GSE_to_GSM(self):
+        """GSE to GSM conversion
+        main issue: need to get angle psigsm after Hapgood 1992/1997, section 4.3
+        for debugging pdb.set_trace()
+        for testing OMNI DATA use
+        [bxc,byc,bzc]=convert_GSE_to_GSM(bx[90000:90000+20],by[90000:90000+20],bz[90000:90000+20],times1[90000:90000+20])
+
+        CAUTION: Overwrites original data.
+        """
+     
+        mjd=np.zeros(len(self['time']))
+
+        #output variables
+        bxgsm=np.zeros(len(self['time']))
+        bygsm=np.zeros(len(self['time']))
+        bzgsm=np.zeros(len(self['time']))
+
+        for i in np.arange(0,len(self['time'])):
+            #get all dates right
+            jd=sunpy.time.julian_day(sunpy.time.break_time(mdates.num2date(self['time'][i])))
+            mjd[i]=float(int(jd-2400000.5)) #use modified julian date    
+            T00=(mjd[i]-51544.5)/36525.0
+            dobj=mdates.num2date(self['time'][i])
+            UT=dobj.hour + dobj.minute / 60. + dobj.second / 3600. #time in UT in hours    
+            #define position of geomagnetic pole in GEO coordinates
+            pgeo=78.8+4.283*((mjd[i]-46066)/365.25)*0.01 #in degrees
+            lgeo=289.1-1.413*((mjd[i]-46066)/365.25)*0.01 #in degrees
+            #GEO vector
+            Qg=[np.cos(pgeo*np.pi/180)*np.cos(lgeo*np.pi/180), np.cos(pgeo*np.pi/180)*np.sin(lgeo*np.pi/180), np.sin(pgeo*np.pi/180)]
+            #now move to equation at the end of the section, which goes back to equations 2 and 4:
+            #CREATE T1, T00, UT is known from above
+            zeta=(100.461+36000.770*T00+15.04107*UT)*np.pi/180
+            ################### theta und z
+            T1=np.matrix([[np.cos(zeta), np.sin(zeta),  0], [-np.sin(zeta) , np.cos(zeta) , 0], [0,  0,  1]]) #angle for transpose
+            LAMBDA=280.460+36000.772*T00+0.04107*UT
+            M=357.528+35999.050*T00+0.04107*UT
+            lt2=(LAMBDA+(1.915-0.0048*T00)*np.sin(M*np.pi/180)+0.020*np.sin(2*M*np.pi/180))*np.pi/180
+            #CREATE T2, LAMBDA, M, lt2 known from above
+            ##################### lamdbda und Z
+            t2z=np.matrix([[np.cos(lt2), np.sin(lt2),  0], [-np.sin(lt2) , np.cos(lt2) , 0], [0,  0,  1]])
+            et2=(23.439-0.013*T00)*np.pi/180
+            ###################### epsilon und x
+            t2x=np.matrix([[1,0,0],[0,np.cos(et2), np.sin(et2)], [0, -np.sin(et2), np.cos(et2)]])
+            T2=np.dot(t2z,t2x)  #equation 4 in Hapgood 1992
+            #matrix multiplications   
+            T2T1t=np.dot(T2,np.matrix.transpose(T1))
+            ################
+            Qe=np.dot(T2T1t,Qg) #Q=T2*T1^-1*Qq
+            psigsm=np.arctan(Qe.item(1)/Qe.item(2)) #arctan(ye/ze) in between -pi/2 to +pi/2
+            
+            T3=np.matrix([[1,0,0],[0,np.cos(-psigsm), np.sin(-psigsm)], [0, -np.sin(-psigsm), np.cos(-psigsm)]])
+            GSE=np.matrix([[self['bx'][i]],[self['by'][i]],[self['bz'][i]]]) 
+            GSM=np.dot(T3,GSE)   #equation 6 in Hapgood
+            bxgsm[i]=GSM.item(0)
+            bygsm[i]=GSM.item(1)
+            bzgsm[i]=GSM.item(2)
+        #-------------- loop over
+
+        self['bx'] = bxgsm
+        self['by'] = bygsm
+        self['bz'] = bzgsm
+        self.h['CoordinateSystem'].replace('GSE', 'GSM')
+
+        return self
+
+
+    def convert_RTN_to_GSE(self, pos_stereo_heeq, pos_time_num):
+        """Converts RTN to GSE coordinates.
+
+        function call [dbr,dbt,dbn]=convert_RTN_to_GSE_sta_l1(sta_br7,sta_bt7,sta_bn7,sta_time7, pos.sta)
+
+        pdb.set_trace()  for debugging
+        convert STEREO A magnetic field from RTN to GSE
+        for prediction of structures seen at STEREO-A later at Earth L1
+        so we do not include a rotation of the field to the Earth position
+        """
+
+        #output variables
+        heeq_bx=np.zeros(len(self['time']))
+        heeq_by=np.zeros(len(self['time']))
+        heeq_bz=np.zeros(len(self['time']))
+        
+        bxgse=np.zeros(len(self['time']))
+        bygse=np.zeros(len(self['time']))
+        bzgse=np.zeros(len(self['time']))
+        
+         
+        ########## first RTN to HEEQ 
+        
+        #go through all data points
+        for i in np.arange(0,len(self['time'])):
+            time_ind_pos=(np.where(pos_time_num < self['time'][i])[-1][-1])
+            #make RTN vectors, HEEQ vectors, and project 
+            #r, long, lat in HEEQ to x y z
+            [xa,ya,za]=sphere2cart(pos_stereo_heeq[0][time_ind_pos],pos_stereo_heeq[1][time_ind_pos],pos_stereo_heeq[2][time_ind_pos])
+            
+
+            #HEEQ vectors
+            X_heeq=[1,0,0]
+            Y_heeq=[0,1,0]
+            Z_heeq=[0,0,1]
+
+            #normalized X RTN vector
+            Xrtn=[xa, ya,za]/np.linalg.norm([xa,ya,za])
+            #solar rotation axis at 0, 0, 1 in HEEQ
+            Yrtn=np.cross(Z_heeq,Xrtn)/np.linalg.norm(np.cross(Z_heeq,Xrtn))
+            Zrtn=np.cross(Xrtn, Yrtn)/np.linalg.norm(np.cross(Xrtn, Yrtn))
+            
+            #project into new system
+            heeq_bx[i]=np.dot(np.dot(self['br'][i],Xrtn)+np.dot(self['bt'][i],Yrtn)+np.dot(self['bn'][i],Zrtn),X_heeq)
+            heeq_by[i]=np.dot(np.dot(self['br'][i],Xrtn)+np.dot(self['bt'][i],Yrtn)+np.dot(self['bn'][i],Zrtn),Y_heeq)
+            heeq_bz[i]=np.dot(np.dot(self['br'][i],Xrtn)+np.dot(self['bt'][i],Yrtn)+np.dot(self['bn'][i],Zrtn),Z_heeq)
+
+        #get modified Julian Date for conversion as in Hapgood 1992
+        jd=np.zeros(len(self['time']))
+        mjd=np.zeros(len(self['time']))
+        
+        #then HEEQ to GSM
+        #-------------- loop go through each date
+        for i in np.arange(0,len(self['time'])):
+            sunpy_time=sunpy.time.break_time(mdates.num2date(self['time'][i]))
+            jd[i]=sunpy.time.julian_day(sunpy_time)
+            mjd[i]=float(int(jd[i]-2400000.5)) #use modified julian date    
+            #then lambda_sun
+            T00=(mjd[i]-51544.5)/36525.0
+            dobj=mdates.num2date(self['time'][i])
+            UT=dobj.hour + dobj.minute / 60. + dobj.second / 3600. #time in UT in hours   
+            LAMBDA=280.460+36000.772*T00+0.04107*UT
+            M=357.528+35999.050*T00+0.04107*UT
+            #lt2 is lambdasun in Hapgood, equation 5, here in rad
+            lt2=(LAMBDA+(1.915-0.0048*T00)*np.sin(M*np.pi/180)+0.020*np.sin(2*M*np.pi/180))*np.pi/180
+            #note that some of these equations are repeated later for the GSE to GSM conversion
+            S1=np.matrix([[np.cos(lt2+np.pi), np.sin(lt2+np.pi),  0], [-np.sin(lt2+np.pi) , np.cos(lt2+np.pi) , 0], [0,  0,  1]])
+            #create S2 matrix with angles with reversed sign for transformation HEEQ to HAE
+            omega_node=(73.6667+0.013958*((mjd[i]+3242)/365.25))*np.pi/180 #in rad
+            S2_omega=np.matrix([[np.cos(-omega_node), np.sin(-omega_node),  0], [-np.sin(-omega_node) , np.cos(-omega_node) , 0], [0,  0,  1]])
+            inclination_ecl=7.25*np.pi/180
+            S2_incl=np.matrix([[1,0,0],[0,np.cos(-inclination_ecl), np.sin(-inclination_ecl)], [0, -np.sin(-inclination_ecl), np.cos(-inclination_ecl)]])
+            #calculate theta
+            theta_node=np.arctan(np.cos(inclination_ecl)*np.tan(lt2-omega_node)) 
+
+            #quadrant of theta must be opposite lt2 - omega_node Hapgood 1992 end of section 5   
+            #get lambda-omega angle in degree mod 360   
+            lambda_omega_deg=np.mod(lt2-omega_node,2*np.pi)*180/np.pi
+            #get theta_node in deg
+            theta_node_deg=theta_node*180/np.pi
+            #if in same quadrant, then theta_node = theta_node +pi   
+            if abs(lambda_omega_deg-theta_node_deg) < 180: theta_node=theta_node+np.pi
+            S2_theta=np.matrix([[np.cos(-theta_node), np.sin(-theta_node),  0], [-np.sin(-theta_node) , np.cos(-theta_node) , 0], [0,  0,  1]])
+
+            #make S2 matrix
+            S2=np.dot(np.dot(S2_omega,S2_incl),S2_theta)
+            #this is the matrix S2^-1 x S1
+            HEEQ_to_HEE_matrix=np.dot(S1, S2)
+            #convert HEEQ components to HEE
+            HEEQ=np.matrix([[heeq_bx[i]],[heeq_by[i]],[heeq_bz[i]]]) 
+            HEE=np.dot(HEEQ_to_HEE_matrix,HEEQ)
+            #change of sign HEE X / Y to GSE is needed
+            bxgse[i]=-HEE.item(0)
+            bygse[i]=-HEE.item(1)
+            bzgse[i]=HEE.item(2)
+         
+        #-------------- loop over
+        self['bx'] = bxgse
+        self['by'] = bygse
+        self['bz'] = bzgse
+        self.h['CoordinateSystem'] += '-GSE'
+
+        return self
+
+
     def cut(self, starttime=None, endtime=None):
-        """Cuts array down to range defined by starttime and endtime.
+        """Cuts array down to range defined by starttime and endtime. One limit
+        can be provided or both.
+
+        Parameters
+        ==========
+        starttime : datetime.datetime object
+            Start time (>=) of new array.
+        endtime : datetime.datetime object
+            End time (<) of new array.
+
+        Returns
+        =======
+        self : obj within new time range
         """
 
         if starttime != None and endtime == None:
@@ -162,6 +371,8 @@ class SatData(np.ndarray):
             return self[np.where(self['time'] < mdates.date2num(endtime))]
         elif starttime != None and endtime != None:
             return self[np.where((self['time'] >= mdates.date2num(starttime)) & (self['time'] < mdates.date2num(endtime)))]
+        else:
+            return self
 
 
     def interp_nans(self, keys=None):
@@ -620,7 +831,7 @@ def get_dscovr_data_real2():
 
     # Pack into object
     dscovr_data = SatData({'time': rtimes_m,
-                           'bt': rbtot_m, 'bx': rbxgsm_m, 'by': rbygsm_m, 'bz': rbzgsm_m,
+                           'btot': rbtot_m, 'bx': rbxgsm_m, 'by': rbygsm_m, 'bz': rbzgsm_m,
                            'speed': rpv_m, 'density': rpn_m, 'temp': rpt_m},
                            source='DSCOVR')
     dscovr_data.h['DataSource'] = "DSCOVR (NOAA)"
@@ -776,7 +987,7 @@ def get_dscovr_data_all(P_filepath=None, M_filepath=None, starttime=None, endtim
     # Pack into arrays:
     # --------------------
     dscovr_data = SatData({'time': dm_time_m,
-                           'bt': dm_bt_m, 'bx': dm_bx_m, 'by': dm_by_m, 'bz': dm_bz_m,
+                           'btot': dm_bt_m, 'bx': dm_bx_m, 'by': dm_by_m, 'bz': dm_bz_m,
                            'speed': dp_v_m, 'density': dp_p_m, 'temp': dp_t_m},
                            source='DSCOVR')
     dscovr_data.h['DataSource'] = "DSCOVR (NOAA archives)"
@@ -1144,7 +1355,8 @@ def read_stereoa_data_beacon(filepath="sta_beacon/", starttime=None, endtime=Non
     
         # PLASMA
         # ------
-        sta_pla_file = os.path.join(filepath, 'STA_LB_PLASTIC_'+date+'_V12.cdf')
+        pla_version = 'V12'
+        sta_pla_file = os.path.join(filepath, 'STA_LB_PLASTIC_'+date+'_'+pla_version+'.cdf')
         if os.path.exists(sta_pla_file):
             sta_file =  cdflib.CDF(sta_pla_file)
         else:
@@ -1169,7 +1381,8 @@ def read_stereoa_data_beacon(filepath="sta_beacon/", starttime=None, endtime=Non
         
         # MAGNETIC FIELD
         # --------------
-        sta_mag_file = os.path.join(filepath, 'STA_LB_IMPACT_'+date+'_V02.cdf' )
+        mag_version = 'V02'
+        sta_mag_file = os.path.join(filepath, 'STA_LB_IMPACT_'+date+'_'+mag_version+'.cdf' )
         if os.path.exists(sta_mag_file):
             sta_filem =  cdflib.CDF(sta_mag_file)
         else:
@@ -1200,28 +1413,27 @@ def read_stereoa_data_beacon(filepath="sta_beacon/", starttime=None, endtime=Non
     sta_bn_m=np.interp(sta_time_m,sta_btime,sta_bn)
     sta_vr_m=np.interp(sta_time_m,sta_ptime,sta_vr)
     sta_den_m=np.interp(sta_time_m,sta_ptime,sta_den)
-
-    # Interpolate to hours:
-    sta_time_h=np.arange(np.ceil(sta_btime)[0],sta_btime[-1],1.0000/(24))
-    sta_btot_h=np.interp(sta_time_h,sta_btime,sta_btot)
-    sta_br_h=np.interp(sta_time_h,sta_btime,sta_br)
-    sta_bt_h=np.interp(sta_time_h,sta_btime,sta_bt)
-    sta_bn_h=np.interp(sta_time_h,sta_btime,sta_bn)
-    sta_vr_h=np.interp(sta_time_h,sta_ptime,sta_vr)
-    sta_den_h=np.interp(sta_time_h,sta_ptime,sta_den)
-
-    # Make recarrays:
-    data_minutes=np.rec.array([sta_time_m,sta_btot_m,sta_br_m,sta_bt_m,sta_bn_m,sta_vr_m,sta_den_m], \
-    dtype=[('time','f8'),('btot','f8'),('br','f8'),('bt','f8'),('bn','f8'),\
-            ('speedr','f8'),('den','f8')])
     
-    data_hourly=np.rec.array([sta_time_h,sta_btot_h,sta_br_h,sta_bt_h,sta_bn_h,sta_vr_h,sta_den_h], \
-    dtype=[('time','f8'),('btot','f8'),('br','f8'),('bt','f8'),('bn','f8'),\
-            ('speedr','f8'),('den','f8')])
+    # Pack into arrays:
+    # --------------------
+    empty = np.zeros(len(sta_time_m))
+    stereo_data = SatData({'time': sta_time_m,
+                           'btot': sta_btot_m, 'br': sta_br_m, 'bt': sta_bt_m, 'bn': sta_bn_m,
+                           # Create empty keys for future coordinate conversion:
+                           # (Not the most elegant solution but it'll do for now)
+                           'bx': empty, 'by': empty, 'bz': empty,
+                           'speed': sta_vr_m, 'density': sta_den_m},
+                           source='STEREO-A')
+    stereo_data.h['DataSource'] = "STEREO-A (beacon)"
+    stereo_data.h['SamplingRate'] = 1./24./60.
+    stereo_data.h['CoordinateSystem'] = 'RTN'
+    stereo_data.h['Instruments'] = ['PLASTIC', 'IMPACT']
+    stereo_data.h['FileVersion'] = {'PLASTIC': pla_version, 'IMPACT': mag_version}
+    stereo_data = stereo_data.cut(starttime=starttime, endtime=endtime)
 
     logger.info('STEREO-A (RTN) beacon data interpolated to hour/minute resolution.')
     
-    return data_minutes, data_hourly
+    return stereo_data
 
 
 # ***************************************************************************************
