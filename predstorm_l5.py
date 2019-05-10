@@ -131,7 +131,7 @@ from predstorm_l5_input import *
 #--------------------------------- FUNCTIONS --------------------------------------------
 #========================================================================================
 
-def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, dst_label='Dst Temerin & Li 2002', past_days=3.5, future_days=7., lw=1, fs=11, ms=5, figsize=(14,12), verification_mode=False, timestamp=None):
+def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPRED_data, dst_label='Dst Temerin & Li 2002', past_days=3.5, future_days=7., lw=1, fs=11, ms=5, figsize=(14,12), verification_mode=False, timestamp=None):
     """
     Plots solar wind variables, past from DSCOVR and future/predicted from STEREO-A.
     Total B-field and Bz (top), solar wind speed (second), particle density (third)
@@ -143,8 +143,10 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, dst_l
         DSCOVR data in different time resolutions.
     STEREOA_data : list[minute data, hourly data]
         STEREO-A data in different time resolutions.
-    Dst : list(dst_time, dst, dst_pred)
-        Predicted Dst
+    DST_data : predstorm_module.SatData
+        Kyoto Dst
+    DSTPRED_data : list(com_time, dst_pred)
+        Dst predicted by PREDSTORM.
     dst_method : str (default='temerin_li')
         Descriptor for Dst method being plotted.
     past_days : float (default=3.5)
@@ -180,7 +182,8 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, dst_l
     # Set data objects:
     stam, sta = STEREOA_data
     dism, dis = DSCOVR_data
-    dst_time, dst, com_time, dst_pred = DST_data
+    dst = DST_data
+    com_time, dst_pred = DSTPRED_data
 
     plotstart = dism['time'][-1] - past_days
     plotend = dis['time'][-1] + future_days
@@ -283,12 +286,12 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, dst_l
     axes.append(ax4)
 
     # Observed Dst Kyoto (past):
-    plt.plot_date(dst_time, dst,'ko', label='Dst observed',markersize=4)
+    plt.plot_date(dst['time'], dst['dst'],'ko', label='Dst observed',markersize=4)
     plt.ylabel('Dst [nT]', fontsize=fs+2)
-    if np.nanmin(dst) > -100:   # Low activity (normal)
-        plt.ylim([-100,np.nanmax(dst)+20])
+    if np.nanmin(dst['dst']) > -100:   # Low activity (normal)
+        plt.ylim([-100,np.nanmax(dst['dst'])+20])
     else:                       # High activity
-        plt.ylim([np.nanmin(dst)-50,np.nanmax(dst)+20])
+        plt.ylim([np.nanmin(dst['dst'])-50,np.nanmax(dst['dst'])+20])
 
     if not verification_mode:
         plt.plot_date(com_time, dst_pred,'-r', label=dst_label,markersize=3, linewidth=1)
@@ -460,12 +463,14 @@ def main():
         timeutcstr = datetime.strftime(historic_date, tstr_format)
         timenow = timeutc
         if (datetime.utcnow() - historic_date).days < (7.-plot_past_days):
-            [dism,dis] = get_dscovr_data_real()
+            dism = get_dscovr_data_real()
+            dis = dism.make_hourly_data()
         else:
-            [dism,dis] = get_dscovr_data_all(P_filepath="data/dscovrarchive/*",
-                                             M_filepath="data/dscovrarchive/*",
-                                             starttime=historic_date-timedelta(days=plot_past_days+1),
-                                             endtime=historic_date)
+            dism = get_dscovr_data_all(P_filepath="data/dscovrarchive/*",
+                                       M_filepath="data/dscovrarchive/*",
+                                       starttime=historic_date-timedelta(days=plot_past_days+1),
+                                       endtime=historic_date)
+            dis = dism.make_hourly_data()
     elif run_mode == 'verification':
         print("Verification mode coming soon.")
 
@@ -514,11 +519,11 @@ def main():
 
     logger.info("Getting Kyoto Dst data...")
     if run_mode == 'normal':
-        [dst_time,dst] = get_noaa_dst()
+        dst = get_noaa_dst()
     elif run_mode == 'historic':
-        [dst_time,dst] = get_past_dst(filepath="data/dstarchive/WWW_dstae00016185.dat",
-                                      starttime=mdates.num2date(timenow)-timedelta(days=plot_past_days+1),
-                                      endtime=mdates.num2date(timenow))
+        dst = get_past_dst(filepath="data/dstarchive/WWW_dstae00016185.dat",
+                           starttime=mdates.num2date(timenow)-timedelta(days=plot_past_days+1),
+                           endtime=mdates.num2date(timenow))
 
     #========================== (2) PREDICTION CALCULATIONS ==================================
 
@@ -659,7 +664,7 @@ def main():
     # ********************************************************************
     logger.info("Creating output plot...")
     plot_solarwind_and_dst_prediction([dism, dis], [stam, sta], 
-                                      [dst_time, dst, com_time, dst_pred],
+                                      dst, [com_time, dst_pred],
                                       past_days=plot_past_days,
                                       future_days=plot_future_days,
                                       dst_label=dst_label,

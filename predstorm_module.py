@@ -68,13 +68,44 @@ logger = logging.getLogger(__name__)
 # =======================================================================================
 
 class SatData(np.ndarray):
-    """Data object containing satellite data.
+    """Data object containing satellite data, subclass of np.ndarray.
 
     See https://docs.scipy.org/doc/numpy-1.15.0/user/basics.subclassing.html for some
     details on how to make this class.
 
     Potential problem: numpy.records are slow. Other data types may be faster for
-    heavy computations."""
+    heavy computations.
+
+    Init Parameters
+    ===============
+    --> SatData(input_dict, source=None, header=None)
+    input_dict : dict(key: dataarray)
+        Dict containing the input data in the form of key: data (in array or list)
+        Example: {'time': timearray, 'bx': bxarray}. The available keys for data input
+        can be accessed in SatData.default_keys.
+    header : dict(headerkey: value)
+        Dict containing metadata on the data array provided. Useful data headers are
+        provided in SatData.empty_header but this can be expanded as needed.
+    source : str
+        Provide quick-access name of satellite/data type for source.
+
+    Attributes
+    ==========
+    .h : dict
+        Dict of metadata as defined by input header.
+    .source : str
+        String with data source name.
+
+    Methods
+    =======
+    .interp_nans(keys=None)
+        Linearly interpolates over nans in data.
+    .make_hourly_data()
+        Takes minute resolution data and interpolates to hourly data points.
+
+    Examples
+    ========
+    """
 
     default_keys = [('time', np.float64),
                     ('speed', np.float64), ('density', np.float64), ('temp', np.float64), 
@@ -83,15 +114,18 @@ class SatData(np.ndarray):
 
     empty_header = {'DataSource': None,
                     'SamplingRate': None,
+                    'CoordinateSystem': None
                     }
 
-    def __new__(cls, input_dict, satname=None, h=None):
+    def __new__(cls, input_dict, source=None, header=None):
         """Create new instance of class."""
 
         # Check input data
         for k in input_dict.keys():
             if not k in [x[0] for x in SatData.default_keys]: 
                 raise NotImplementedError("Key {} not implemented in SatData class!".format(k))
+        if 'time' not in input_dict.keys():
+            raise Exception("Time variable is required for SatData object!")
         dt = [x for x in SatData.default_keys if x[0] in input_dict.keys()]
         data = [input_dict[x[0]] for x in dt]
         # Create array with relevant dtype
@@ -99,26 +133,45 @@ class SatData(np.ndarray):
         # Cast this to be our class type
         obj = np.asarray(ar).view(cls)
         # Add new attributes to the created instance
-        obj.satname = satname
-        if h == None:               # Inititalise empty header
+        obj.source = source
+        if header == None:               # Inititalise empty header
             obj.h = SatData.empty_header
         else:
-            obj.h = h
+            obj.h = header
         obj.vars = [x[0] for x in dt if x != 'time']
         # Return the newly created object:
         return obj
 
 
     def __array_finalize__(self, obj):
-        # see InfoArray.__array_finalize__ for comments
+        """For proper array behaviour, all attributes must be defined here."""
         if obj is None: return
 
-        self.satname = getattr(obj, 'satname', None)
+        self.source = getattr(obj, 'source', None)
         self.h = getattr(obj, 'h', None)
+        self.vars = getattr(obj, 'vars', None)
+
+
+    def cut(self, starttime=None, endtime=None):
+        """Cuts array down to range defined by starttime and endtime.
+        """
+
+        if starttime != None and endtime == None:
+            return self[np.where(self['time'] >= mdates.date2num(starttime))]
+        elif starttime == None and endtime != None:
+            return self[np.where(self['time'] < mdates.date2num(endtime))]
+        elif starttime != None and endtime != None:
+            return self[np.where((self['time'] >= mdates.date2num(starttime)) & (self['time'] < mdates.date2num(endtime)))]
 
 
     def interp_nans(self, keys=None):
-        """Linearly interpolates over nans in array."""
+        """Linearly interpolates over nans in array.
+
+        Parameters
+        ==========
+        keys : list (default=None)
+            Provide list of keys (str) to be interpolated over, otherwise all.
+        """
 
         if keys==None:
             keys = self.vars
@@ -128,19 +181,29 @@ class SatData(np.ndarray):
 
 
     def make_hourly_data(self):
-        """Takes data with minute resolution and interpolates to hour."""
+        """Takes data with minute resolution and interpolates to hour.
+
+        Parameters
+        ==========
+        None
+
+        Returns
+        =======
+        Data_h : new SatData obj
+            New array with hourly interpolated data. Header is copied from original.
+        """
 
         # Round to nearest hour
         stime = self['time'][0] - self['time'][0]%(1./24.)
         # Create new time array
-        time_h = np.array(stime + np.arange(0, len(self['time'])/60) * (1./24.))
+        time_h = np.array(stime + np.arange(0, len(self['time'])/60.) * (1./24.))
         data_dict = {'time': time_h}
         for k in self.vars:
             na = np.interp(time_h, self['time'], self[k])
             data_dict[k] = na
 
         # Create new data opject:
-        Data_h = SatData(data_dict, h=copy.copy(self.h))
+        Data_h = SatData(data_dict, header=copy.copy(self.h))
         Data_h.h['SamplingRate'] = 1./24.
 
         return Data_h
@@ -558,9 +621,11 @@ def get_dscovr_data_real2():
     # Pack into object
     dscovr_data = SatData({'time': rtimes_m,
                            'bt': rbtot_m, 'bx': rbxgsm_m, 'by': rbygsm_m, 'bz': rbzgsm_m,
-                           'speed': rpv_m, 'density': rpn_m, 'temp': rpt_m})
+                           'speed': rpv_m, 'density': rpn_m, 'temp': rpt_m},
+                           source='DSCOVR')
     dscovr_data.h['DataSource'] = "DSCOVR (NOAA)"
     dscovr_data.h['SamplingRate'] = 1./24./60.
+    dscovr_data.h['CoordinateSystem'] = 'GSM'
     
     logger.info('get_dscovr_data_real: DSCOVR data read completed.')
     
@@ -680,14 +745,6 @@ def get_dscovr_data_all(P_filepath=None, M_filepath=None, starttime=None, endtim
         dp_t_m = np.hstack((dp_t_m, temp))
         dp_time_m = np.hstack((dp_time_m, time))
 
-        # Interpolated hourly data:
-        dtime_h = round_to_hour(mdates.num2date(time[0])) + np.arange(0,len(time)/(60)) * timedelta(hours=1) 
-        time_h = mdates.date2num(dtime_h)
-        dp_v_h = np.hstack((dp_v_h, np.interp(time_h, time, speed)))
-        dp_p_h = np.hstack((dp_p_h, np.interp(time_h, time, density)))
-        dp_t_h = np.hstack((dp_t_h, np.interp(time_h, time, temp)))
-        dp_time_h = np.hstack((dp_time_h, time_h))
-
     # Magnetic data:
     # --------------
     dm_bx_m, dm_by_m, dm_bz_m, dm_bt_m  = np.array([]), np.array([]), np.array([]), np.array([])
@@ -716,34 +773,20 @@ def get_dscovr_data_all(P_filepath=None, M_filepath=None, starttime=None, endtim
         dm_bt_m = np.hstack((dm_bt_m, bt))
         dm_time_m = np.hstack((dm_time_m, time))
 
-        # Interpolated hourly data:
-        dtime_h = round_to_hour(mdates.num2date(time[0])) + np.arange(0,len(time)/(60)) * timedelta(hours=1) 
-        time_h = mdates.date2num(dtime_h)
-        dm_bx_h = np.hstack((dm_bx_h, np.interp(time_h, time, bx)))
-        dm_by_h = np.hstack((dm_by_h, np.interp(time_h, time, by)))
-        dm_bz_h = np.hstack((dm_bz_h, np.interp(time_h, time, bz)))
-        dm_bt_h = np.hstack((dm_bt_h, np.interp(time_h, time, bt)))
-        dm_time_h = np.hstack((dm_time_h, time_h))
-
-    # Pack into recarrays:
+    # Pack into arrays:
     # --------------------
-    data_minutes=np.rec.array([dm_time_m, dm_bt_m, dm_bx_m, dm_by_m, dm_bz_m, dp_v_m, dp_p_m, dp_t_m], \
-    dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
-           ('speed','f8'),('den','f8'),('temp','f8')])
-
-    data_hourly=np.rec.array([dm_time_h, dm_bt_h, dm_bx_h, dm_by_h, dm_bz_h, dp_v_h, dp_p_h, dp_t_h], \
-    dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
-           ('speed','f8'),('den','f8'),('temp','f8')])
-
-    # Cut to time frame:
-    data_minutes = data_minutes[np.where(data_minutes['time']>=mdates.date2num(starttime))]
-    data_minutes = data_minutes[np.where(data_minutes['time']<mdates.date2num(endtime))]
-    data_hourly = data_hourly[np.where(data_hourly['time']>=mdates.date2num(starttime))]
-    data_hourly = data_hourly[np.where(data_hourly['time']<mdates.date2num(endtime))]
+    dscovr_data = SatData({'time': dm_time_m,
+                           'bt': dm_bt_m, 'bx': dm_bx_m, 'by': dm_by_m, 'bz': dm_bz_m,
+                           'speed': dp_v_m, 'density': dp_p_m, 'temp': dp_t_m},
+                           source='DSCOVR')
+    dscovr_data.h['DataSource'] = "DSCOVR (NOAA archives)"
+    dscovr_data.h['SamplingRate'] = 1./24./60.
+    dscovr_data.h['CoordinateSystem'] = 'GSM'
+    dscovr_data = dscovr_data.cut(starttime=starttime, endtime=endtime)
     
-    logger.info('get_dscovr_data_all: DSCOVR data read and interpolated to hour/minute resolution.')
+    logger.info('get_dscovr_data_all: DSCOVR data successfully read.')
             
-    return data_minutes, data_hourly
+    return dscovr_data
 
 
 def get_noaa_dst():
@@ -756,8 +799,8 @@ def get_noaa_dst():
 
     Returns
     =======
-    [dst_time, dst] : list(np.array, np.array)
-        List containing arrays of time and dst values.
+    dst : SatData object
+        Object containing arrays of time and dst values.
     """
 
     url_dst='http://services.swpc.noaa.gov/products/kyoto-dst.json'
@@ -780,7 +823,12 @@ def get_noaa_dst():
         rdst_time[k]=mdates.date2num(sunpy.time.parse_time(rdst_time_str[k]))
     logger.info("NOAA real-time Dst data loaded.")
 
-    return rdst_time, rdst
+    dst_data = SatData({'time': rdst_time, 'dst': rdst},
+                       source='KyotoDst')
+    dst_data.h['DataSource'] = "Kyoto Dst (NOAA)"
+    dst_data.h['SamplingRate'] = 1./24.
+
+    return dst_data
 
 
 def get_past_dst(filepath=None, starttime=None, endtime=None):
@@ -799,8 +847,8 @@ def get_past_dst(filepath=None, starttime=None, endtime=None):
 
     Returns
     =======
-    [dst_time, dst] : list(np.array, np.array)
-        List containing arrays of time and dst values.
+    dst : SatData object
+        Object containing arrays of time and dst values.
     """
 
     f = open(filepath, 'r')
@@ -811,17 +859,13 @@ def get_past_dst(filepath=None, starttime=None, endtime=None):
     dst_time = np.array([mdates.date2num(datetime.strptime(d[0]+d[1], "%Y-%m-%d%H:%M:%S.%f")) for d in datastr])
     dst = np.array([float(d[-1]) for d in datastr])
 
-    # Cut to time frame:
-    if starttime != None:
-        icuts = np.where(dst_time >= mdates.date2num(starttime))
-        dst_time = dst_time[icuts]
-        dst = dst[icuts]
-    if endtime != None:
-        icute = np.where(dst_time < mdates.date2num(endtime))
-        dst_time = dst_time[icute]
-        dst = dst[icute]
+    dst_data = SatData({'time': dst_time, 'dst': dst},
+                       source='KyotoDst')
+    dst_data.h['DataSource'] = "Kyoto Dst (Kyoto WDC)"
+    dst_data.h['SamplingRate'] = 1./24.
+    dst_data = dst_data.cut(starttime=starttime, endtime=endtime)
     
-    return dst_time, dst
+    return dst_data
 
 
 def get_omni_data():
