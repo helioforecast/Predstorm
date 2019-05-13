@@ -213,7 +213,7 @@ print('load real time Dst from Kyoto via NOAA')
 
 
 #get NOAA Dst for comparison
-[dst_time,dst]=get_noaa_dst()
+dst=get_noaa_dst()
 print('Loaded Kyoto Dst from NOAA for last 7 days.')
 
 #make Dst index from solar wind data
@@ -310,7 +310,7 @@ plt.fill_between(rtimes7+1/24, rdst_temerin_li-error, rdst_temerin_li+error, alp
 #for AER
 #plt.plot_date(rtimes7, rdst7,'ko', label='Dst observed',markersize=4)
 #for Kyoto
-plt.plot_date(dst_time, dst,'ko', label='Dst observed',markersize=4)
+plt.plot_date(dst['time'], dst['dst'],'ko', label='Dst observed',markersize=4)
 
 
 plt.ylabel('Dst [nT]', fontsize=fsize+2)
@@ -894,7 +894,7 @@ plt.fill_between(timesdst+1/24, pdst_temerin_li-error, pdst_temerin_li+error, al
 #for AER
 #plt.plot_date(rtimes7, rdst7,'ko', label='Dst observed',markersize=4)
 #for Kyoto
-plt.plot_date(dst_time, dst,'ko', label='Dst observed',markersize=4)
+plt.plot_date(dst['time'], dst['dst'],'ko', label='Dst observed',markersize=4)
 
 
 plt.ylabel('Dst [nT]')

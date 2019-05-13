@@ -1353,6 +1353,8 @@ def read_stereoa_data_beacon(filepath="sta_beacon/", starttime=None, endtime=Non
         endtime = starttime + timedelta(days=ndays)
     elif starttime == None and endtime != None:
         starttime = endtime - timedelta(days=ndays)
+    else:
+        ndays = (endtime-starttime).days
 
     readdates = [datetime.strftime(starttime+timedelta(days=n), "%Y%m%d") for n in range(0, ndays)]
 
