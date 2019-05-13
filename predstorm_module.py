@@ -93,6 +93,8 @@ class SatData(np.ndarray):
     ==========
     .h : dict
         Dict of metadata as defined by input header.
+    .vars : list
+        List of variables stored in object.
     .source : str
         String with data source name.
 
@@ -140,7 +142,7 @@ class SatData(np.ndarray):
         # Add new attributes to the created instance
         obj.source = source
         if header == None:               # Inititalise empty header
-            obj.h = SatData.empty_header
+            obj.h = copy.copy(SatData.empty_header)
         else:
             obj.h = header
         obj.vars = [x[0] for x in dt]
@@ -150,7 +152,8 @@ class SatData(np.ndarray):
 
 
     def __array_finalize__(self, obj):
-        """For proper array behaviour, all attributes must be defined here."""
+        """For proper array behaviour, all attributes must be defined here.
+        If not, they will vanish during normal array operations."""
         if obj is None: return
 
         self.source = getattr(obj, 'source', None)
@@ -389,6 +392,7 @@ class SatData(np.ndarray):
         for k in keys:
             inds = np.isnan(self[k])
             self[k][inds] = np.interp(inds.nonzero()[0], (~inds).nonzero()[0], self[k][~inds])
+        return self
 
 
     def make_hourly_data(self):
@@ -1342,12 +1346,15 @@ def read_stereoa_data_beacon(filepath="sta_beacon/", starttime=None, endtime=Non
     sta_bt=np.zeros(0)  
     sta_bn=np.zeros(0)
 
-    if starttime == None and endtime == None:
-        startdate = datetime.utcnow() - timedelta(days=ndays-1)
-    elif starttime != None:
-        startdate = starttime - timedelta(days=ndays-1)
+    if starttime == None and endtime == None:       # Read most recent data
+        starttime = datetime.utcnow() - timedelta(days=ndays-1)
+        endtime = datetime.utcnow()
+    elif starttime != None and endtime == None:     # Read past data
+        endtime = starttime + timedelta(days=ndays)
+    elif starttime == None and endtime != None:
+        starttime = endtime - timedelta(days=ndays)
 
-    readdates = [datetime.strftime(startdate+timedelta(days=n), "%Y%m%d") for n in range(0,ndays)]
+    readdates = [datetime.strftime(starttime+timedelta(days=n), "%Y%m%d") for n in range(0, ndays)]
 
     logger.info("read_stereoa_data_beacon: Starting data read for {} days from {} till {}".format(ndays, readdates[0], readdates[-1]))
 
@@ -1361,6 +1368,7 @@ def read_stereoa_data_beacon(filepath="sta_beacon/", starttime=None, endtime=Non
             sta_file =  cdflib.CDF(sta_pla_file)
         else:
             logger.error("read_stereoa_data_beacon: File {} for reading doesn't exist!".format(sta_pla_file))
+            raise Exception("File {} for reading doesn't exist!".format(sta_pla_file))
             
         # Variables Epoch_MAG: Epoch1: CDF_EPOCH [1875]
         sta_time=epoch_to_num(sta_file.varget('Epoch1'))

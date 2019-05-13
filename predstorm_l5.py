@@ -503,7 +503,7 @@ def main():
         stam = read_stereoa_data_beacon()
     elif run_mode == 'historic':
         # TODO: Determining which days to read depends on angle between STEREO and DSCOVR...
-        download_stereoa_data_beacon(starttime=mdates.num2date(timenow))
+        download_stereoa_data_beacon(starttime=mdates.num2date(timenow)-timedelta(days=14))
         stam = read_stereoa_data_beacon(starttime=mdates.num2date(timenow))
     sta = stam.make_hourly_data()
 
