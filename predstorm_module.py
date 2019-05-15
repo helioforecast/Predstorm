@@ -46,7 +46,8 @@ import logging
 import numpy as np
 import pdb
 import scipy
-import sunpy
+import scipy.io
+import sunpy.time
 import matplotlib.dates as mdates
 from datetime import datetime, timedelta
 from glob import iglob
@@ -418,10 +419,21 @@ class SatData(np.ndarray):
             data_dict[k] = na
 
         # Create new data opject:
-        Data_h = SatData(data_dict, header=copy.copy(self.h))
+        Data_h = SatData(data_dict, header=copy.copy(self.h), source=copy.copy(self.source))
         Data_h.h['SamplingRate'] = 1./24.
 
         return Data_h
+
+
+    def shift_time_to_L1(self, sun_syn=26.24):
+        """Shifts the time variable to roughly correspond to solar wind at L1."""
+
+        lag_l1, lag_r = get_time_lag_wrt_earth(satname=self.source,
+            timestamp=mdates.num2date(self['time'][-1]),
+            v_mean=np.nanmean(self['speed']), sun_syn=sun_syn)
+        logger.info("shift_time_to_L1: Shifting time by {:.2f} hours".format((lag_l1 + lag_r)*24.))
+        self['time'] += lag_l1 + lag_r
+        return self
 
 
 # =======================================================================================
@@ -592,6 +604,53 @@ def convert_RTN_to_GSE_sta_l1(cbr,cbt,cbn,ctime,pos_stereo_heeq,pos_time_num):
 
 
     return (bxgse,bygse,bzgse)
+
+
+def get_time_lag_wrt_earth(timestamp=None, satname='STEREO-A', v_mean=400., sun_syn=26.24):
+    """Determines time lag with respect to Earth in rotation of solar wind for satellite
+    away from Earth.
+
+    NOTES ON PARKER SPIRAL LAG (lag_diff_r):
+    See Simunac et al. 2009 Ann. Geophys. equation 1, see also Thomas et al. 2018 Space Weather
+    difference in heliocentric distance STEREO-A to Earth,
+    actually different for every point so take average of solar wind speed
+    Omega is 360 deg/sun_syn in days, convert to seconds; sta_r in AU to m to km;
+    convert to degrees
+    minus sign: from STEREO-A to Earth the diff_r_deg needs to be positive
+    because the spiral leads to a later arrival of the solar wind at larger
+    heliocentric distances (this is reverse for STEREO-B!)
+    """
+
+    AU = 149597870.700 #AU in km
+
+    if timestamp == None:
+        timestamp = datetime.utcnow()
+    timestamp = mdates.date2num(timestamp)
+
+    pos = getpositions('data/positions_2007_2023_HEEQ_6hours.sav')
+    pos_time_num = time_to_num_cat(pos.time)
+    # take position of STEREO-A for time now from position file
+    pos_time_now_ind = np.where(timestamp < pos_time_num)[0][0]
+
+    if satname == 'STEREO-A':
+        sat_pos = pos.sta
+    else:
+        raise Exception("Not a valid satellite name to find position!")
+    sat_r = sat_pos[0][pos_time_now_ind]
+    earth_r = pos.earth_l1[0][pos_time_now_ind]
+
+    # Get longitude and latitude
+    lon_heeq = sat_pos[1][pos_time_now_ind]*180./np.pi
+    lat_heeq = sat_pos[2][pos_time_now_ind]*180./np.pi
+
+    # define time lag from satellite to Earth
+    lag_l1 = abs(lon_heeq)/(360./sun_syn)
+
+    # time lag from Parker spiral
+    diff_r_deg = -(360./(sun_syn*86400.))*((sat_r-earth_r)*AU)/v_mean
+    lag_diff_r = round(diff_r_deg/(360./sun_syn),2)
+
+    return lag_l1, lag_diff_r
 
 
 # ***************************************************************************************
@@ -1453,7 +1512,6 @@ def read_stereoa_data_beacon(filepath="sta_beacon/", starttime=None, endtime=Non
 def getpositions(filename):  
     pos=scipy.io.readsav(filename)  
     print
-    print('positions file:', filename) 
     return pos
 
 
