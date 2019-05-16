@@ -396,6 +396,64 @@ class SatData(np.ndarray):
         return self
 
 
+    def interp_to_time(self, tarray, keys=None):
+        """Linearly interpolates over nans in array.
+
+        Parameters
+        ==========
+        tarray : np.ndarray
+            Array containing new timesteps in number format.
+        keys : list (default=None)
+            Provide list of keys (str) to be interpolated over, otherwise all.
+        """
+
+        resolution = tarray[1] - tarray[0]
+        # Round to nearest timestep
+        stime = self['time'][0] - self['time'][0] % resolution
+        # Create new time array
+        data_dict = {'time': tarray}
+        for k in self.vars:
+            na = np.interp(tarray, self['time'], self[k])
+            data_dict[k] = na
+
+        # Create new data opject:
+        newData = SatData(data_dict, header=copy.copy(self.h), source=copy.copy(self.source))
+        newData.h['SamplingRate'] = resolution
+
+        return newData
+
+
+    def make_dst_prediction(self, method='temerin_li'):
+        """Makes prediction with data in array.
+
+        Parameters
+        ==========
+        method : str
+            Options = ['burton', 'obrien', 'temerin_li']
+
+        Returns
+        =======
+        dstData : new SatData obj
+            New object containing predicted Dst data.
+        """
+
+        [dst_Burton, dst_Obrien, dst_TL] = make_dst_from_wind(self['btot'],self['bx'],self['by'],self['bz'],
+                                                              self['speed'],self['speed'],self['density'],self['time'])
+
+        if method.lower() == 'temerin_li':
+            dst_pred = dst_TL
+        elif method.lower() == 'obrien':
+            dst_pred = dst_Obrien
+        elif method.lower() == 'burton':
+            dst_pred = dst_Burton
+
+        dstData = SatData({'time': self['time'], 'dst': dst_pred})
+        dstData.h['DataSource'] = "Dst prediction from {} using method {}".format(self.source, method)
+        dstData.h['SamplingRate'] = 1./24.
+
+        return dstData
+
+
     def make_hourly_data(self):
         """Takes data with minute resolution and interpolates to hour.
 
