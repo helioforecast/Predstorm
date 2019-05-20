@@ -116,13 +116,13 @@ class SatData(np.ndarray):
                     ('speed', np.float64), ('density', np.float64), ('temp', np.float64), 
                     ('bx', np.float64), ('by', np.float64), ('bz', np.float64), ('btot', np.float64),
                     ('br', np.float64), ('bt', np.float64), ('bn', np.float64),
-                    ('dst', np.float64)]
+                    ('dst', np.float64), ('kp', np.float64), ('aurora', np.float64)]
 
     empty_header = {'DataSource': None,
                     'SamplingRate': None,
                     'CoordinateSystem': None,
-                    'FileVersion': None,
-                    'Instruments': None
+                    'FileVersion': {},
+                    'Instruments': []
                     }
 
     def __new__(cls, input_dict, source=None, header=None):
@@ -423,6 +423,30 @@ class SatData(np.ndarray):
         return newData
 
 
+    def make_aurora_power_prediction(self):
+        """Makes prediction with data in array.
+
+        Parameters
+        ==========
+        self
+
+        Returns
+        =======
+        auroraData : new SatData obj
+            New object containing predicted Dst data.
+        """
+
+        aurora_power = np.round(make_aurora_power_from_wind(self['btot'], self['by'], self['bz'], self['speed'], self['density']), 2)
+        #make sure that no values are < 0
+        aurora_power[np.where(aurora_power < 0)]=0.0
+
+        auroraData = SatData({'time': self['time'], 'aurora': aurora_power})
+        auroraData.h['DataSource'] = "Auroral power prediction from {} data".format(self.source)
+        auroraData.h['SamplingRate'] = 1./24.
+
+        return auroraData
+
+
     def make_dst_prediction(self, method='temerin_li'):
         """Makes prediction with data in array.
 
@@ -448,10 +472,32 @@ class SatData(np.ndarray):
             dst_pred = dst_Burton
 
         dstData = SatData({'time': self['time'], 'dst': dst_pred})
-        dstData.h['DataSource'] = "Dst prediction from {} using method {}".format(self.source, method)
+        dstData.h['DataSource'] = "Dst prediction from {} data using method {}".format(self.source, method)
         dstData.h['SamplingRate'] = 1./24.
 
         return dstData
+
+
+    def make_kp_prediction(self):
+        """Makes prediction with data in array.
+
+        Parameters
+        ==========
+        self
+
+        Returns
+        =======
+        kpData : new SatData obj
+            New object containing predicted Dst data.
+        """
+
+        kp_pred = np.round(make_kp_from_wind(self['btot'], self['by'], self['bz'], self['speed'], self['density']), 1)
+
+        kpData = SatData({'time': self['time'], 'kp': kp_pred})
+        kpData.h['DataSource'] = "Kp prediction from {} data".format(self.source)
+        kpData.h['SamplingRate'] = 1./24.
+
+        return kpData
 
 
     def make_hourly_data(self):
@@ -715,7 +761,7 @@ def get_time_lag_wrt_earth(timestamp=None, satname='STEREO-A', v_mean=400., sun_
 # B. Data reading:
 # ***************************************************************************************
 
-def get_dscovr_data_real():
+def get_dscovr_data_real_old():
     """
     Downloads and returns DSCOVR data 
     data from http://services.swpc.noaa.gov/products/solar-wind/
@@ -847,7 +893,7 @@ def get_dscovr_data_real():
     return data_minutes, data_hourly
 
 
-def get_dscovr_data_real2():
+def get_dscovr_data_real():
     """
     Downloads and returns DSCOVR data 
     data from http://services.swpc.noaa.gov/products/solar-wind/
@@ -1563,6 +1609,65 @@ def read_stereoa_data_beacon(filepath="sta_beacon/", starttime=None, endtime=Non
     return stereo_data
 
 
+def merge_Data(satdata1, satdata2, keys=None):
+    """Concatenates two SatData objects into one. Dataset #1 should be behind in time
+    so that dataset #2 can just be added on to the end.
+
+    Parameters
+    ==========
+    satdata1 : predstorm_module.SatData
+        Path to directory where files should be saved.
+    satdata2 : predstorm_module.SatData
+        Datetime object with the required starttime of the input data.
+    keys : list (default=None)
+        List of input keys. If None, all are used.
+
+    Returns
+    =======
+    new SatData object with both datasets
+    """
+
+    logger.info("merge_Data: Will merge data from {} and {}...".format(satdata1.source, satdata2.source))
+    if keys == None:
+        keys = list(set(satdata1.vars).intersection(satdata2.vars))
+        logger.info("merge_Data: No keys defined, using common keys: {}".format(keys))
+
+    for k in keys:
+        if k not in satdata2.vars:
+            logger.error("merge_Data: Dataset1 contains key ({}) not available in Dataset2!".format(k))
+            raise Exception("Dataset1 contains key ({}) not available in Dataset2!".format(k))
+
+    # Find num of points for addition:
+    n_new_time = len(np.arange(satdata1['time'][-1]+1./24., satdata2['time'][-1], 1./24.))  
+    # Make time array with matching steps
+    timestep = satdata1.h['SamplingRate']
+    new_time = satdata1['time'][-1] + timestep + np.arange(0, n_new_time) * timestep
+
+    datadict = {}
+    datadict['time'] = np.concatenate((satdata1['time'], new_time))
+    for k in keys:
+        # Interpolate dataset #2 to array matching dataset #1
+        int_var = np.interp(new_time, satdata2['time'], satdata2[k])
+        # Make combined array data
+        datadict[k] = np.concatenate((satdata1[k], int_var))
+
+    MergedData = SatData(datadict, source=satdata1.source+'+'+satdata2.source)
+    tf = "%Y-%m-%d %H:%M:%S"
+    MergedData.h['DataSource'] = '{} ({} - {}) & {} ({} - {})'.format(satdata1.h['DataSource'],
+                                                datetime.strftime(mdates.num2date(satdata1['time'][0]), tf),
+                                                datetime.strftime(mdates.num2date(satdata1['time'][-1]), tf),
+                                                satdata2.h['DataSource'],
+                                                datetime.strftime(mdates.num2date(new_time[0]), tf),
+                                                datetime.strftime(mdates.num2date(new_time[-1]), tf))
+    MergedData.h['SamplingRate'] = timestep
+    MergedData.h['CoordinateSystem'] = satdata1.h['CoordinateSystem']
+    MergedData.h['Instruments'] = satdata1.h['Instruments'] + satdata2.h['Instruments']
+    MergedData.h['FileVersion'] = {**satdata1.h['FileVersion'], **satdata2.h['FileVersion']}
+
+    logger.info("merge_Data: Finished merging data.")
+
+    return MergedData
+
 # ***************************************************************************************
 # C. Basic data handling functions:
 # ***************************************************************************************
@@ -1989,11 +2094,6 @@ def epoch_to_num(epoch):
     #epoch 1/1/1 00UT is 31622400000.0 (millisecond)
     return (epoch - 31622400000.0) / (24 * 60 * 60 * 1000.0) + 1.0
  
-
-# ***************************************************************************************
-# E. Plotting functions:
-# ***************************************************************************************
-
 
 
 

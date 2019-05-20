@@ -104,7 +104,7 @@ import sunpy.time
 
 from predstorm_module import make_dst_from_wind
 from predstorm_module import get_omni_data
-from predstorm_module import get_dscovr_data_real
+from predstorm_module import get_dscovr_data_real_old
 from predstorm_module import get_noaa_dst
 
 
@@ -151,7 +151,7 @@ print('-------------------------------------------------')
 
 
 #get real time DSCOVR data with minute/hourly time resolution as recarray
-[dism,dis]=get_dscovr_data_real()
+[dism,dis]=get_dscovr_data_real_old()
 
 #get time of the last entry in the DSCOVR data
 timenow=dism.time[-1]

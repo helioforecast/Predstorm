@@ -7,4 +7,4 @@ sta_beacon
 *.log
 omni2*.*
 .DS*
-predstorm_real.txt
+predstorm_real*

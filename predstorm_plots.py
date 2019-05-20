@@ -64,7 +64,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
         STEREO-A data in different time resolutions.
     DST_data : predstorm_module.SatData
         Kyoto Dst
-    DSTPRED_data : list(com_time, dst_pred)
+    DSTPRED_data : predstorm_module.SatData
         Dst predicted by PREDSTORM.
     dst_method : str (default='temerin_li')
         Descriptor for Dst method being plotted.
@@ -83,6 +83,8 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
     verification_mode : bool (default=False)
         If True, verification mode will produce a plot of the predicted Dst
         for model verification purposes.
+    timestamp : datetime obj
+        Time for 'now' label in plot.
 
     Returns
     =======
@@ -115,7 +117,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
     stam, sta = STEREOA_data
     dism, dis = DSCOVR_data
     dst = DST_data
-    com_time, dst_pred = DSTPRED_data
+    dst_pred = DSTPRED_data
     text_offset = past_days # days (for 'fast', 'intense', etc.)
 
     # For the minute data, check which are the intervals to show for STEREO-A until end of plot
@@ -215,8 +217,8 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
     plt.plot_date(dst['time'], dst['dst'],'o', c=c_dst, label='Dst observed',markersize=ms_dst)
     plt.ylabel('Dst [nT]', fontsize=fs_ylabel)
 
-    dstplotmax = np.nanmax(np.concatenate((dst['dst'], dst_pred)))+20
-    dstplotmin = np.nanmin(np.concatenate((dst['dst'], dst_pred)))-20
+    dstplotmax = np.nanmax(np.concatenate((dst['dst'], dst_pred['dst'])))+20
+    dstplotmin = np.nanmin(np.concatenate((dst['dst'], dst_pred['dst'])))-20
     if dstplotmin > -100:       # Low activity (normal)
         plt.ylim([-100,np.nanmax(dst['dst'])+20])
     else:                       # High activity
@@ -224,10 +226,10 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
 
     # Plot predicted Dst
     if not verification_mode:
-        plt.plot_date(com_time, dst_pred, '-', c=c_sta_dst, label=dst_label, markersize=3, linewidth=1)
+        plt.plot_date(dst_pred['time'], dst_pred['dst'], '-', c=c_sta_dst, label=dst_label, markersize=3, linewidth=1)
         # Add generic error bars of +/-15 nT:
         error=15
-        plt.fill_between(com_time, dst_pred-error, dst_pred+error, alpha=0.2,
+        plt.fill_between(dst_pred['time'], dst_pred['dst']-error, dst_pred['dst']+error, alpha=0.2,
                          label='Error for high speed streams')
     else:
         #load saved data l prefix is for loaded - WARNING This will crash if called right now
@@ -281,7 +283,22 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
 
 def plot_stereo_dscovr_comparison(timestamp=None, look_back=20, **kwargs):
     """Plots the last days of STEREO-A and DSCOVR data for comparison alongside
-    the predicted and real Dst."""
+    the predicted and real Dst.
+
+    Parameters
+    ==========
+    timestamp : datetime obj
+        Time for last datapoint in plot.
+    look_back : float (default=20)
+        Number of days in the past to plot.
+    **kwargs : ...
+        See config.plotting for variables that can be tweaked.
+
+    Returns
+    =======
+    plt.savefig : .png file
+        File saved to XXX
+    """
 
     if timestamp == None:
         timestamp = datetime.utcnow()
@@ -432,7 +449,22 @@ def plot_stereo_dscovr_comparison(timestamp=None, look_back=20, **kwargs):
 
 def plot_dst_comparison(timestamp=None, look_back=20, **kwargs):
     """Plots the last days of STEREO-A and DSCOVR data for comparison alongside
-    the predicted and real Dst."""
+    the predicted and real Dst.
+
+    Parameters
+    ==========
+    timestamp : datetime obj
+        Time for last datapoint in plot.
+    look_back : float (default=20)
+        Number of days in the past to plot.
+    **kwargs : ...
+        See config.plotting for variables that can be tweaked.
+
+    Returns
+    =======
+    plt.savefig : .png file
+        File saved to XXX
+        """
 
     if timestamp == None:
         timestamp = datetime.utcnow()

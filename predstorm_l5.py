@@ -110,16 +110,12 @@ import sunpy.time
 import urllib
 from scipy.signal import savgol_filter
 
-from predstorm_module import get_dscovr_data_real, get_dscovr_data_real2, get_dscovr_data_all
+from predstorm_module import get_dscovr_data_real, get_dscovr_data_all
 from predstorm_module import download_stereoa_data_beacon, read_stereoa_data_beacon
-from predstorm_module import time_to_num_cat
-from predstorm_module import converttime
-from predstorm_module import make_dst_from_wind
-from predstorm_module import make_kp_from_wind
-from predstorm_module import make_aurora_power_from_wind
+from predstorm_module import time_to_num_cat, converttime, sphere2cart
+from predstorm_module import merge_Data
 from predstorm_module import getpositions, interp_nans
 from predstorm_module import convert_GSE_to_GSM
-from predstorm_module import sphere2cart
 from predstorm_module import convert_RTN_to_GSE_sta_l1
 from predstorm_module import get_noaa_dst, get_past_dst
 from predstorm_module import logger
@@ -228,8 +224,7 @@ def main():
     tstr_format = "%Y-%m-%d-%H_%M" # "%Y-%m-%d_%H%M" would be better
     logger.info("Getting DSCOVR data...")
     if run_mode == 'normal':
-        dism = get_dscovr_data_real2()
-        dis = dism.make_hourly_data()
+        dism = get_dscovr_data_real()
         # Get time of the last entry in the DSCOVR data
         timenow = dism['time'][-1]
         # Get UTC time now
@@ -247,9 +242,10 @@ def main():
                                        M_filepath="data/dscovrarchive/*",
                                        starttime=historic_date-timedelta(days=plot_past_days+1),
                                        endtime=historic_date)
-            dis = dism.make_hourly_data()
     elif run_mode == 'verification':
         print("Verification mode coming soon.")
+    dism.interp_nans()
+    dis = dism.make_hourly_data()
 
     timenowstr = datetime.strftime(mdates.num2date(timenow), tstr_format)
 
@@ -282,6 +278,7 @@ def main():
         # TODO: Determining which days to read depends on angle between STEREO and DSCOVR...
         download_stereoa_data_beacon(starttime=mdates.num2date(timenow)-timedelta(days=14))
         stam = read_stereoa_data_beacon(starttime=mdates.num2date(timenow))
+    stam.interp_nans()
     sta = stam.make_hourly_data()
 
     #use hourly interpolated data - the 'sta' recarray for further calculations,
@@ -375,53 +372,24 @@ def main():
 
     resultslog.write('\t3: coordinate conversion of magnetic field components RTN > HEEQ > GSE > GSM.\n')
 
-    #interpolate one more time after time shifts, so that the time is in full hours
-    #and the STEREO-A data now start with the end of the dscovr data +1 hour
-
-    #deleted: this leads to shifts in < seconds that result in hours and minutes like 19 59 instead of 20 00
-    #sta_time=np.arange(dis.time[-1]+1.000/24,sta['time'][-1],1.0000/(24))
-
-    #count how many hours until end of sta['time'] 
-    sta_time_array_len=len(np.arange(dis['time'][-1]+1.000/24,sta['time'][-1],1.0000/(24)))  
-    #make time array with exact full hours
-    sta_time= mdates.num2date(dis['time'][-1])+ timedelta(hours=1) + np.arange(0,sta_time_array_len) * timedelta(hours=1) 
-    #convert back to matplotlib time
-    sta_time=mdates.date2num(sta_time)
-
-    sta_btot=np.interp(sta_time,sta['time'],sta['btot'])
-    sta_bx=np.interp(sta_time,sta['time'],sta['bx'])
-    sta_by=np.interp(sta_time,sta['time'],sta['by'])
-    sta_bz=np.interp(sta_time,sta['time'],sta['bz'])
-    sta_speedr=np.interp(sta_time,sta['time'],sta['speed'])
-    sta_den=np.interp(sta_time,sta['time'],sta['density'])
-
     #------------------- (2c) COMBINE DSCOVR and time-shifted STEREO-A data -----------------
 
-    # make combined array of DSCOVR and STEREO-A data
-    com_time=np.concatenate((dis['time'], sta_time))
-    com_btot=interp_nans(np.concatenate((dis['btot'], sta_btot)))
-    com_bx=interp_nans(np.concatenate((dis['bx'], sta_bx)))
-    com_by=interp_nans(np.concatenate((dis['by'], sta_by)))
-    com_bz=interp_nans(np.concatenate((dis['bz'], sta_bz)))
-    com_vr=interp_nans(np.concatenate((dis['speed'], sta_speedr)))
-    com_den=interp_nans(np.concatenate((dis['density'], sta_den)))
+    dis_sta = merge_Data(dis, sta)
+    dism_stam = merge_Data(dism, stam)
 
     #---------------------- (2d) calculate Dst for combined data ----------------------------
 
     logger.info('Making Dst prediction for L1 calculated from time-shifted STEREO-A beacon data.')
-
     #This function works as result=make_dst_from_wind(btot_in,bx_in, by_in,bz_in,v_in,vx_in,density_in,time_in):
     # ******* PROBLEM: USES vr twice (should be V and Vr in Temerin/Li 2002), take V from STEREO-A data too
-    [dst_burton, dst_obrien, dst_temerin_li]=make_dst_from_wind(com_btot, com_bx,com_by, \
-                                             com_bz, com_vr, com_vr, com_den, com_time)
+    dst_temerin_li = dis_sta.make_dst_prediction()
+    dst_obrien = dis_sta.make_dst_prediction(method='obrien')
+    dst_burton = dis_sta.make_dst_prediction(method='burton')
 
-    #make_kp_from_wind(btot_in,by_in,bz_in,v_in,density_in) and round to 1 decimal
-    kp_newell=np.round(make_kp_from_wind(com_btot,com_by,com_bz,com_vr, com_den),1)
-
-    #make_kp_from_wind(btot_in,by_in,bz_in,v_in,density_in) and round to 2 decimals in GW
-    aurora_power=np.round(make_aurora_power_from_wind(com_btot,com_by,com_bz,com_vr, com_den),2)
-    #make sure that no values are < 0
-    aurora_power[np.where(aurora_power < 0)]=0.0
+    # Predict Kp
+    kp_newell = dis_sta.make_kp_prediction()
+    # Predict Auroral Power
+    aurora_power = dis_sta.make_aurora_power_prediction()
 
     #========================== (3) PLOT RESULTS ============================================
 
@@ -435,12 +403,12 @@ def main():
     elif dst_method == 'burton':
         dst_pred = dst_burton
         dst_label = 'Dst Burton et al. 1975'
-    dst_pred = dst_pred + dst_offset
+    dst_pred['dst'] = dst_pred['dst'] + dst_offset
 
     # ********************************************************************
     logger.info("Creating output plot...")
     plot_solarwind_and_dst_prediction([dism, dis], [stam, sta], 
-                                      dst, [com_time, dst_pred],
+                                      dst, dst_pred,
                                       past_days=plot_past_days,
                                       future_days=plot_future_days,
                                       dst_label=dst_label,
@@ -456,7 +424,8 @@ def main():
                   timeutcstr[0:10]+'-'+timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.p'
 
     #make recarrays
-    combined=np.rec.array([com_time,com_btot,com_bx,com_by,com_bz,com_den,com_vr,dst_temerin_li,kp_newell,aurora_power,], \
+    combined=np.rec.array([dis_sta['time'],dis_sta['btot'],dis_sta['bx'],dis_sta['by'],dis_sta['bz'],dis_sta['density'],dis_sta['speed'],
+        dst_temerin_li['dst'], kp_newell['kp'], aurora_power['aurora'],], \
     dtype=[('time','f8'),('btot','f8'),('bx','f8'),('by','f8'),('bz','f8'),('den','f8'),\
            ('vr','f8'),('dst_temerin_li','f8'),('kp_newell','f8'),('aurora_power','f8')])
 
@@ -469,11 +438,11 @@ def main():
 
     ########## ASCII file
 
-    vartxtout=np.zeros([np.size(com_time),16])
+    vartxtout=np.zeros([np.size(dis_sta['time']),16])
 
     #get date in ascii
-    for i in np.arange(np.size(com_time)):
-       time_dummy=mdates.num2date(com_time[i])
+    for i in np.arange(np.size(dis_sta['time'])):
+       time_dummy=mdates.num2date(dis_sta['time'][i])
        vartxtout[i,0]=time_dummy.year
        vartxtout[i,1]=time_dummy.month
        vartxtout[i,2]=time_dummy.day
@@ -481,16 +450,16 @@ def main():
        vartxtout[i,4]=time_dummy.minute
        vartxtout[i,5]=time_dummy.second
 
-    vartxtout[:,6]=com_time
-    vartxtout[:,7]=com_btot
-    vartxtout[:,8]=com_bx
-    vartxtout[:,9]=com_by
-    vartxtout[:,10]=com_bz
-    vartxtout[:,11]=com_den
-    vartxtout[:,12]=com_vr
-    vartxtout[:,13]=dst_temerin_li
-    vartxtout[:,14]=kp_newell
-    vartxtout[:,15]=aurora_power
+    vartxtout[:,6]=dis_sta['time']
+    vartxtout[:,7]=dis_sta['btot']
+    vartxtout[:,8]=dis_sta['bx']
+    vartxtout[:,9]=dis_sta['by']
+    vartxtout[:,10]=dis_sta['bz']
+    vartxtout[:,11]=dis_sta['density']
+    vartxtout[:,12]=dis_sta['speed']
+    vartxtout[:,13]=dst_temerin_li['dst']
+    vartxtout[:,14]=kp_newell['kp']
+    vartxtout[:,15]=aurora_power['aurora']
 
     #description
     #np.savetxt(filename_save, ['time     Dst [nT]     Kp     aurora [GW]   B [nT]    Bx [nT]     By [nT]     Bz [nT]    N [ccm-3]   V [km/s]    '])
@@ -498,8 +467,35 @@ def main():
                header='        time      matplotlib_time B[nT] Bx   By     Bz   N[ccm-3] V[km/s] Dst[nT]   Kp   aurora [GW]')
 
 
-    #save the file with the same name to be overwritten and in working directory
+    # Save real-time files with the same name to be overwritten and in working directory
+    # 1-hour data
     np.savetxt('predstorm_real.txt', vartxtout, delimiter='',fmt='%4i %2i %2i %2i %2i %2i %10.6f %5.1f %5.1f %5.1f %5.1f   %7.0i %7.0i   %5.0f %5.1f %5.1f', \
+               header='        time      matplotlib_time B[nT] Bx   By     Bz   N[ccm-3] V[km/s] Dst[nT]   Kp   aurora [GW]')
+
+    vartxtout_m=np.zeros([np.size(dism_stam['time']),16])
+
+    #get date in ascii
+    for i in np.arange(np.size(dism_stam['time'])):
+       time_dummy=mdates.num2date(dism_stam['time'][i])
+       vartxtout_m[i,0]=time_dummy.year
+       vartxtout_m[i,1]=time_dummy.month
+       vartxtout_m[i,2]=time_dummy.day
+       vartxtout_m[i,3]=time_dummy.hour
+       vartxtout_m[i,4]=time_dummy.minute
+       vartxtout_m[i,5]=time_dummy.second
+
+    vartxtout_m[:,6]=dism_stam['time']
+    vartxtout_m[:,7]=dism_stam['btot']
+    vartxtout_m[:,8]=dism_stam['bx']
+    vartxtout_m[:,9]=dism_stam['by']
+    vartxtout_m[:,10]=dism_stam['bz']
+    vartxtout_m[:,11]=dism_stam['density']
+    vartxtout_m[:,12]=dism_stam['speed']
+    vartxtout_m[:,13]=dst_temerin_li.interp_to_time(dism_stam['time'])['dst']
+    vartxtout_m[:,14]=kp_newell.interp_to_time(dism_stam['time'])['kp']
+    vartxtout_m[:,15]=aurora_power.interp_to_time(dism_stam['time'])['aurora']
+    # 1-min data
+    np.savetxt('predstorm_real_1m.txt', vartxtout_m, delimiter='',fmt='%4i %2i %2i %2i %2i %2i %10.6f %5.1f %5.1f %5.1f %5.1f   %7.0i %7.0i   %5.0f %5.1f %5.1f', \
                header='        time      matplotlib_time B[nT] Bx   By     Bz   N[ccm-3] V[km/s] Dst[nT]   Kp   aurora [GW]')
 
     logger.info('TXT: Variables saved in:\n'+filename_save)
@@ -575,60 +571,60 @@ def main():
     resultslog.write('\n')
 
     #check future times in combined Dst with respect to the end of DSCOVR data
-    future_times=np.where(com_time > timenow)
+    future_times=np.where(dis_sta['time'] > timenow)
     #past times in combined dst
-    past_times=np.where(com_time < timenow)
+    past_times=np.where(dis_sta['time'] < timenow)
 
     resultslog.write('PREDSTORM L5 (STEREO-A) prediction results:')
     resultslog.write('\n')
     resultslog.write('Current time: '+ timeutcstr+ ' UT')
 
-    mindst_time=com_time[past_times[0][0]+np.nanargmin(dst_temerin_li[past_times])]
+    mindst_time=dis_sta['time'][past_times[0][0]+np.nanargmin(dst_temerin_li['dst'][past_times])]
     #added 1 minute manually because of rounding errors in time 19:59:9999 etc.
     resultslog.write('\n')
     resultslog.write('Minimum of Dst (past times):\n')
-    resultslog.write(str(int(round(np.nanmin(dst_temerin_li[past_times])))) + ' nT \n')
+    resultslog.write(str(int(round(float(np.nanmin(dst_temerin_li['dst'][past_times]))))) + ' nT \n')
     resultslog.write('at time: '+str(mdates.num2date(mindst_time+1/(24*60)))[0:16])
     resultslog.write('\n')
 
-    mindst_time=com_time[future_times[0][0]+np.nanargmin(dst_temerin_li[future_times])]
+    mindst_time=dis_sta['time'][future_times[0][0]+np.nanargmin(dst_temerin_li['dst'][future_times])]
     #added 1 minute manually because of rounding errors in time 19:59:9999 etc.
 
     resultslog.write('\n')
     resultslog.write('Predicted minimum of Dst (future times):\n')
-    resultslog.write(str(int(round(np.nanmin(dst_temerin_li[future_times])))) + ' nT \n')
+    resultslog.write(str(int(round(float(np.nanmin(dst_temerin_li['dst'][future_times]))))) + ' nT \n')
     resultslog.write('at time: '+str(mdates.num2date(mindst_time+1/(24*60)))[0:16])
     resultslog.write('\n')
 
     resultslog.write('\n')
     resultslog.write('Predicted times of moderate storm levels (-50 to -100 nT):\n')
-    storm_times_ind=np.where(np.logical_and(dst_temerin_li[future_times] < -50, dst_temerin_li[future_times] > -100))[0]
+    storm_times_ind=np.where(np.logical_and(dst_temerin_li['dst'][future_times] < -50, dst_temerin_li['dst'][future_times] > -100))[0]
     #when there are storm times above this level, indicate:
     if len(storm_times_ind) >0:
      for i in np.arange(0,len(storm_times_ind),1):
-      resultslog.write(str(mdates.num2date(com_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16]+'\n')
+      resultslog.write(str(mdates.num2date(dis_sta['time'][future_times][storm_times_ind][i]+1/(24*60)))[0:16]+'\n')
     else:
       resultslog.write('None')
     resultslog.write('\n')
 
     resultslog.write('\n')
     resultslog.write('Predicted times of intense storm levels (-100 to -200 nT):\n')
-    storm_times_ind=np.where(np.logical_and(dst_temerin_li[future_times] < -100, dst_temerin_li[future_times] > -200))[0]
+    storm_times_ind=np.where(np.logical_and(dst_temerin_li['dst'][future_times] < -100, dst_temerin_li['dst'][future_times] > -200))[0]
     #when there are storm times above this level, indicate:
     if len(storm_times_ind) >0:
       for i in np.arange(0,len(storm_times_ind),1):
-       resultslog.write(str(mdates.num2date(com_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16]+'\n')
+       resultslog.write(str(mdates.num2date(dis_sta['time'][future_times][storm_times_ind][i]+1/(24*60)))[0:16]+'\n')
     else:
       resultslog.write('None')
     resultslog.write('\n')
 
     resultslog.write('\n')
     resultslog.write('Predicted times of super storm levels (< -200 nT):\n')
-    storm_times_ind=np.where(dst_temerin_li[future_times] < -200)[0]
+    storm_times_ind=np.where(dst_temerin_li['dst'][future_times] < -200)[0]
     #when there are storm times above this level, indicate:
     if len(storm_times_ind) >0:
       for i in np.arange(0,len(storm_times_ind),1):
-       resultslog.write(str(mdates.num2date(com_time[future_times][storm_times_ind][i]+1/(24*60)))[0:16]+'\n')
+       resultslog.write(str(mdates.num2date(dis_sta['time'][future_times][storm_times_ind][i]+1/(24*60)))[0:16]+'\n')
     else:
       resultslog.write('None')
 
@@ -640,43 +636,43 @@ def main():
 
 
     ### speed
-    maxvr_time=com_time[past_times[0][0]+np.nanargmax(com_vr[past_times])]
+    maxvr_time=dis_sta['time'][past_times[0][0]+np.nanargmax(dis_sta['speed'][past_times])]
     resultslog.write('Maximum speed (past times):\n')
-    resultslog.write(str(int(round(np.nanmax(com_vr[past_times]))))+ ' km/s at '+ \
+    resultslog.write(str(int(round(float(np.nanmax(dis_sta['speed'][past_times])))))+ ' km/s at '+ \
           str(mdates.num2date(maxvr_time+1/(24*60)))[0:16])
     resultslog.write('\n \n')
 
-    maxvr_time=com_time[future_times[0][0]+np.nanargmax(com_vr[future_times])]
+    maxvr_time=dis_sta['time'][future_times[0][0]+np.nanargmax(dis_sta['speed'][future_times])]
     resultslog.write('Maximum speed (future times):\n')
-    resultslog.write(str(int(round(np.nanmax(com_vr[future_times]))))+ ' km/s at '+ \
+    resultslog.write(str(int(round(float(np.nanmax(dis_sta['speed'][future_times])))))+ ' km/s at '+ \
           str(mdates.num2date(maxvr_time+1/(24*60)))[0:16])
     resultslog.write('\n \n')
 
 
     ### btot
-    maxb_time=com_time[past_times[0][0]+np.nanargmax(com_btot[past_times])]
+    maxb_time=dis_sta['time'][past_times[0][0]+np.nanargmax(dis_sta['btot'][past_times])]
     resultslog.write('Maximum Btot (past times):\n')
-    resultslog.write(str(round(np.nanmax(com_btot[past_times]),1))+ ' nT at '+ \
+    resultslog.write(str(round(float(np.nanmax(dis_sta['btot'][past_times])),1))+ ' nT at '+ \
           str(mdates.num2date(maxb_time+1/(24*60)))[0:16])
     resultslog.write('\n \n')
 
-    maxb_time=com_time[future_times[0][0]+np.nanargmax(com_btot[future_times])]
+    maxb_time=dis_sta['time'][future_times[0][0]+np.nanargmax(dis_sta['btot'][future_times])]
     resultslog.write('Maximum Btot (future times):\n')
-    resultslog.write(str(round(np.nanmax(com_btot[future_times]),1))+ ' nT at '+ \
+    resultslog.write(str(round(float(np.nanmax(dis_sta['btot'][future_times])),1))+ ' nT at '+ \
           str(mdates.num2date(maxb_time+1/(24*60)))[0:16])
     resultslog.write('\n \n')
 
 
     ### bz
-    minbz_time=com_time[past_times[0][0]+np.nanargmin(com_bz[past_times])]
+    minbz_time=dis_sta['time'][past_times[0][0]+np.nanargmin(dis_sta['bz'][past_times])]
     resultslog.write('Minimum Bz (past times):\n')
-    resultslog.write(str(round(np.nanmin(com_bz[past_times]),1))+ ' nT at '+ \
+    resultslog.write(str(round(float(np.nanmin(dis_sta['bz'][past_times])),1))+ ' nT at '+ \
           str(mdates.num2date(minbz_time+1/(24*60)))[0:16])
     resultslog.write('\n \n')
 
-    minbz_time=com_time[future_times[0][0]+np.nanargmin(com_bz[future_times])]
+    minbz_time=dis_sta['time'][future_times[0][0]+np.nanargmin(dis_sta['bz'][future_times])]
     resultslog.write('Minimum Bz (future times):\n')
-    resultslog.write(str(round(np.nanmin(com_bz[future_times]),1))+ ' nT at '+ \
+    resultslog.write(str(round(float(np.nanmin(dis_sta['bz'][future_times])),1))+ ' nT at '+ \
           str(mdates.num2date(minbz_time+1/(24*60)))[0:16])
     resultslog.write('\n \n')
 
