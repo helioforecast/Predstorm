@@ -1638,9 +1638,9 @@ def merge_Data(satdata1, satdata2, keys=None):
             raise Exception("Dataset1 contains key ({}) not available in Dataset2!".format(k))
 
     # Find num of points for addition:
-    n_new_time = len(np.arange(satdata1['time'][-1]+1./24., satdata2['time'][-1], 1./24.))  
-    # Make time array with matching steps
     timestep = satdata1.h['SamplingRate']
+    n_new_time = len(np.arange(satdata1['time'][-1] + timestep, satdata2['time'][-1], timestep))  
+    # Make time array with matching steps
     new_time = satdata1['time'][-1] + timestep + np.arange(0, n_new_time) * timestep
 
     datadict = {}

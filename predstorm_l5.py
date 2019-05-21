@@ -279,6 +279,7 @@ def main():
         download_stereoa_data_beacon(starttime=mdates.num2date(timenow)-timedelta(days=14))
         stam = read_stereoa_data_beacon(starttime=mdates.num2date(timenow))
     stam.interp_nans()
+    stam.shift_time_to_L1()
     sta = stam.make_hourly_data()
 
     #use hourly interpolated data - the 'sta' recarray for further calculations,
@@ -362,13 +363,14 @@ def main():
 
     ## ADD BOTH time shifts to the sta['time']
     #for hourly data
-    sta['time']=sta['time']+timelag_sta_l1+time_lag_diff_r
-    #for minute data
-    stam['time']=stam['time']+timelag_sta_l1+time_lag_diff_r
+    # sta['time']=sta['time']+timelag_sta_l1+time_lag_diff_r
+    # #for minute data
+    # stam['time']=stam['time']+timelag_sta_l1+time_lag_diff_r
 
     #(3) conversion from RTN to HEEQ to GSE to GSM - but done as if STA was along the Sun-Earth line
     #convert STEREO-A RTN data to GSE as if STEREO-A was along the Sun-Earth line
     sta.convert_RTN_to_GSE(pos.sta, pos_time_num).convert_GSE_to_GSM()
+    stam.convert_RTN_to_GSE(pos.sta, pos_time_num).convert_GSE_to_GSM()
 
     resultslog.write('\t3: coordinate conversion of magnetic field components RTN > HEEQ > GSE > GSM.\n')
 
