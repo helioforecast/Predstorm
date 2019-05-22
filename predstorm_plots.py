@@ -39,9 +39,9 @@ try:
 except:
 	pass
 
-from predstorm_module import read_stereoa_data_beacon, getpositions, time_to_num_cat
+from predstorm_module import read_stereoa_data_beacon, download_stereoa_data_beacon
 from predstorm_module import get_dscovr_data_all, get_past_dst, make_dst_from_wind
-from predstorm_module import get_time_lag_wrt_earth
+from predstorm_module import get_time_lag_wrt_earth, getpositions, time_to_num_cat
 import config.plotting as pltcfg
 
 logger = logging.getLogger(__name__)
@@ -122,7 +122,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
 
     # For the minute data, check which are the intervals to show for STEREO-A until end of plot
     sta_index_future=np.where(np.logical_and(stam['time'] > dism['time'][-1], \
-                              stam['time'] < dism['time'][-1]+future_days))
+                              stam['time'] < dism['time'][-1]+future_days))[0]
 
     if timestamp == None:
         timestamp = datetime.utcnow()
@@ -676,8 +676,14 @@ if __name__ == '__main__':
     logging.config.fileConfig('config/logging.ini', disable_existing_loggers=False)
     logger = logging.getLogger(__name__)
 
-    plot_stereo_dscovr_comparison(timestamp=datetime.strptime("2019-05-05", "%Y-%m-%d"))
-    plot_dst_comparison(timestamp=datetime.strptime("2019-05-05", "%Y-%m-%d"))
+    timestamp = datetime.strptime("2019-05-05", "%Y-%m-%d")
+    lbdays = 20
+    lag_L1, lag_r = get_time_lag_wrt_earth(timestamp=timestamp, satname='STEREO-A')
+    est_timelag = lag_L1 + lag_r
+    download_stereoa_data_beacon(starttime=timestamp-timedelta(days=lbdays+est_timelag),
+                                 endtime=timestamp)
+    plot_stereo_dscovr_comparison(timestamp=timestamp, look_back=lbdays)
+    plot_dst_comparison(timestamp=timestamp, look_back=lbdays)
 
 
 

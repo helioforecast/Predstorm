@@ -275,8 +275,9 @@ def main():
         download_stereoa_data_beacon()
         stam = read_stereoa_data_beacon()
     elif run_mode == 'historic':
-        # TODO: Determining which days to read depends on angle between STEREO and DSCOVR...
-        download_stereoa_data_beacon(starttime=mdates.num2date(timenow)-timedelta(days=14))
+        lag_L1, lag_r = get_time_lag_wrt_earth(timestamp=timestamp, satname='STEREO-A')
+        est_timelag = lag_L1 + lag_r
+        download_stereoa_data_beacon(starttime=mdates.num2date(timenow)-timedelta(days=plot_future_days+est_timelag+2))
         stam = read_stereoa_data_beacon(starttime=mdates.num2date(timenow))
     stam.interp_nans()
     stam.shift_time_to_L1()

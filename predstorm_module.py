@@ -68,7 +68,7 @@ logger = logging.getLogger(__name__)
 # -------------------------------- I. CLASSES ------------------------------------------
 # =======================================================================================
 
-class SatData(np.ndarray):
+class SatData():
     """Data object containing satellite data, subclass of np.ndarray.
 
     See https://docs.scipy.org/doc/numpy-1.15.0/user/basics.subclassing.html for some
@@ -118,14 +118,14 @@ class SatData(np.ndarray):
                     ('br', np.float64), ('bt', np.float64), ('bn', np.float64),
                     ('dst', np.float64), ('kp', np.float64), ('aurora', np.float64)]
 
-    empty_header = {'DataSource': None,
+    empty_header = {'DataSource': '',
                     'SamplingRate': None,
-                    'CoordinateSystem': None,
+                    'CoordinateSystem': '',
                     'FileVersion': {},
                     'Instruments': []
                     }
 
-    def __new__(cls, input_dict, source=None, header=None):
+    def __init__(self, input_dict, source=None, header=None):
         """Create new instance of class."""
 
         # Check input data
@@ -136,30 +136,51 @@ class SatData(np.ndarray):
             raise Exception("Time variable is required for SatData object!")
         dt = [x for x in SatData.default_keys if x[0] in input_dict.keys()]
         data = [input_dict[x[0]] for x in dt]
-        # Create array with relevant dtype
-        ar = np.rec.fromarrays(data, dtype=dt)
         # Cast this to be our class type
-        obj = np.asarray(ar).view(cls)
+        self.data = np.asarray(data)
         # Add new attributes to the created instance
-        obj.source = source
+        self.source = source
         if header == None:               # Inititalise empty header
-            obj.h = copy.copy(SatData.empty_header)
+            self.h = copy.copy(SatData.empty_header)
         else:
-            obj.h = header
-        obj.vars = [x[0] for x in dt]
-        obj.vars.remove('time')
-        # Return the newly created object:
-        return obj
+            self.h = header
+        self.vars = [x[0] for x in dt]
+        self.vars.remove('time')
 
 
-    def __array_finalize__(self, obj):
-        """For proper array behaviour, all attributes must be defined here.
-        If not, they will vanish during normal array operations."""
-        if obj is None: return
+    def __getitem__(self, var):
+        if isinstance(var, str):
+            if var in self.vars:
+                return self.data[self.vars.index(var)+1]
+            elif var == 'time':
+                return self.data[0]
+            else:
+                raise Exception("SatData object does not contain data under the key '{}'!".format(var))
+        return self.data[:,var]
 
-        self.source = getattr(obj, 'source', None)
-        self.h = getattr(obj, 'h', None)
-        self.vars = getattr(obj, 'vars', None)
+
+    def __setitem__(self, var, value):
+        if isinstance(var, str):
+            if var in self.vars:
+                self.data[self.vars.index(var)+1] = value
+            elif var == 'time':
+                self.data[0] = value
+        else:
+            raise ValueError("Cannot interpret {} as index for __setitem__!".format(var))
+
+
+    # def __array_finalize__(self, obj):
+    #     """For proper array behaviour, all attributes must be defined here.
+    #     If not, they will vanish during normal array operations."""
+    #     if obj is None: return
+
+    #     self.source = getattr(obj, 'source', None)
+    #     self.h = getattr(obj, 'h', None)
+    #     self.vars = getattr(obj, 'vars', None)
+
+
+    def __len__(self):
+        return len(self.data[0])
 
 
     def __str__(self):
@@ -175,9 +196,9 @@ class SatData(np.ndarray):
             if self.h[j] != None: ostr += "    {}:\t{}\n".format(j, self.h[j])
         ostr += "\n"
         ostr += "Some variable statistics:\n"
-        ostr += "    VAR\tMEAN\tSTD\n"
+        ostr += "{:>12}{:>12}{:>12}\n".format('VAR', 'MEAN', 'STD')
         for k in self.vars:
-            ostr += "    {}\t{:.2f}\t{:.2f}\n".format(k, np.nanmean(self[k]), np.nanstd(self[k]))
+            ostr += "{:>12}{:>12.2f}{:>12.2f}\n".format(k, np.nanmean(self[k]), np.nanstd(self[k]))
 
         return ostr
 
@@ -370,13 +391,12 @@ class SatData(np.ndarray):
         """
 
         if starttime != None and endtime == None:
-            return self[np.where(self['time'] >= mdates.date2num(starttime))]
+            self.data = self.data[:,np.where(self['time'] >= mdates.date2num(starttime))[0]]
         elif starttime == None and endtime != None:
-            return self[np.where(self['time'] < mdates.date2num(endtime))]
+            self.data = self.data[:,np.where(self['time'] < mdates.date2num(endtime))[0]]
         elif starttime != None and endtime != None:
-            return self[np.where((self['time'] >= mdates.date2num(starttime)) & (self['time'] < mdates.date2num(endtime)))]
-        else:
-            return self
+            self.data = self.data[:,np.where((self['time'] >= mdates.date2num(starttime)) & (self['time'] < mdates.date2num(endtime)))[0]]
+        return self
 
 
     def interp_nans(self, keys=None):
@@ -536,7 +556,7 @@ class SatData(np.ndarray):
             timestamp=mdates.num2date(self['time'][-1]),
             v_mean=np.nanmean(self['speed']), sun_syn=sun_syn)
         logger.info("shift_time_to_L1: Shifting time by {:.2f} hours".format((lag_l1 + lag_r)*24.))
-        self['time'] += lag_l1 + lag_r
+        self.data[0] = self.data[0] + lag_l1 + lag_r
         return self
 
 
