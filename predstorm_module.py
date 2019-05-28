@@ -62,6 +62,9 @@ try:
 except:
     pass
 
+# Local imports
+import spice
+
 logger = logging.getLogger(__name__)
 
 # =======================================================================================
@@ -169,16 +172,6 @@ class SatData():
             raise ValueError("Cannot interpret {} as index for __setitem__!".format(var))
 
 
-    # def __array_finalize__(self, obj):
-    #     """For proper array behaviour, all attributes must be defined here.
-    #     If not, they will vanish during normal array operations."""
-    #     if obj is None: return
-
-    #     self.source = getattr(obj, 'source', None)
-    #     self.h = getattr(obj, 'h', None)
-    #     self.vars = getattr(obj, 'vars', None)
-
-
     def __len__(self):
         return len(self.data[0])
 
@@ -269,7 +262,7 @@ class SatData():
         return self
 
 
-    def convert_RTN_to_GSE(self, pos_stereo_heeq, pos_time_num):
+    def convert_RTN_to_GSE(self, pos_obj=None, pos_tnum=None):
         """Converts RTN to GSE coordinates.
 
         function call [dbr,dbt,dbn]=convert_RTN_to_GSE_sta_l1(sta_br7,sta_bt7,sta_bn7,sta_time7, pos.sta)
@@ -289,16 +282,26 @@ class SatData():
         bygse=np.zeros(len(self['time']))
         bzgse=np.zeros(len(self['time']))
         
-         
         ########## first RTN to HEEQ 
+
+        # NEW METHOD:
+        if pos_obj.all() == None and pos_tnum == None:
+            times = [mdates.num2date(t).replace(tzinfo=None) for t in self['time']]
+            xyz_times = np.asarray(self.get_position(times, refframe='HEEQ', rlonlat=False))
+            AU = 149597870.700 #in km
+            xyz_times = xyz_times/AU
         
         #go through all data points
         for i in np.arange(0,len(self['time'])):
-            time_ind_pos=(np.where(pos_time_num < self['time'][i])[-1][-1])
             #make RTN vectors, HEEQ vectors, and project 
             #r, long, lat in HEEQ to x y z
-            [xa,ya,za]=sphere2cart(pos_stereo_heeq[0][time_ind_pos],pos_stereo_heeq[1][time_ind_pos],pos_stereo_heeq[2][time_ind_pos])
-            
+            # OLD METHOD:
+            if pos_obj.all() != None and pos_tnum.all() != None:
+                time_ind_pos=(np.where(pos_tnum < self['time'][i])[-1][-1])
+                [xa,ya,za]=sphere2cart(pos_obj[0][time_ind_pos],pos_obj[1][time_ind_pos],pos_obj[2][time_ind_pos])
+            # NEW METHOD:
+            else:
+                xa, ya, za = xyz_times[i]
 
             #HEEQ vectors
             X_heeq=[1,0,0]
@@ -547,6 +550,32 @@ class SatData():
         Data_h.h['SamplingRate'] = 1./24.
 
         return Data_h
+
+
+    def get_position(self, timestamp, refframe='J2000', rlonlat=True):
+        """Returns position of satellite at given timestamp. Coordinates
+        are provided in (r,lon,lat) format. Change rlonlat to False to get
+        (x,y,z) coordinates. Uses function predstorm.spice.get_satellite_position.
+
+        Parameters
+        ==========
+        timestamp : datetime.datetime object / list of dt objs
+            Times of positions to return.
+        refframe : str (default='J2000')
+            See SPICE Required Reading Frames. J2000 is standard, HEE/HEEQ are heliocentric.
+        rlonlat : bool (default=False)
+            If True, returns coordinates in (r, lon, lat) format, not (x,y,z).
+
+        Returns
+        =======
+        position : array(x,y,z), list of arrays for multiple timestamps
+            Position of satellite in x, y, z with reference frame refframe and Earth as
+            observing body. Returns (r,lon,lat) if rlonlat==True.
+        """
+
+        return spice.get_satellite_position(self.source, timestamp, 
+                                            refframe=refframe,
+                                            rlonlat=rlonlat)
 
 
     def shift_time_to_L1(self, sun_syn=26.24):

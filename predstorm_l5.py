@@ -110,6 +110,8 @@ import sunpy.time
 import urllib
 from scipy.signal import savgol_filter
 
+# Local imports
+import spice
 from predstorm_module import get_dscovr_data_real, get_dscovr_data_all
 from predstorm_module import download_stereoa_data_beacon, read_stereoa_data_beacon
 from predstorm_module import time_to_num_cat, converttime, sphere2cart
@@ -194,6 +196,8 @@ def main():
     print('------------------------------------------------------------------------')
     logger.info("Starting PREDSTORM_L5 script. Running in mode {}".format(run_mode.upper()))
 
+    timestamp = datetime.utcnow()
+
     #================================== (1) GET DATA ========================================
 
 
@@ -228,25 +232,25 @@ def main():
         # Get time of the last entry in the DSCOVR data
         timenow = dism['time'][-1]
         # Get UTC time now
-        timeutc = mdates.date2num(datetime.utcnow())
-        timeutcstr = datetime.strftime(datetime.utcnow(), tstr_format)
+        timeutc = mdates.date2num(timestamp)
     elif run_mode == 'historic':
-        timeutc = mdates.date2num(historic_date)
-        timeutcstr = datetime.strftime(historic_date, tstr_format)
-        timenow = timeutc
+        timestamp = historic_date
         if (datetime.utcnow() - historic_date).days < (7.-plot_past_days):
             dism = get_dscovr_data_real()
             dis = dism.make_hourly_data()
         else:
             dism = get_dscovr_data_all(P_filepath="data/dscovrarchive/*",
                                        M_filepath="data/dscovrarchive/*",
-                                       starttime=historic_date-timedelta(days=plot_past_days+1),
-                                       endtime=historic_date)
+                                       starttime=timestamp-timedelta(days=plot_past_days+1),
+                                       endtime=timestamp)
+        timeutc = mdates.date2num(timestamp)
+        timenow = timeutc
     elif run_mode == 'verification':
         print("Verification mode coming soon.")
     dism.interp_nans()
     dis = dism.make_hourly_data()
 
+    timeutcstr = datetime.strftime(timestamp, tstr_format)
     timenowstr = datetime.strftime(mdates.num2date(timenow), tstr_format)
 
     # Open file for logging results:        # TODO use logging module
@@ -307,27 +311,42 @@ def main():
     #------------------------ (2a)  Time lag for solar rotation ------------------------------
 
     # Get spacecraft position
+    AU=149597870.700 #in km
     logger.info('loading spacecraft and planetary positions')
-    pos=getpositions('data/positions_2007_2023_HEEQ_6hours.sav')
-    pos_time_num=time_to_num_cat(pos.time)
-    #take position of STEREO-A for time now from position file
-    pos_time_now_ind=np.where(timenow < pos_time_num)[0][0]
-    sta_r=pos.sta[0][pos_time_now_ind]
 
-    # Get longitude and latitude
-    sta_long_heeq = pos.sta[1][pos_time_now_ind]*180./np.pi
-    sta_lat_heeq = pos.sta[2][pos_time_now_ind]*180./np.pi
+    # NEW METHOD:
+    try:
+        [sta_r, sta_long_heeq, sta_lat_heeq] = sta.get_position(timestamp, refframe='HEEQ')
+        [earth_r, elon, elat] = spice.get_satellite_position('EARTH', timestamp, refframe='HEEQ', rlonlat=True)
+        sta_r = sta_r/AU
+        earth_r = earth_r/AU * 0.99   # estimated correction to L1
+        sta_long_heeq, sta_lat_heeq = sta_long_heeq*180./np.pi, sta_lat_heeq*180./np.pi
+        old_pos_method = False
+    # OLD METHOD:
+    except:
+        logger.info("SPICE methods for position determination failed. Using old method.")
+        pos=getpositions('data/positions_2007_2023_HEEQ_6hours.sav')
+        pos_time_num=time_to_num_cat(pos.time)
+        #take position of STEREO-A for time now from position file
+        pos_time_now_ind=np.where(timenow < pos_time_num)[0][0]
+        sta_r=pos.sta[0][pos_time_now_ind]
+        earth_r=pos.earth_l1[0][pos_time_now_ind]
+
+        # Get longitude and latitude
+        sta_long_heeq = pos.sta[1][pos_time_now_ind]*180./np.pi
+        sta_lat_heeq = pos.sta[2][pos_time_now_ind]*180./np.pi
+
+        #print a few important numbers for current prediction
+        stereostr = return_stereoa_details(pos, dism['time'][-1])
+        resultslog.write('\n')
+        resultslog.write(stereostr)
+        resultslog.write('\n')
+        old_pos_method = True
 
     # define time lag from STEREO-A to Earth
-    timelag_sta_l1=abs(sta_long_heeq)/(360/sun_syn) #days
+    timelag_sta_l1=abs(sta_long_heeq)/(360./sun_syn) #days
     arrival_time_l1_sta=dis['time'][-1]+timelag_sta_l1
     arrival_time_l1_sta_str=str(mdates.num2date(arrival_time_l1_sta))
-
-    #print a few important numbers for current prediction
-    stereostr = return_stereoa_details(pos, dism['time'][-1])
-    resultslog.write('\n')
-    resultslog.write(stereostr)
-    resultslog.write('\n')
 
     #------------------------ (2b) Corrections to time-shifted STEREO-A data ----------------
 
@@ -338,7 +357,6 @@ def main():
     # ********* TO DO CHECK exponents - are others better?
 
     logger.info("Doing corrections to STEREO-A data...")
-    earth_r=pos.earth_l1[0][pos_time_now_ind]
     sta['btot']=sta['btot']*(earth_r/sta_r)**-2
     sta['br']=sta['br']*(earth_r/sta_r)**-2
     sta['bt']=sta['bt']*(earth_r/sta_r)**-2
@@ -357,7 +375,6 @@ def main():
     # because the spiral leads to a later arrival of the solar wind at larger
     # heliocentric distances (this is reverse for STEREO-B!)
     #************** problem -> MEAN IS NOT FULLY CORRECT
-    AU=149597870.700 #AU in km
     diff_r_deg=-(360/(sun_syn*86400))*((sta_r-earth_r)*AU)/np.nanmean(sta['speed'])
     time_lag_diff_r=round(diff_r_deg/(360/sun_syn),2)
     resultslog.write('\t2: time lag due to Parker spiral in hours: {}\n'.format(round(time_lag_diff_r*24,1)))
@@ -370,8 +387,12 @@ def main():
 
     #(3) conversion from RTN to HEEQ to GSE to GSM - but done as if STA was along the Sun-Earth line
     #convert STEREO-A RTN data to GSE as if STEREO-A was along the Sun-Earth line
-    sta.convert_RTN_to_GSE(pos.sta, pos_time_num).convert_GSE_to_GSM()
-    stam.convert_RTN_to_GSE(pos.sta, pos_time_num).convert_GSE_to_GSM()
+    if old_pos_method == False:
+        sta.convert_RTN_to_GSE().convert_GSE_to_GSM()
+        stam.convert_RTN_to_GSE().convert_GSE_to_GSM()
+    else:
+        sta.convert_RTN_to_GSE(pos_obj=pos.sta, pos_tnum=pos_time_num).convert_GSE_to_GSM()
+        stam.convert_RTN_to_GSE(pos_obj=pos.sta, pos_tnum=pos_time_num).convert_GSE_to_GSM()
 
     resultslog.write('\t3: coordinate conversion of magnetic field components RTN > HEEQ > GSE > GSM.\n')
 
