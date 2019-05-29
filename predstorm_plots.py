@@ -256,8 +256,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
         ax.plot_date([timeutc,timeutc],[-2000,2000],'-k', linewidth=2)
 
     # Liability text:
-    plt.figtext(0.99,0.05,'C. Moestl, IWF Graz, Austria', fontsize=12, ha='right')
-    plt.figtext(0.99,0.025,'https://twitter.com/chrisoutofspace', fontsize=12, ha='right')
+    pltcfg.group_info_text()
     pltcfg.liability_text()
 
     #save plot
@@ -600,6 +599,173 @@ def plot_dst_comparison(timestamp=None, look_back=20, **kwargs):
     return
 
 
+def plot_indices(timestamp=None, look_back=20, **kwargs):
+    """
+    Plots solar wind variables, past from DSCOVR and future/predicted from STEREO-A.
+    Total B-field and Bz (top), solar wind speed (second), particle density (third)
+    and Dst (fourth) from Kyoto and model prediction.
+
+    Parameters
+    ==========
+    timestamp : datetime obj
+        Time for last datapoint in plot.
+    look_back : float (default=20)
+        Number of days in the past to plot.
+    **kwargs : ...
+        See config.plotting for variables that can be tweaked.
+
+    Returns
+    =======
+    plt.savefig : .png file
+        File saved to XXX
+    """
+
+    figsize = kwargs.get('figsize', pltcfg.figsize)
+    lw = kwargs.get('lw', pltcfg.lw)
+    fs = kwargs.get('fs', pltcfg.fs)
+    date_fmt = kwargs.get('date_fmt', pltcfg.date_fmt)
+    c_dst = kwargs.get('c_dst', pltcfg.c_dst)
+    c_dis = kwargs.get('c_dis', pltcfg.c_dis)
+    c_dis_dst = kwargs.get('c_dis', pltcfg.c_dis_dst)
+    c_ec = kwargs.get('c_dis', pltcfg.c_ec)
+    c_kp = kwargs.get('c_dis', pltcfg.c_kp)
+    c_aurora = kwargs.get('c_dis', pltcfg.c_aurora)
+    ms_dst = kwargs.get('c_dst', pltcfg.ms_dst)
+    fs_legend = kwargs.get('fs_legend', pltcfg.fs_legend)
+    fs_ylabel = kwargs.get('fs_legend', pltcfg.fs_ylabel)
+    fs_title = kwargs.get('fs_title', pltcfg.fs_title)
+
+    # READ DATA:
+    # ----------
+    # TODO: It would be faster to read archived hourly data rather than interped minute data...
+    logger.info("plot_indices: Reading satellite data")
+    # Get estimate of time diff:
+
+    # Read DSCOVR data:
+    dism = get_dscovr_data_all(P_filepath="data/dscovrarchive/*",
+                               M_filepath="data/dscovrarchive/*",
+                               starttime=timestamp-timedelta(days=look_back),
+                               endtime=timestamp)
+    dis = dism.make_hourly_data()
+    dis.interp_nans()
+    dst = get_past_dst(filepath="data/dstarchive/WWW_dstae00016185.dat",
+                       starttime=timestamp-timedelta(days=look_back),
+                       endtime=timestamp)
+
+    # Calculate Dst from prediction:
+    dst_dis = dis.make_dst_prediction()
+    # Kp:
+    kp_dis = dis.make_kp_prediction()
+    # Newell coupling ec:
+    ec_dis = dis.get_newell_coupling()
+    # Aurora power:
+    aurora_dis = dis.make_aurora_power_prediction()
+
+    # PLOT:
+    # -----
+    # Set style:
+    sns.set_context(pltcfg.sns_context)
+    sns.set_style(pltcfg.sns_style)
+
+    # Make figure object:
+    fig = plt.figure(1, figsize=figsize)
+    axes = []
+
+    if timestamp == None:
+        timestamp = datetime.utcnow()
+    timeutc = mdates.date2num(timestamp)
+
+    plotstart = timestamp - timedelta(days=look_back)
+    plotend = timestamp
+
+    # SUBPLOT 1: Total B-field and Bz
+    # -------------------------------
+    ax1 = fig.add_subplot(511)
+    axes.append(ax1)
+
+    # Total B-field and Bz (DSCOVR)
+    plt.plot_date(dism['time'], dism['btot'],'-', c=c_dis, label='B total L1', linewidth=lw)
+    plt.plot_date(dism['time'], dism['bz'],'-', c=c_dis, alpha=0.5, label='Bz GSM L1', linewidth=lw)
+
+    # Indicate 0 level for Bz
+    plt.plot_date([plotstart,plotend], [0,0],'--k', alpha=0.5, linewidth=1)
+    plt.ylabel('Magnetic field [nT]',  fontsize=fs_ylabel)
+    plt.ylim(np.nanmin(dism['bz'])-5, np.nanmax(dism['btot'])+5)
+
+    plt.title('DSCOVR data and derived indices for {}'.format(datetime.strftime(timestamp, "%Y-%m-%d %H:%M")), fontsize=fs_title)
+
+    # SUBPLOT 2: Actual and predicted Dst
+    # -----------------------------------
+    ax3 = fig.add_subplot(512)
+    axes.append(ax3)
+
+    # Observed Dst Kyoto (past):
+    plt.plot_date(dst['time'], dst['dst'],'o', c=c_dst, label='Observed Dst', markersize=ms_dst)
+    plt.ylabel('Dst [nT]', fontsize=fs_ylabel)
+
+    dstplotmax = np.nanmax(np.concatenate((dst['dst'], dst_dis['dst'])))+20
+    dstplotmin = np.nanmin(np.concatenate((dst['dst'], dst_dis['dst'])))-20
+    plt.ylim([dstplotmin, dstplotmax])
+
+    plt.plot_date(dst_dis['time'], dst_dis['dst'],'-', c=c_dis_dst, label='Predicted Dst (DSCOVR)', linewidth=lw)
+    error=15
+    plt.fill_between(dst_dis['time'], dst_dis['dst']-error, dst_dis['dst']+error, facecolor=c_dis_dst, alpha=0.2, label='Error')
+
+    # Label plot with geomagnetic storm levels
+    pltcfg.plot_dst_activity_lines(xlims=[plotstart, plotend])
+
+    # SUBPLOT 3: kp
+    # -----------------------------
+    ax5 = fig.add_subplot(513)
+    axes.append(ax5)
+
+    # Plot Newell coupling (DSCOVR):
+    plt.plot_date(kp_dis['time'], kp_dis['kp'],'-', c=c_kp, linewidth=lw)
+    plt.ylabel('$\mathregular{k_p}$', fontsize=fs_ylabel)
+    plt.ylim([0., 10.])
+
+    # SUBPLOT 4: Newell Coupling
+    # --------------------------
+    ax2 = fig.add_subplot(514)
+    axes.append(ax2)
+
+    # Plot Newell coupling (DSCOVR):
+    plt.plot_date(ec_dis['time'], ec_dis['ec'],'-', c=c_ec, linewidth=lw)
+    plt.ylabel('Newell coupling $ec$', fontsize=fs_ylabel)
+    plt.ylim([0., np.nanmax(ec_dis['ec'])*1.1])
+
+    # SUBPLOT 5: Aurora power
+    # -----------------------
+    ax4 = fig.add_subplot(515)
+    axes.append(ax4)
+
+    # Plot Newell coupling (DSCOVR):
+    plt.plot_date(aurora_dis['time'], aurora_dis['aurora'],'-', c=c_aurora, linewidth=lw)
+    plt.ylabel('Aurora power [?]', fontsize=fs_ylabel)
+    plt.ylim([0., np.nanmax(aurora_dis['aurora'])*1.1])
+
+    # GENERAL FORMATTING
+    # ------------------
+    for ax in axes:
+        ax.set_xlim([plotstart,plotend])
+        ax.tick_params(axis="x", labelsize=fs)
+        ax.tick_params(axis="y", labelsize=fs)
+        ax.legend(loc=2,ncol=4,fontsize=fs_legend)
+
+        # Dates on x-axes:
+        myformat = mdates.DateFormatter(date_fmt)
+        ax.xaxis.set_major_formatter(myformat)
+
+    filename = os.path.join('results','indices_{}.png'.format(
+                            datetime.strftime(timestamp, "%Y-%m-%d-%H_%M")))
+
+    plt.savefig(filename)
+    logger.info('Plot saved as png:\n'+ filename)
+
+    plt.close()
+    return
+
+
 # =======================================================================================
 # --------------------------- EXTRA FUNCTIONS -------------------------------------------
 # =======================================================================================
@@ -684,6 +850,7 @@ if __name__ == '__main__':
                                  endtime=timestamp)
     plot_stereo_dscovr_comparison(timestamp=timestamp, look_back=lbdays)
     plot_dst_comparison(timestamp=timestamp, look_back=lbdays)
+    plot_indices(timestamp=timestamp, look_back=lbdays)
 
 
 

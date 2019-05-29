@@ -104,12 +104,30 @@ class SatData():
 
     Methods
     =======
+    .convert_GSE_to_GSM()
+        Coordinate conversion.
+    .convert_RTN_to_GSE()
+        Coordinate conversion.
     .cut(starttime=None, endtime=None)
         Cuts data to within timerange and returns.
+    .get_position(timestamp)
+        Returns position of spacecraft at time.
+    .get_newell_coupling()
+        Calculates Newell coupling indice for data.
     .interp_nans(keys=None)
         Linearly interpolates over nans in data.
+    .interp_to_time()
+        Linearly interpolates over nans.
+    .make_aurora_power_prediction()
+        Calculates aurora power.
+    .make_dst_prediction()
+        Makes prediction of Dst from data.
+    .make_kp_prediction()
+        Prediction of kp.
     .make_hourly_data()
         Takes minute resolution data and interpolates to hourly data points.
+    .shift_time_to_L1()
+        Shifts time to L1 from satellite ahead in sw rotation.
 
     Examples
     ========
@@ -119,7 +137,8 @@ class SatData():
                     ('speed', np.float64), ('density', np.float64), ('temp', np.float64), 
                     ('bx', np.float64), ('by', np.float64), ('bz', np.float64), ('btot', np.float64),
                     ('br', np.float64), ('bt', np.float64), ('bn', np.float64),
-                    ('dst', np.float64), ('kp', np.float64), ('aurora', np.float64)]
+                    ('dst', np.float64), ('kp', np.float64), ('aurora', np.float64), ('ec', np.float64),
+                    ('posx', np.float64), ('posy', np.float64), ('posz', np.float64)]
 
     empty_header = {'DataSource': '',
                     'SamplingRate': None,
@@ -262,7 +281,7 @@ class SatData():
         return self
 
 
-    def convert_RTN_to_GSE(self, pos_obj=None, pos_tnum=None):
+    def convert_RTN_to_GSE(self, pos_obj=[], pos_tnum=[]):
         """Converts RTN to GSE coordinates.
 
         function call [dbr,dbt,dbn]=convert_RTN_to_GSE_sta_l1(sta_br7,sta_bt7,sta_bn7,sta_time7, pos.sta)
@@ -285,7 +304,7 @@ class SatData():
         ########## first RTN to HEEQ 
 
         # NEW METHOD:
-        if pos_obj.all() == None and pos_tnum == None:
+        if len(pos_obj) == 0 and len(pos_tnum) == 0:
             times = [mdates.num2date(t).replace(tzinfo=None) for t in self['time']]
             xyz_times = np.asarray(self.get_position(times, refframe='HEEQ', rlonlat=False))
             AU = 149597870.700 #in km
@@ -296,7 +315,7 @@ class SatData():
             #make RTN vectors, HEEQ vectors, and project 
             #r, long, lat in HEEQ to x y z
             # OLD METHOD:
-            if pos_obj.all() != None and pos_tnum.all() != None:
+            if len(pos_obj) > 0 and len(pos_tnum) > 0:
                 time_ind_pos=(np.where(pos_tnum < self['time'][i])[-1][-1])
                 [xa,ya,za]=sphere2cart(pos_obj[0][time_ind_pos],pos_obj[1][time_ind_pos],pos_obj[2][time_ind_pos])
             # NEW METHOD:
@@ -400,6 +419,56 @@ class SatData():
         elif starttime != None and endtime != None:
             self.data = self.data[:,np.where((self['time'] >= mdates.date2num(starttime)) & (self['time'] < mdates.date2num(endtime)))[0]]
         return self
+
+
+    def get_position(self, timestamp, refframe='J2000', rlonlat=True):
+        """Returns position of satellite at given timestamp. Coordinates
+        are provided in (r,lon,lat) format. Change rlonlat to False to get
+        (x,y,z) coordinates. Uses function predstorm.spice.get_satellite_position.
+
+        Parameters
+        ==========
+        timestamp : datetime.datetime object / list of dt objs
+            Times of positions to return.
+        refframe : str (default='J2000')
+            See SPICE Required Reading Frames. J2000 is standard, HEE/HEEQ are heliocentric.
+        rlonlat : bool (default=False)
+            If True, returns coordinates in (r, lon, lat) format, not (x,y,z).
+
+        Returns
+        =======
+        position : array(x,y,z), list of arrays for multiple timestamps
+            Position of satellite in x, y, z with reference frame refframe and Earth as
+            observing body. Returns (r,lon,lat) if rlonlat==True.
+        """
+
+        return spice.get_satellite_position(self.source, timestamp, 
+                                            refframe=refframe,
+                                            rlonlat=rlonlat)
+
+
+    def get_newell_coupling(self):    
+        """
+        Empirical Formula for dFlux/dt - the Newell coupling 
+        e.g. paragraph 25 in Newell et al. 2010 doi:10.1029/2009JA014805
+        IDL ovation: sol_coup.pro - contains 33 coupling functions in total
+        input: needs arrays for by, bz, v 
+        """
+        
+        bt = np.sqrt(self['by']**2 + self['bz']**2)
+        bztemp = self['bz']
+        bztemp[self['bz'] == 0] = 0.001
+        tc = np.arctan2(self['by'],bztemp) #calculate clock angle (theta_c = t_c)
+        neg_tc = bt*np.cos(tc)*self['bz'] < 0 #similar to IDL code sol_coup.pro
+        tc[neg_tc] = tc[neg_tc] + np.pi
+        sintc = np.abs(np.sin(tc/2.))
+        ec = (self['speed']**1.33333)*(sintc**2.66667)*(bt**0.66667)
+            
+        ecData = SatData({'time': self['time'], 'ec': ec})
+        ecData.h['DataSource'] = "Newell coupling parameter from {} data".format(self.source)
+        ecData.h['SamplingRate'] = self.h['SamplingRate']
+
+        return ecData
 
 
     def interp_nans(self, keys=None):
@@ -550,32 +619,6 @@ class SatData():
         Data_h.h['SamplingRate'] = 1./24.
 
         return Data_h
-
-
-    def get_position(self, timestamp, refframe='J2000', rlonlat=True):
-        """Returns position of satellite at given timestamp. Coordinates
-        are provided in (r,lon,lat) format. Change rlonlat to False to get
-        (x,y,z) coordinates. Uses function predstorm.spice.get_satellite_position.
-
-        Parameters
-        ==========
-        timestamp : datetime.datetime object / list of dt objs
-            Times of positions to return.
-        refframe : str (default='J2000')
-            See SPICE Required Reading Frames. J2000 is standard, HEE/HEEQ are heliocentric.
-        rlonlat : bool (default=False)
-            If True, returns coordinates in (r, lon, lat) format, not (x,y,z).
-
-        Returns
-        =======
-        position : array(x,y,z), list of arrays for multiple timestamps
-            Position of satellite in x, y, z with reference frame refframe and Earth as
-            observing body. Returns (r,lon,lat) if rlonlat==True.
-        """
-
-        return spice.get_satellite_position(self.source, timestamp, 
-                                            refframe=refframe,
-                                            rlonlat=rlonlat)
 
 
     def shift_time_to_L1(self, sun_syn=26.24):

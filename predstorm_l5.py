@@ -324,7 +324,7 @@ def main():
         old_pos_method = False
     # OLD METHOD:
     except:
-        logger.info("SPICE methods for position determination failed. Using old method.")
+        logger.warning("SPICE methods for position determination failed. Using old method.")
         pos=getpositions('data/positions_2007_2023_HEEQ_6hours.sav')
         pos_time_num=time_to_num_cat(pos.time)
         #take position of STEREO-A for time now from position file
@@ -414,6 +414,8 @@ def main():
     kp_newell = dis_sta.make_kp_prediction()
     # Predict Auroral Power
     aurora_power = dis_sta.make_aurora_power_prediction()
+    # Calculate Newell coupling parameter
+    newell_coupling = dis_sta.get_newell_coupling()
 
     #========================== (3) PLOT RESULTS ============================================
 
@@ -449,9 +451,9 @@ def main():
 
     #make recarrays
     combined=np.rec.array([dis_sta['time'],dis_sta['btot'],dis_sta['bx'],dis_sta['by'],dis_sta['bz'],dis_sta['density'],dis_sta['speed'],
-        dst_temerin_li['dst'], kp_newell['kp'], aurora_power['aurora'],], \
+        dst_temerin_li['dst'], kp_newell['kp'], aurora_power['aurora'], newell_coupling['ec'],], \
     dtype=[('time','f8'),('btot','f8'),('bx','f8'),('by','f8'),('bz','f8'),('den','f8'),\
-           ('vr','f8'),('dst_temerin_li','f8'),('kp_newell','f8'),('aurora_power','f8')])
+           ('vr','f8'),('dst_temerin_li','f8'),('kp_newell','f8'),('aurora_power','f8'),('newell_coupling','f8')])
 
     pickle.dump(combined, open(filename_save, 'wb') )
 
@@ -462,7 +464,7 @@ def main():
 
     ########## ASCII file
 
-    vartxtout=np.zeros([np.size(dis_sta['time']),16])
+    vartxtout=np.zeros([np.size(dis_sta['time']),17])
 
     #get date in ascii
     for i in np.arange(np.size(dis_sta['time'])):
@@ -484,19 +486,19 @@ def main():
     vartxtout[:,13]=dst_temerin_li['dst']
     vartxtout[:,14]=kp_newell['kp']
     vartxtout[:,15]=aurora_power['aurora']
+    vartxtout[:,16]=newell_coupling['ec']
 
     #description
+    column_vals = '        time      matplotlib_time B[nT] Bx   By     Bz   N[ccm-3] V[km/s] Dst[nT]   Kp   aurora [GW]   ec'
+    float_fmt = '%4i %2i %2i %2i %2i %2i %10.6f %5.1f %5.1f %5.1f %5.1f   %7.0i %7.0i   %5.0f %5.1f %5.1f %7.1f'
     #np.savetxt(filename_save, ['time     Dst [nT]     Kp     aurora [GW]   B [nT]    Bx [nT]     By [nT]     Bz [nT]    N [ccm-3]   V [km/s]    '])
-    np.savetxt(filename_save, vartxtout, delimiter='',fmt='%4i %2i %2i %2i %2i %2i %10.6f %5.1f %5.1f %5.1f %5.1f   %7.0i %7.0i   %5.0f %5.1f %5.1f', \
-               header='        time      matplotlib_time B[nT] Bx   By     Bz   N[ccm-3] V[km/s] Dst[nT]   Kp   aurora [GW]')
-
+    np.savetxt(filename_save, vartxtout, delimiter='',fmt=float_fmt, header=column_vals)
 
     # Save real-time files with the same name to be overwritten and in working directory
     # 1-hour data
-    np.savetxt('predstorm_real.txt', vartxtout, delimiter='',fmt='%4i %2i %2i %2i %2i %2i %10.6f %5.1f %5.1f %5.1f %5.1f   %7.0i %7.0i   %5.0f %5.1f %5.1f', \
-               header='        time      matplotlib_time B[nT] Bx   By     Bz   N[ccm-3] V[km/s] Dst[nT]   Kp   aurora [GW]')
+    np.savetxt('predstorm_real.txt', vartxtout, delimiter='',fmt=float_fmt, header=column_vals)
 
-    vartxtout_m=np.zeros([np.size(dism_stam['time']),16])
+    vartxtout_m=np.zeros([np.size(dism_stam['time']),17])
 
     #get date in ascii
     for i in np.arange(np.size(dism_stam['time'])):
@@ -518,9 +520,9 @@ def main():
     vartxtout_m[:,13]=dst_temerin_li.interp_to_time(dism_stam['time'])['dst']
     vartxtout_m[:,14]=kp_newell.interp_to_time(dism_stam['time'])['kp']
     vartxtout_m[:,15]=aurora_power.interp_to_time(dism_stam['time'])['aurora']
+    vartxtout_m[:,16]=newell_coupling.interp_to_time(dism_stam['time'])['ec']
     # 1-min data
-    np.savetxt('predstorm_real_1m.txt', vartxtout_m, delimiter='',fmt='%4i %2i %2i %2i %2i %2i %10.6f %5.1f %5.1f %5.1f %5.1f   %7.0i %7.0i   %5.0f %5.1f %5.1f', \
-               header='        time      matplotlib_time B[nT] Bx   By     Bz   N[ccm-3] V[km/s] Dst[nT]   Kp   aurora [GW]')
+    np.savetxt('predstorm_real_1m.txt', vartxtout_m, delimiter='',fmt=float_fmt, header=column_vals)
 
     logger.info('TXT: Variables saved in:\n'+filename_save)
 

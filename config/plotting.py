@@ -29,6 +29,12 @@ c_sta_dst = 'blue'
 # Colour for Dst
 c_dst = 'black'
 ms_dst = 4
+# Colour for kp
+c_kp = 'lightgreen'
+# Colour for aurora power
+c_aurora = 'orange'
+# Colour for newell coupling
+c_ec = 'turquoise'
 
 # FUNCTIONS
 # ---------
@@ -59,3 +65,7 @@ def plot_speed_lines(xlims=None, ax=None):
 def liability_text():
     plt.figtext(0.01,0.03,'We take no responsibility or liability for the frequency of provision and accuracy of this forecast.' , fontsize=8, ha='left')
     plt.figtext(0.01,0.01,'We will not be liable for any losses and damages in connection with using the provided information.' , fontsize=8, ha='left')
+
+def group_info_text():
+    plt.figtext(0.99,0.05,'Helio Group, IWF Graz, Austria', fontsize=12, ha='right')
+    plt.figtext(0.99,0.025,'https://twitter.com/chrisoutofspace', fontsize=12, ha='right')
