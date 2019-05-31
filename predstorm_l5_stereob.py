@@ -66,7 +66,6 @@ from predstorm_l5_input import *
 ##########################################################################################
 
 
-
 def convert_HEEQ_to_GSE_stb_l1(cbr,cbt,cbn,ctime,pos_stereo_heeq):
 
  ########## ******* for STB only convert from HEEQ to GSM
@@ -146,17 +145,6 @@ def convert_HEEQ_to_GSE_stb_l1(cbr,cbt,cbn,ctime,pos_stereo_heeq):
 
 
  return (bxgse,bygse,bzgse)
-
-
-
-
-
-
-
-
-
-
-
 
 
 

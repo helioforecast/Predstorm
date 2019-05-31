@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
-This is the module for the predstorm package, containing functions 
-and procedures.
+This is the data handling module for the predstorm package, containing the main
+data class SatData and all relevant data handling functions and procedures.
 
 Author: C. Moestl, R. Bailey, IWF Graz, Austria
 twitter @chrisoutofspace, https://github.com/cmoestl
@@ -57,13 +57,10 @@ try:
     from netCDF4 import Dataset
 except:
     pass
-try:
-    import IPython
-except:
-    pass
 
-# Local imports
-import spice
+from . import spice
+from .predict import make_kp_from_wind, make_dst_from_wind
+from .predict import make_aurora_power_from_wind, calc_coupling_newell
 
 logger = logging.getLogger(__name__)
 
@@ -95,12 +92,16 @@ class SatData():
 
     Attributes
     ==========
+    .data : np.ndarray
+        Array containing measurements/indices. Best accessed using SatData[key].
+    .position : np.ndarray
+        Array containing position data for satellite.
     .h : dict
         Dict of metadata as defined by input header.
     .vars : list
-        List of variables stored in object.
+        List of variables stored in SatData.data.
     .source : str
-        String with data source name.
+        Data source name.
 
     Methods
     =======
@@ -133,12 +134,11 @@ class SatData():
     ========
     """
 
-    default_keys = [('time', np.float64),
-                    ('speed', np.float64), ('density', np.float64), ('temp', np.float64), 
-                    ('bx', np.float64), ('by', np.float64), ('bz', np.float64), ('btot', np.float64),
-                    ('br', np.float64), ('bt', np.float64), ('bn', np.float64),
-                    ('dst', np.float64), ('kp', np.float64), ('aurora', np.float64), ('ec', np.float64),
-                    ('posx', np.float64), ('posy', np.float64), ('posz', np.float64)]
+    default_keys = ['time',
+                    'speed', 'density', 'temp', 
+                    'bx', 'by', 'bz', 'btot',
+                    'br', 'bt', 'bn',
+                    'dst', 'kp', 'aurora', 'ec']
 
     empty_header = {'DataSource': '',
                     'SamplingRate': None,
@@ -152,12 +152,13 @@ class SatData():
 
         # Check input data
         for k in input_dict.keys():
-            if not k in [x[0] for x in SatData.default_keys]: 
+            if not k in SatData.default_keys: 
                 raise NotImplementedError("Key {} not implemented in SatData class!".format(k))
         if 'time' not in input_dict.keys():
             raise Exception("Time variable is required for SatData object!")
-        dt = [x for x in SatData.default_keys if x[0] in input_dict.keys()]
-        data = [input_dict[x[0]] for x in dt]
+        dt = [x for x in SatData.default_keys if x in input_dict.keys()]
+        #data = [input_dict[x[0]] for x in dt]
+        data = [input_dict[x] if x in dt else np.zeros(len(input_dict['time'])) for x in SatData.default_keys]
         # Cast this to be our class type
         self.data = np.asarray(data)
         # Add new attributes to the created instance
@@ -166,16 +167,19 @@ class SatData():
             self.h = copy.copy(SatData.empty_header)
         else:
             self.h = header
-        self.vars = [x[0] for x in dt]
+        self.position = None
+        self.vars = dt
         self.vars.remove('time')
 
 
+    # -----------------------------------------------------------------------------------
+    # Internal methods
+    # -----------------------------------------------------------------------------------
+
     def __getitem__(self, var):
         if isinstance(var, str):
-            if var in self.vars:
-                return self.data[self.vars.index(var)+1]
-            elif var == 'time':
-                return self.data[0]
+            if var in self.vars+['time']:
+                return self.data[SatData.default_keys.index(var)]
             else:
                 raise Exception("SatData object does not contain data under the key '{}'!".format(var))
         return self.data[:,var]
@@ -184,9 +188,12 @@ class SatData():
     def __setitem__(self, var, value):
         if isinstance(var, str):
             if var in self.vars:
-                self.data[self.vars.index(var)+1] = value
-            elif var == 'time':
-                self.data[0] = value
+                self.data[SatData.default_keys.index(var)] = value
+            elif var in SatData.default_keys and var not in self.vars:
+                self.data[SatData.default_keys.index(var)] = value
+                self.vars.append(var)
+            else:
+                raise Exception("SatData object does not contain the key '{}'!".format(var))
         else:
             raise ValueError("Cannot interpret {} as index for __setitem__!".format(var))
 
@@ -214,6 +221,10 @@ class SatData():
 
         return ostr
 
+
+    # -----------------------------------------------------------------------------------
+    # Position data handling and coordinate conversions
+    # -----------------------------------------------------------------------------------
 
     def convert_GSE_to_GSM(self):
         """GSE to GSM conversion
@@ -396,31 +407,6 @@ class SatData():
         return self
 
 
-    def cut(self, starttime=None, endtime=None):
-        """Cuts array down to range defined by starttime and endtime. One limit
-        can be provided or both.
-
-        Parameters
-        ==========
-        starttime : datetime.datetime object
-            Start time (>=) of new array.
-        endtime : datetime.datetime object
-            End time (<) of new array.
-
-        Returns
-        =======
-        self : obj within new time range
-        """
-
-        if starttime != None and endtime == None:
-            self.data = self.data[:,np.where(self['time'] >= mdates.date2num(starttime))[0]]
-        elif starttime == None and endtime != None:
-            self.data = self.data[:,np.where(self['time'] < mdates.date2num(endtime))[0]]
-        elif starttime != None and endtime != None:
-            self.data = self.data[:,np.where((self['time'] >= mdates.date2num(starttime)) & (self['time'] < mdates.date2num(endtime)))[0]]
-        return self
-
-
     def get_position(self, timestamp, refframe='J2000', rlonlat=True):
         """Returns position of satellite at given timestamp. Coordinates
         are provided in (r,lon,lat) format. Change rlonlat to False to get
@@ -447,28 +433,73 @@ class SatData():
                                             rlonlat=rlonlat)
 
 
-    def get_newell_coupling(self):    
-        """
-        Empirical Formula for dFlux/dt - the Newell coupling 
-        e.g. paragraph 25 in Newell et al. 2010 doi:10.1029/2009JA014805
-        IDL ovation: sol_coup.pro - contains 33 coupling functions in total
-        input: needs arrays for by, bz, v 
-        """
-        
-        bt = np.sqrt(self['by']**2 + self['bz']**2)
-        bztemp = self['bz']
-        bztemp[self['bz'] == 0] = 0.001
-        tc = np.arctan2(self['by'],bztemp) #calculate clock angle (theta_c = t_c)
-        neg_tc = bt*np.cos(tc)*self['bz'] < 0 #similar to IDL code sol_coup.pro
-        tc[neg_tc] = tc[neg_tc] + np.pi
-        sintc = np.abs(np.sin(tc/2.))
-        ec = (self['speed']**1.33333)*(sintc**2.66667)*(bt**0.66667)
-            
-        ecData = SatData({'time': self['time'], 'ec': ec})
-        ecData.h['DataSource'] = "Newell coupling parameter from {} data".format(self.source)
-        ecData.h['SamplingRate'] = self.h['SamplingRate']
+    def load_position_data(self, refframe='J2000', rlonlat=True):
+        """Loads data on satellite position into data object."""
 
-        return ecData
+        times = [mdates.num2date(t).replace(tzinfo=None) for t in self['time']]
+        pos = spice.get_satellite_position(self.source, times, 
+                                           refframe=refframe,
+                                           rlonlat=rlonlat)
+
+        self.position = pos
+        return self
+
+    # -----------------------------------------------------------------------------------
+    # Object data handling
+    # -----------------------------------------------------------------------------------
+
+    def cut(self, starttime=None, endtime=None):
+        """Cuts array down to range defined by starttime and endtime. One limit
+        can be provided or both.
+
+        Parameters
+        ==========
+        starttime : datetime.datetime object
+            Start time (>=) of new array.
+        endtime : datetime.datetime object
+            End time (<) of new array.
+
+        Returns
+        =======
+        self : obj within new time range
+        """
+
+        if starttime != None and endtime == None:
+            self.data = self.data[:,np.where(self['time'] >= mdates.date2num(starttime))[0]]
+        elif starttime == None and endtime != None:
+            self.data = self.data[:,np.where(self['time'] < mdates.date2num(endtime))[0]]
+        elif starttime != None and endtime != None:
+            self.data = self.data[:,np.where((self['time'] >= mdates.date2num(starttime)) & (self['time'] < mdates.date2num(endtime)))[0]]
+        return self
+
+
+    def make_hourly_data(self):
+        """Takes data with minute resolution and interpolates to hour.
+
+        Parameters
+        ==========
+        None
+
+        Returns
+        =======
+        Data_h : new SatData obj
+            New array with hourly interpolated data. Header is copied from original.
+        """
+
+        # Round to nearest hour
+        stime = self['time'][0] - self['time'][0]%(1./24.)
+        # Create new time array
+        time_h = np.array(stime + np.arange(0, len(self['time'])/60.) * (1./24.))
+        data_dict = {'time': time_h}
+        for k in self.vars:
+            na = np.interp(time_h, self['time'], self[k])
+            data_dict[k] = na
+
+        # Create new data opject:
+        Data_h = SatData(data_dict, header=copy.copy(self.h), source=copy.copy(self.source))
+        Data_h.h['SamplingRate'] = 1./24.
+
+        return Data_h
 
 
     def interp_nans(self, keys=None):
@@ -513,6 +544,38 @@ class SatData():
         newData.h['SamplingRate'] = resolution
 
         return newData
+
+
+    def shift_time_to_L1(self, sun_syn=26.24):
+        """Shifts the time variable to roughly correspond to solar wind at L1."""
+
+        lag_l1, lag_r = get_time_lag_wrt_earth(satname=self.source,
+            timestamp=mdates.num2date(self['time'][-1]),
+            v_mean=np.nanmean(self['speed']), sun_syn=sun_syn)
+        logger.info("shift_time_to_L1: Shifting time by {:.2f} hours".format((lag_l1 + lag_r)*24.))
+        self.data[0] = self.data[0] + lag_l1 + lag_r
+        return self
+
+
+    # -----------------------------------------------------------------------------------
+    # Index calculations and predictions
+    # -----------------------------------------------------------------------------------
+
+    def get_newell_coupling(self):
+        """
+        Empirical Formula for dFlux/dt - the Newell coupling
+        e.g. paragraph 25 in Newell et al. 2010 doi:10.1029/2009JA014805
+        IDL ovation: sol_coup.pro - contains 33 coupling functions in total
+        input: needs arrays for by, bz, v
+        """
+
+        ec = calc_coupling_newell(self['by'], self['bz'], self['speed'])
+    
+        ecData = SatData({'time': self['time'], 'ec': ec})
+        ecData.h['DataSource'] = "Newell coupling parameter from {} data".format(self.source)
+        ecData.h['SamplingRate'] = self.h['SamplingRate']
+
+        return ecData
 
 
     def make_aurora_power_prediction(self):
@@ -590,46 +653,6 @@ class SatData():
         kpData.h['SamplingRate'] = 1./24.
 
         return kpData
-
-
-    def make_hourly_data(self):
-        """Takes data with minute resolution and interpolates to hour.
-
-        Parameters
-        ==========
-        None
-
-        Returns
-        =======
-        Data_h : new SatData obj
-            New array with hourly interpolated data. Header is copied from original.
-        """
-
-        # Round to nearest hour
-        stime = self['time'][0] - self['time'][0]%(1./24.)
-        # Create new time array
-        time_h = np.array(stime + np.arange(0, len(self['time'])/60.) * (1./24.))
-        data_dict = {'time': time_h}
-        for k in self.vars:
-            na = np.interp(time_h, self['time'], self[k])
-            data_dict[k] = na
-
-        # Create new data opject:
-        Data_h = SatData(data_dict, header=copy.copy(self.h), source=copy.copy(self.source))
-        Data_h.h['SamplingRate'] = 1./24.
-
-        return Data_h
-
-
-    def shift_time_to_L1(self, sun_syn=26.24):
-        """Shifts the time variable to roughly correspond to solar wind at L1."""
-
-        lag_l1, lag_r = get_time_lag_wrt_earth(satname=self.source,
-            timestamp=mdates.num2date(self['time'][-1]),
-            v_mean=np.nanmean(self['speed']), sun_syn=sun_syn)
-        logger.info("shift_time_to_L1: Shifting time by {:.2f} hours".format((lag_l1 + lag_r)*24.))
-        self.data[0] = self.data[0] + lag_l1 + lag_r
-        return self
 
 
 # =======================================================================================
@@ -1504,19 +1527,17 @@ def download_stereoa_data_beacon(filedir="sta_beacon", starttime=None, endtime=N
     plastic_location='https://stereo-ssc.nascom.nasa.gov/data/beacon/ahead/plastic'
     impact_location='https://stereo-ssc.nascom.nasa.gov/data/beacon/ahead/impact'
 
-    #system time now
-    ndays = 14
-    if starttime == None and endtime == None:
-        startdate = datetime.utcnow() - timedelta(days=ndays-1)
-    elif starttime != None and endtime == None:
-        startdate = starttime - timedelta(days=ndays-1)
+    if starttime == None and endtime == None:       # Read most recent data
+        starttime = datetime.utcnow() - timedelta(days=ndays-1)
+        endtime = datetime.utcnow()
+    elif starttime != None and endtime == None:     # Read past data
+        endtime = starttime + timedelta(days=ndays)
     elif starttime == None and endtime != None:
-        startdate = endtime
-    elif starttime != None and endtime != None:
-        startdate = starttime
-        ndays = (endtime - starttime).days + 1
+        starttime = endtime - timedelta(days=ndays)
+    else:
+        ndays = (endtime-starttime).days
 
-    dates = [startdate+timedelta(days=n) for n in range(0,ndays)]
+    dates = [starttime+timedelta(days=n) for n in range(0, ndays)]
     logger.info("Following dates listed to be downloaded: {}".format(dates))
 
     for date in dates:
@@ -1876,294 +1897,6 @@ def interp_nans(ar):
  return (nextrise,nextset,prevrise,prevset)
 """
 
-# ***************************************************************************************
-# D. Prediction functions:
-# ***************************************************************************************
-
- 
-def make_kp_from_wind(btot_in,by_in,bz_in,v_in,density_in):
-    """
-    speed v_in [km/s]
-    density [cm-3]
-    B in [nT]
-    
-    Newell et al. 2008
-    https://onlinelibrary.wiley.com/resolve/doi?DOI=10.1029/2010SW000604
-    see also https://agupubs.onlinelibrary.wiley.com/doi/full/10.1002/swe.20053
-
-    The IMF clock angle is defined by thetac = arctan(By/Bz)
-    this angle is 0° pointing toward north (+Z), 180° toward south (-Z); 
-    its negative for the -Y hemisphere, positive for +Y hemisphere
-    thus southward pointing fields have angles abs(thetac)> 90 
-    the absolute value for thetac needs to be taken otherwise the fractional power (8/3)
-    will lead to imaginary values
-    """
- 
-    thetac= abs(np.arctan2(by_in,bz_in)) #in radians
-    merging_rate=v_in**(4/3)*btot_in**(2/3)*(np.sin(thetac/2)**(8/3)) #flux per time
-    kp=0.05+2.244*1e-4*(merging_rate)+2.844*1e-6*density_in**0.5*v_in**2 
-    
-    return kp
-
-
-def make_aurora_power_from_wind(btot_in,by_in,bz_in,v_in,density_in):
-    """
-    speed v_in [km/s]
-    density [cm-3]
-    B in [nT]
-    """
-
-    #newell et al. 2008 JGR, doi:10.1029/2007JA012825, page 7 
-    thetac= abs(np.arctan2(by_in,bz_in)) #in radians
-    merging_rate=v_in**(4/3)*btot_in**(2/3)*(np.sin(thetac/2)**(8/3)) #flux per time
-    #unit is in GW
-    aurora_power=-4.55+2.229*1e-3*(merging_rate)+1.73*1e-5*density_in**0.5*v_in**2
-
-    return aurora_power
-
-
-def make_dst_from_wind(btot_in,bx_in, by_in,bz_in,v_in,vx_in,density_in,time_in):
-    """
-    this makes from synthetic or observed solar wind the Dst index	
-    all nans in the input data must be removed prior to function call
-    3 models are calculated: Burton et al., OBrien/McPherron, and Temerin/Li
-    btot_in IMF total field, in nT, GSE or GSM (they are the same)
-    bx_in - the IMF Bx field in nT, GSE or GSM (they are the same)
-    by_in - the IMF By field in nT, GSM
-    bz_in - the IMF Bz field in nT, GSM
-    v_in - the speed in km/s
-    vx_in - the solar wind speed x component (GSE is similar to GSM) in km/s
-    time_in - the time in matplotlib date format
-    """
-
-    #define variables
-    Ey=np.zeros(len(bz_in))
-    #dynamic pressure
-    pdyn1=np.zeros(len(bz_in))
-    protonmass=1.6726219*1e-27  #kg
-    #assume pdyn is only due to protons
-    pdyn1=density_in*1e6*protonmass*(v_in*1e3)**2*1e9  #in nanoPascal
-    dststar1=np.zeros(len(bz_in))
-    dstcalc1=np.zeros(len(bz_in))
-    dststar2=np.zeros(len(bz_in))
-    dstcalc2=np.zeros(len(bz_in))
-    
-    #array with all Bz fields > 0 to 0 
-    bz_in_negind=np.where(bz_in > 0)  
-     #important: make a deepcopy because you manipulate the input variable
-    bzneg=copy.deepcopy(bz_in)
-    bzneg[bz_in_negind]=0
-
-    #define interplanetary electric field 
-    Ey=v_in*abs(bzneg)*1e-3; #now Ey is in mV/m
-    
-    ######################## model 1: Burton et al. 1975 
-    Ec=0.5  
-    a=3.6*1e-5
-    b=0.2*100 #*100 wegen anderer dynamic pressure einheit in Burton
-    c=20  
-    d=-1.5/1000 
-    for i in range(len(bz_in)-1):
-        if Ey[i] > Ec:
-            F=d*(Ey[i]-Ec) 
-        else: F=0
-        #Burton 1975 seite 4208: Dst=Dst0+bP^1/2-c   / und b und c positiv  
-        #this is the ring current Dst
-        deltat_sec=(time_in[i+1]-time_in[i])*86400 #timesyn is in days - convert to seconds
-        dststar1[i+1]=(F-a*dststar1[i])*deltat_sec+dststar1[i];  #deltat must be in seconds
-        #this is the Dst of ring current and magnetopause currents 
-        dstcalc1[i+1]=dststar1[i+1]+b*np.sqrt(pdyn1[i+1])-c; 
-
-    ###################### model 2: OBrien and McPherron 2000 
-    #constants
-    Ec=0.49
-    b=7.26  
-    c=11  #nT
-    for i in range(len(bz_in)-1):
-        if Ey[i] > Ec:            #Ey in mV m
-            Q=-4.4*(Ey[i]-Ec) 
-        else: Q=0
-        tau=2.4*np.exp(9.74/(4.69+Ey[i])) #tau in hours
-        #this is the ring current Dst
-        deltat_hours=(time_in[i+1]-time_in[i])*24 #time_in is in days - convert to hours
-        dststar2[i+1]=((Q-dststar2[i]/tau))*deltat_hours+dststar2[i] #t is pro stunde, time intervall ist auch 1h
-        #this is the Dst of ring current and magnetopause currents 
-        dstcalc2[i+1]=dststar2[i+1]+b*np.sqrt(pdyn1[i+1])-c; 
-     
-    
-    
-    ######## model 3: Xinlin Li LASP Colorado and Mike Temerin
-    
-     
-    #2002 version 
-    
-    #define all terms
-    dst1=np.zeros(len(bz_in))
-    dst2=np.zeros(len(bz_in))
-    dst3=np.zeros(len(bz_in))
-    pressureterm=np.zeros(len(bz_in))
-    directterm=np.zeros(len(bz_in))
-    offset=np.zeros(len(bz_in))
-    dst_temerin_li_out=np.zeros(len(bz_in))
-    bp=np.zeros(len(bz_in))
-    bt=np.zeros(len(bz_in))
-    
-    
-    #define inital values (needed for convergence, see Temerin and Li 2002 note)
-    dst1[0:10]=-15
-    dst2[0:10]=-13
-    dst3[0:10]=-2
-    
-    
-
-    #define all constants
-    p1=0.9
-    p2=2.18e-4
-    p3=14.7
-    
-    # these need to be found with a fit for 1-2 years before calculation
-    # taken from the TL code:    offset_term_s1 = 6.70       ;formerly named dsto
-    #   offset_term_s2 = 0.158       ;formerly hard-coded     2.27 for 1995-1999
-    #   offset_term_s3 = -0.94       ;formerly named phasea  -1.11 for 1995-1999
-    #   offset_term_s4 = -0.00954    ;formerly hard-coded
-    #   offset_term_s5 = 8.159e-6    ;formerly hard-coded
-    
-    
-    #s1=6.7
-    #s2=0.158
-    #s3=-0.94
-    #set by myself as a constant in the offset term
-    #s4=-3
-    
-    
-    #s1=-2.788
-    #s2=1.44
-    #s3=-0.92
-    #set by myself as a constant in the offset term
-    #s4=-3
-    #s4 and s5 as in the TL 2002 paper are not used due to problems with the time
-    #s4=-1.054*1e-2
-    #s5=8.6e-6
-
-
-    #found by own offset optimization for 2015
-    s1=4.29
-    s2=5.94
-    s3=-3.97
-    
-    a1=6.51e-2
-    a2=1.37
-    a3=8.4e-3  
-    a4=6.053e-3
-    a5=1.12e-3
-    a6=1.55e-3
-    
-    tau1=0.14 #days
-    tau2=0.18 #days
-    tau3=9e-2 #days
-    
-    b1=0.792
-    b2=1.326
-    b3=1.29e-2
-    
-    c1=-24.3
-    c2=5.2e-2
-
-    #Note: vx has to be used with a positive sign throughout the calculation
-    
-    #----------------------------------------- loop over each timestep
-    for i in np.arange(1,len(bz_in)-1):
-
-         
-        #t time in days since beginning of 1995   #1 Jan 1995 in Julian days
-      #  t1=sunpy.time.julian_day(mdates.num2date(time_in[i]))-sunpy.time.julian_day('1995-1-1 00:00')
-        t1=sunpy.time.julian_day(mdates.num2date(time_in[i]))-sunpy.time.julian_day('2015-1-1 00:00')
-        
-       
-        yearli=365.24 
-        tt=2*np.pi*t1/yearli
-        ttt=2*np.pi*t1
-        alpha=0.078
-        beta=1.22
-        cosphi=np.sin(tt+alpha)*np.sin(ttt-tt-beta)*(9.58589*1e-2)+np.cos(tt+alpha)*(0.39+0.104528*np.cos(ttt-tt-beta))
-       
-        #equation 1 use phi from equation 2
-        sinphi=(1-cosphi**2)**0.5
-        
-        pressureterm[i]=(p1*(btot_in[i]**2)+density_in[i]*((p2*((v_in[i])**2)/(sinphi**2.52))+p3))**0.5
-        
-        #2 directbzterm 
-        directterm[i]=0.478*bz_in[i]*(sinphi**11.0)
-
-        #3 offset term - the last two terms were cut because don't make sense as t1 rises extremely for later years
-        offset[i]=s1+s2*np.sin(2*np.pi*t1/yearli+s3)
-        #or just set it constant
-        #offset[i]=-5
-        bt[i]=(by_in[i]**2+bz_in[i]**2)**0.5  
-        #mistake in 2002 paper - bt is similarly defined as bp (with by bz); but in Temerin and Li's code (dst.pro) bp depends on by and bx
-        bp[i]=(by_in[i]**2+bx_in[i]**2)**0.5  
-        #contains t1, but in cos and sin 
-        dh=bp[i]*np.cos(np.arctan2(bx_in[i],by_in[i])+6.10) * ((3.59e-2)*np.cos(2*np.pi*t1/yearli+0.04)-2.18e-2*np.sin(2*np.pi*t1-1.60))
-        theta_li=-(np.arccos(-bz_in[i]/bt[i])-np.pi)/2
-        exx=1e-3*abs(vx_in[i])*bt[i]*np.sin(theta_li)**6.1
-        #t1 and dt are in days
-        dttl=sunpy.time.julian_day(mdates.num2date(time_in[i+1]))-sunpy.time.julian_day(mdates.num2date(time_in[i]))
-
-       
-        #4 dst1 
-        #find value of dst1(t-tau1) 
-        #time_in is in matplotlib format in days: 
-        #im time_in den index suchen wo time_in-tau1 am nächsten ist
-        #und dann bei dst1 den wert mit dem index nehmen der am nächsten ist, das ist dann dst(t-tau1)
-        #wenn index nicht existiert (am anfang) einfach index 0 nehmen
-        #check for index where timesi is greater than t minus tau
-        
-        indtau1=np.where(time_in > (time_in[i]-tau1))
-        dst1tau1=dst1[indtau1[0][0]]
-        #similar search for others  
-        dst2tau1=dst2[indtau1[0][0]]
-        th1=0.725*(sinphi**-1.46)
-        th2=1.83*(sinphi**-1.46)
-        fe1=(-4.96e-3)*  (1+0.28*dh)*  (2*exx+abs(exx-th1)+abs(exx-th2)-th1-th2)*  (abs(vx_in[i])**1.11)*((density_in[i])**0.49)*(sinphi**6.0)
-        dst1[i+1]=dst1[i]+  (a1*(-dst1[i])**a2   +fe1*   (1+(a3*dst1tau1+a4*dst2tau1)/(1-a5*dst1tau1-a6*dst2tau1)))  *dttl
-        
-        #5 dst2    
-        indtau2=np.where(time_in > (time_in[i]-tau2))
-        dst1tau2=dst1[indtau2[0][0]]
-        df2=(-3.85e-8)*(abs(vx_in[i])**1.97)*(btot_in[i]**1.16)*(np.sin(theta_li)**5.7)*((density_in[i])**0.41)*(1+dh)
-        fe2=(2.02*1e3)*(sinphi**3.13)*df2/(1-df2)
-        dst2[i+1]=dst2[i]+(b1*(-dst2[i])**b2+fe2*(1+(b3*dst1tau2)/(1-b3*dst1tau2)))*dttl
-        
-        #6 dst3  
-        indtau3=np.where(time_in > (time_in[i]-tau3))
-        dst3tau3=dst3[indtau3[0][0]]
-        df3=-4.75e-6*(abs(vx_in[i])**1.22)*(bt[i]**1.11)*np.sin(theta_li)**5.5*((density_in[i])**0.24)*(1+dh)
-        fe3=3.45e3*(sinphi**0.9)*df3/(1-df3)
-        dst3[i+1]=dst3[i]+  (c1*dst3[i]   + fe3*(1+(c2*dst3tau3)/(1-c2*dst3tau3)))*dttl
-        
-         
-        #print(dst1[i], dst2[i], dst3[i], pressureterm[i], directterm[i], offset[i])
-        #debugging
-        #if i == 30: pdb.set_trace()
-        #for debugging
-        #print()
-        #print(dst1[i])
-        #print(dst2[i])
-        #print(dst3[i])
-        #print(pressureterm[i])
-        #print(directterm[i])
-
-
-        #add time delays: ** to do
-        
-        #The dst1, dst2, dst3, (pressure term), (direct IMF bz term), and (offset terms) are added (after interpolations) with time delays of 7.1, 21.0, 43.4, 2.0, 23.1 and 7.1 min, respectively, for comparison with the ‘‘Kyoto Dst.’’ 
-
-        #dst1
-        dst_temerin_li_out[i]=dst1[i]+dst2[i]+dst3[i]+pressureterm[i]+directterm[i]+offset[i]
-     
-    return (dstcalc1, dstcalc2, dst_temerin_li_out)   
-
-
 def epoch_to_num(epoch):
     """
     Taken from spacepy https://pythonhosted.org/SpacePy/_modules/spacepy/pycdf.html#Library.epoch_to_num
@@ -2187,5 +1920,24 @@ def epoch_to_num(epoch):
     return (epoch - 31622400000.0) / (24 * 60 * 60 * 1000.0) + 1.0
  
 
+# ***************************************************************************************
+# E. Other:
+# ***************************************************************************************
 
 
+def init_logging(verbose=False):
+
+    # DEFINE LOGGING MODULE:
+    logging.config.fileConfig(os.path.join(os.path.dirname(__file__), 'config/logging.ini'), disable_existing_loggers=False)
+    logger = logging.getLogger(__name__)
+    # Add handler for logging to shell:
+    sh = logging.StreamHandler()
+    if verbose:
+        sh.setLevel(logging.INFO)
+    else:
+        sh.setLevel(logging.ERROR)
+    shformatter = logging.Formatter('%(asctime)s - %(message)s', datefmt='%H:%M:%S')
+    sh.setFormatter(shformatter)
+    logger.addHandler(sh)
+
+    return logger

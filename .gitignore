@@ -3,7 +3,7 @@ results
 real
 data
 sta_beacon
-spice/kernels/*
+predstorm/spice/kernels/*
 *.png
 *.log
 omni2*.*

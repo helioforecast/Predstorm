@@ -89,7 +89,7 @@ def get_satellite_position(satname, timestamp, kernelpath=None, kernellist=None,
         kernellist = required_kernels[satstr]
 
     if kernelpath == None:
-        kernelpath = os.path.join(os.path.dirname(__file__), 'kernels')
+        kernelpath = os.path.join('data/kernels')
 
     logger.info("get_satellite_position: Reading SPICE kernel files from {}".format(kernelpath))
 

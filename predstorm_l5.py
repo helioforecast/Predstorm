@@ -90,10 +90,6 @@ if server:
     matplotlib.use('Agg') # important for server version, otherwise error when making figures
 else:
     matplotlib.use('Qt5Agg') # figures are shown on mac
-try:
-   import IPython
-except:
-   pass
 
 from datetime import datetime, timedelta
 import json
@@ -108,20 +104,12 @@ import scipy.io
 import seaborn as sns
 import sunpy.time
 import urllib
-from scipy.signal import savgol_filter
 
 # Local imports
-import spice
-from predstorm_module import get_dscovr_data_real, get_dscovr_data_all
-from predstorm_module import download_stereoa_data_beacon, read_stereoa_data_beacon
-from predstorm_module import time_to_num_cat, converttime, sphere2cart
-from predstorm_module import merge_Data
-from predstorm_module import getpositions, interp_nans
-from predstorm_module import convert_GSE_to_GSM
-from predstorm_module import convert_RTN_to_GSE_sta_l1
-from predstorm_module import get_noaa_dst, get_past_dst
-from predstorm_module import logger
-from predstorm_plots import plot_solarwind_and_dst_prediction
+import predstorm as ps
+from predstorm.plot import plot_solarwind_and_dst_prediction
+# Old imports (remove later):
+from predstorm.data import getpositions, time_to_num_cat
 
 # GET INPUT PARAMETERS
 from predstorm_l5_input import *
@@ -228,7 +216,7 @@ def main():
     tstr_format = "%Y-%m-%d-%H_%M" # "%Y-%m-%d_%H%M" would be better
     logger.info("Getting DSCOVR data...")
     if run_mode == 'normal':
-        dism = get_dscovr_data_real()
+        dism = ps.get_dscovr_data_real()
         # Get time of the last entry in the DSCOVR data
         timenow = dism['time'][-1]
         # Get UTC time now
@@ -236,10 +224,10 @@ def main():
     elif run_mode == 'historic':
         timestamp = historic_date
         if (datetime.utcnow() - historic_date).days < (7.-plot_past_days):
-            dism = get_dscovr_data_real()
+            dism = ps.get_dscovr_data_real()
             dis = dism.make_hourly_data()
         else:
-            dism = get_dscovr_data_all(P_filepath="data/dscovrarchive/*",
+            dism = ps.get_dscovr_data_all(P_filepath="data/dscovrarchive/*",
                                        M_filepath="data/dscovrarchive/*",
                                        starttime=timestamp-timedelta(days=plot_past_days+1),
                                        endtime=timestamp)
@@ -276,13 +264,15 @@ def main():
     #get real time STEREO-A data with minute/hourly time resolution as recarray
     logger.info("Getting STEREO-A data...")
     if run_mode == 'normal':
-        download_stereoa_data_beacon()
-        stam = read_stereoa_data_beacon()
+        ps.download_stereoa_data_beacon()
+        stam = ps.read_stereoa_data_beacon()
     elif run_mode == 'historic':
-        lag_L1, lag_r = get_time_lag_wrt_earth(timestamp=timestamp, satname='STEREO-A')
+        lag_L1, lag_r = ps.get_time_lag_wrt_earth(timestamp=timestamp, satname='STEREO-A')
         est_timelag = lag_L1 + lag_r
-        download_stereoa_data_beacon(starttime=mdates.num2date(timenow)-timedelta(days=plot_future_days+est_timelag+2))
-        stam = read_stereoa_data_beacon(starttime=mdates.num2date(timenow))
+        ps.download_stereoa_data_beacon(starttime=mdates.num2date(timenow)-timedelta(days=plot_future_days+est_timelag),
+                                        endtime=mdates.num2date(timenow)+timedelta(days=2))
+        stam = ps.read_stereoa_data_beacon(starttime=mdates.num2date(timenow)-timedelta(days=plot_future_days+est_timelag),
+                                           endtime=mdates.num2date(timenow)+timedelta(days=2))
     stam.interp_nans()
     stam.shift_time_to_L1()
     sta = stam.make_hourly_data()
@@ -300,11 +290,11 @@ def main():
 
     logger.info("Getting Kyoto Dst data...")
     if run_mode == 'normal':
-        dst = get_noaa_dst()
+        dst = ps.get_noaa_dst()
     elif run_mode == 'historic':
-        dst = get_past_dst(filepath="data/dstarchive/WWW_dstae00016185.dat",
-                           starttime=mdates.num2date(timenow)-timedelta(days=plot_past_days+1),
-                           endtime=mdates.num2date(timenow))
+        dst = ps.get_past_dst(filepath="data/dstarchive/WWW_dstae00016185.dat",
+                              starttime=mdates.num2date(timenow)-timedelta(days=plot_past_days+1),
+                              endtime=mdates.num2date(timenow))
 
     #========================== (2) PREDICTION CALCULATIONS ==================================
 
@@ -317,7 +307,7 @@ def main():
     # NEW METHOD:
     try:
         [sta_r, sta_long_heeq, sta_lat_heeq] = sta.get_position(timestamp, refframe='HEEQ')
-        [earth_r, elon, elat] = spice.get_satellite_position('EARTH', timestamp, refframe='HEEQ', rlonlat=True)
+        [earth_r, elon, elat] = ps.spice.get_satellite_position('EARTH', timestamp, refframe='HEEQ', rlonlat=True)
         sta_r = sta_r/AU
         earth_r = earth_r/AU * 0.99   # estimated correction to L1
         sta_long_heeq, sta_lat_heeq = sta_long_heeq*180./np.pi, sta_lat_heeq*180./np.pi
@@ -325,8 +315,8 @@ def main():
     # OLD METHOD:
     except:
         logger.warning("SPICE methods for position determination failed. Using old method.")
-        pos=getpositions('data/positions_2007_2023_HEEQ_6hours.sav')
-        pos_time_num=time_to_num_cat(pos.time)
+        pos = getpositions('data/positions_2007_2023_HEEQ_6hours.sav')
+        pos_time_num = time_to_num_cat(pos.time)
         #take position of STEREO-A for time now from position file
         pos_time_now_ind=np.where(timenow < pos_time_num)[0][0]
         sta_r=pos.sta[0][pos_time_now_ind]
@@ -398,8 +388,8 @@ def main():
 
     #------------------- (2c) COMBINE DSCOVR and time-shifted STEREO-A data -----------------
 
-    dis_sta = merge_Data(dis, sta)
-    dism_stam = merge_Data(dism, stam)
+    dis_sta = ps.merge_Data(dis, sta)
+    dism_stam = ps.merge_Data(dism, stam)
 
     #---------------------- (2d) calculate Dst for combined data ----------------------------
 
@@ -767,18 +757,8 @@ if __name__ == '__main__':
     # Check if directory for beacon data exists
     if os.path.isdir('sta_beacon') == False: os.mkdir('sta_beacon')
 
-    # DEFINE LOGGING MODULE:
-    logging.config.fileConfig('config/logging.ini', disable_existing_loggers=False)
-    logger = logging.getLogger(__name__)
-    # Add handler for logging to shell:
-    sh = logging.StreamHandler()
-    if verbose:
-        sh.setLevel(logging.INFO)
-    else:
-        sh.setLevel(logging.ERROR)
-    shformatter = logging.Formatter('%(asctime)s - %(message)s', datefmt='%H:%M:%S')
-    sh.setFormatter(shformatter)
-    logger.addHandler(sh)
+    # INITIATE LOGGING:
+    logger = ps.init_logging(verbose=verbose)
 
     # Closes all plots
     plt.close('all')

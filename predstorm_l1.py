@@ -58,8 +58,6 @@ OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ####################################### CODE START #######################################
 ##########################################################################################
 
-
-
 ################################## INPUT PARAMETERS ######################################
 import os
 import sys
@@ -67,7 +65,6 @@ import getopt
 
 #load all constants from predstorm_L1_input.py
 from predstorm_l1_input import *
-
 
 #IMPORT
 import scipy
@@ -102,13 +99,10 @@ import json
 import seaborn as sns
 import sunpy.time
 
-from predstorm_module import make_dst_from_wind
-from predstorm_module import get_omni_data
-from predstorm_module import get_dscovr_data_real_old
-from predstorm_module import get_noaa_dst
-
-
-
+import predstorm as ps
+# Old imports (remove later)
+from predstorm.data import make_dst_from_wind, get_dscovr_data_real_old
+from predstorm.predict import make_dst_from_wind
 
 #========================================================================================
 #--------------------------------- FUNCTIONS --------------------------------------------
@@ -151,7 +145,7 @@ print('-------------------------------------------------')
 
 
 #get real time DSCOVR data with minute/hourly time resolution as recarray
-[dism,dis]=get_dscovr_data_real_old()
+[dism,dis] = get_dscovr_data_real_old()
 
 #get time of the last entry in the DSCOVR data
 timenow=dism.time[-1]
@@ -213,7 +207,7 @@ print('load real time Dst from Kyoto via NOAA')
 
 
 #get NOAA Dst for comparison
-dst=get_noaa_dst()
+dst=ps.get_noaa_dst()
 print('Loaded Kyoto Dst from NOAA for last 7 days.')
 
 #make Dst index from solar wind data
@@ -369,7 +363,7 @@ if not os.path.exists('data/omni2_all_years.dat'):
 #if omni2 hourly data is not yet converted and saved as pickle, do it:
 if not os.path.exists('data/omni2_all_years_pickle.p'):
  #load OMNI2 dataset from .dat file with a function from dst_module.py
- o=get_omni_data()
+ o=ps.get_omni_data()
  #contains: o. time,day,hour,btot,bx,by,bz,bygsm,bzgsm,speed,speedx,den,pdyn,dst,kp
  #save for faster loading later
  pickle.dump(o, open('data/omni2_all_years_pickle.p', 'wb') )
@@ -1040,7 +1034,7 @@ if os.path.isdir('real/savefiles') == False: os.mkdir('real/savefiles')
 
 filename_save='real/savefiles/predstorm_realtime_pattern_save_v1_'+timenowstr[0:10]+'-'+timenowstr[11:13]+'_'+timenowstr[14:16]+'.p'
 print('All variables for plot saved in ', filename_save, ' for later verification usage.')
-pickle.dump([timenow, dism.time, dism.btot, dism.bygsm, dism.bzgsm,  dism.den, dism.speed, rtimes7, btot7, bygsm7, bzgsm7, rbtimes24, btot24,bygsm24,bzgsm24, rtimes7, rpv7, rpn7, rptimes24, rpn24, rpv24,dst_time, dst, timesdst, pdst_burton, pdst_obrien], open(filename_save, "wb" ) )
+pickle.dump([timenow, dism.time, dism.btot, dism.bygsm, dism.bzgsm,  dism.den, dism.speed, rtimes7, btot7, bygsm7, bzgsm7, rbtimes24, btot24,bygsm24,bzgsm24, rtimes7, rpv7, rpn7, rptimes24, rpn24, rpv24,dst['time'], dst['dst'], timesdst, pdst_burton, pdst_obrien], open(filename_save, "wb" ) )
 
 ##########################################################################################
 ################################# CODE STOP ##############################################

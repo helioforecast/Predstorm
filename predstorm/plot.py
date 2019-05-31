@@ -25,7 +25,7 @@ import logging.config
 import numpy as np
 import pdb
 import seaborn as sns
-import scipy
+import scipy.signal as signal
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
@@ -34,15 +34,11 @@ from datetime import datetime, timedelta
 from glob import iglob
 import json
 import urllib
-try:
-	import IPython
-except:
-	pass
 
-from predstorm_module import read_stereoa_data_beacon, download_stereoa_data_beacon
-from predstorm_module import get_dscovr_data_all, get_past_dst, make_dst_from_wind
-from predstorm_module import get_time_lag_wrt_earth, getpositions, time_to_num_cat
-import config.plotting as pltcfg
+from .data import read_stereoa_data_beacon, download_stereoa_data_beacon
+from .data import get_dscovr_data_all, get_past_dst
+from .data import get_time_lag_wrt_earth, getpositions, time_to_num_cat
+from .config import plotting as pltcfg
 
 logger = logging.getLogger(__name__)
 
@@ -168,23 +164,15 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
     plt.ylabel('Speed $\mathregular{[km \\ s^{-1}]}$', fontsize=fs_ylabel)
 
     # Plot STEREO-A data with timeshift and savgol filter
-    try:
-        plt.plot_date(stam['time'][sta_index_future],savgol_filter(stam['speed'][sta_index_future],11,1),'-', c=c_sta, linewidth=lw, label='speed STEREO-Ahead')
-    except:
-        print("Savgol filter failed for STEREO-A data. Continuing without...")  # TODO Why does this happen? chris: not exactly sure! maybe NaNs?
-        plt.plot_date(stam['time'][sta_index_future], stam['speed'][sta_index_future],
-                      '-', c=c_sta, linewidth=lw, label='speed STEREO-Ahead')
+    plt.plot_date(stam['time'][sta_index_future],signal.savgol_filter(stam['speed'][sta_index_future],11,1),'-', 
+                  c=c_sta, linewidth=lw, label='speed STEREO-Ahead')
 
     # Add speed levels:
     pltcfg.plot_speed_lines(xlims=[plotstart, plotend])
 
     # For y limits check where the maximum and minimum are for DSCOVR and STEREO taken together:
-    try:
-        vplotmax=np.nanmax(np.concatenate((dism['speed'],savgol_filter(stam['speed'][sta_index_future],11,1))))+100
-        vplotmin=np.nanmin(np.concatenate((dism['speed'],savgol_filter(stam['speed'][sta_index_future],11,1)))-50)
-    except:
-        vplotmax=np.nanmax(np.concatenate((dism['speed'],stam['speed'][sta_index_future])))+100
-        vplotmin=np.nanmin(np.concatenate((dism['speed'],stam['speed'][sta_index_future]))-50)
+    vplotmax=np.nanmax(np.concatenate((dism['speed'],signal.savgol_filter(stam['speed'][sta_index_future],11,1))))+100
+    vplotmin=np.nanmin(np.concatenate((dism['speed'],signal.savgol_filter(stam['speed'][sta_index_future],11,1)))-50)
     plt.ylim(vplotmin, vplotmax)
 
     plt.annotate('now', xy=(timeutc,vplotmax-(vplotmax-vplotmin)*0.25), xytext=(timeutc+0.05,vplotmax-(vplotmax-vplotmin)*0.25), color='k', fontsize=14)
@@ -201,12 +189,8 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
     plt.ylim([0,np.nanmax(np.nanmax(np.concatenate((dism['density'],stam['density'][sta_index_future])))+10)])
 
     #plot STEREO-A data with timeshift and savgol filter
-    try:
-        plt.plot_date(stam['time'][sta_index_future], savgol_filter(stam['density'][sta_index_future],5,1),
-                      '-', c=c_sta, linewidth=lw, label='density STEREO-Ahead')
-    except:
-        plt.plot_date(stam['time'][sta_index_future], stam['density'][sta_index_future],
-                      '-', c=c_sta, linewidth=lw, label='density STEREO-Ahead')
+    plt.plot_date(stam['time'][sta_index_future], signal.savgol_filter(stam['density'][sta_index_future],5,1),
+                  '-', c=c_sta, linewidth=lw, label='density STEREO-Ahead')
 
     # SUBPLOT 4: Actual and predicted Dst
     # -----------------------------------
@@ -837,20 +821,30 @@ def gradient_fill(x, y, ax=None, maxval=None, **kwargs):
     return line, im
 
 
-if __name__ == '__main__':
+def plot_all(timestamp=None):
+    """Makes plots of a time range ending with timestamp using all functions."""
 
-    logging.config.fileConfig('config/logging.ini', disable_existing_loggers=False)
-    logger = logging.getLogger(__name__)
+    if timestamp == None:
+        timestamp = datetime.utcnow()
 
-    timestamp = datetime.strptime("2019-05-05", "%Y-%m-%d")
     lbdays = 20
     lag_L1, lag_r = get_time_lag_wrt_earth(timestamp=timestamp, satname='STEREO-A')
     est_timelag = lag_L1 + lag_r
+    logger.info("plot_all: Downloading missing STEREO data")
     download_stereoa_data_beacon(starttime=timestamp-timedelta(days=lbdays+est_timelag),
                                  endtime=timestamp)
+    logger.info("plot_all: Plotting STEREO-A vs DSCOVR data")
     plot_stereo_dscovr_comparison(timestamp=timestamp, look_back=lbdays)
+    logger.info("plot_all: Plotting comparison between Dst predictions")
     plot_dst_comparison(timestamp=timestamp, look_back=lbdays)
+    logger.info("plot_all: Plotting all predicted indices")
     plot_indices(timestamp=timestamp, look_back=lbdays)
+
+
+if __name__ == '__main__':
+
+    plot_all()
+
 
 
 
