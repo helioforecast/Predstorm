@@ -212,9 +212,9 @@ class SatData():
         ostr += "\n"
         ostr += "Header information:\n"
         for j in self.h:
-            if self.h[j] != None: ostr += "    {}:\t{}\n".format(j, self.h[j])
+            if self.h[j] != None: ostr += "    {:>25}:\t{}\n".format(j, self.h[j])
         ostr += "\n"
-        ostr += "Some variable statistics:\n"
+        ostr += "Variable statistics:\n"
         ostr += "{:>12}{:>12}{:>12}\n".format('VAR', 'MEAN', 'STD')
         for k in self.vars:
             ostr += "{:>12}{:>12.2f}{:>12.2f}\n".format(k, np.nanmean(self[k]), np.nanstd(self[k]))
@@ -1485,6 +1485,24 @@ def get_omni_data():
     ('bygsm','f8'),('bzgsm','f8'),('speed','f8'),('speedx','f8'),('den','f8'),('pdyn','f8'),('dst','f8'),('kp','f8')])
     
     return omni_data
+
+
+def get_predstorm_data_realtime():
+    """Reads data from PREDSTORM real-time output."""
+
+    filepath = "https://www.iwf.oeaw.ac.at/fileadmin/staff/SP/cmoestl/readtime/predstorm_real.txt"
+
+    dtype = [('time', 'float'), ('btot', 'float'), ('bx', 'float'), ('by', 'float'), ('bz', 'float'),
+           ('density', 'float'), ('speed', 'float'), ('dst', 'float'), ('kp', 'float')]
+    data = np.loadtxt(filepath, usecols=[6,7,8,9,10,11,12,13,14], dtype=dtype)
+
+    pred_data = SatData({var[0]: data[var[0]] for var in dtype},
+                        source='PREDSTORM')
+    pred_data.h['DataSource'] = "PREDSTORM (L5-to-L1 prediction)"
+    pred_data.h['SamplingRate'] = 1./24.
+    pred_data.h['CoordinateSystem'] = 'GSM'
+
+    return pred_data
 
 
 def download_stereoa_data_beacon(filedir="sta_beacon", starttime=None, endtime=None, ndays=14):

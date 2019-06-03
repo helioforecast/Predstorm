@@ -2,6 +2,9 @@ __pycache__
 results
 real
 data
+build
+dist
+predstorm.egg*
 sta_beacon
 predstorm/spice/kernels/*
 *.png
