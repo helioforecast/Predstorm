@@ -1487,11 +1487,28 @@ def get_omni_data():
     return omni_data
 
 
-def get_predstorm_data_realtime():
-    """Reads data from PREDSTORM real-time output."""
+def get_predstorm_data_realtime(resolution='hour'):
+    """Reads data from PREDSTORM real-time output.
 
-    filepath = "https://www.iwf.oeaw.ac.at/fileadmin/staff/SP/cmoestl/readtime/predstorm_real.txt"
+    Parameters
+    ==========
+    resolution : str ['hour'(=default) or 'minute']
+        Data resolution, only two available.
 
+    Returns
+    =======
+    pred_data : predstorm.SatData
+        Object containing all data.
+    """
+
+    if resolution in ['h','hour']:
+        filepath = "https://www.iwf.oeaw.ac.at/fileadmin/staff/SP/cmoestl/readtime/predstorm_real.txt"
+    elif resolution in ['m','minute']:
+        filepath = "https://www.iwf.oeaw.ac.at/fileadmin/staff/SP/cmoestl/readtime/predstorm_real_1m.txt"
+    else:
+        logger.error("get_predstorm_data_realtime: {} is not a valid option for resolution! Use 'hour' or 'minute.")
+
+    logger.info("get_predstorm_data_realtime: Downloading data from {}".format(filepath))
     dtype = [('time', 'float'), ('btot', 'float'), ('bx', 'float'), ('by', 'float'), ('bz', 'float'),
            ('density', 'float'), ('speed', 'float'), ('dst', 'float'), ('kp', 'float')]
     data = np.loadtxt(filepath, usecols=[6,7,8,9,10,11,12,13,14], dtype=dtype)
