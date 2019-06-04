@@ -41,7 +41,7 @@ def calc_coupling_newell(by, bz, v):
     neg_tc = bt*np.cos(tc)*bz < 0 #similar to IDL code sol_coup.pro
     tc[neg_tc] = tc[neg_tc] + np.pi
     sintc = np.abs(np.sin(tc/2.))
-    ec = (v**1.33333)*(sintc**2.66667)*(bt**0.66667)
+    ec = (v**(4/3))*(sintc**(8/3))*(bt**(2/3))
     
     return ec
 

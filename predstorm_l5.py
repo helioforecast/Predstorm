@@ -476,12 +476,17 @@ def main():
     vartxtout[:,13]=dst_temerin_li['dst']
     vartxtout[:,14]=kp_newell['kp']
     vartxtout[:,15]=aurora_power['aurora']
-    vartxtout[:,16]=newell_coupling['ec']
+    vartxtout[:,16]=newell_coupling['ec']*100. # convert to Wb/s
 
     #description
-    column_vals = '        time      matplotlib_time B[nT] Bx   By     Bz   N[ccm-3] V[km/s] Dst[nT]   Kp   aurora [GW]   ec'
-    float_fmt = '%4i %2i %2i %2i %2i %2i %10.6f %5.1f %5.1f %5.1f %5.1f   %7.0i %7.0i   %5.0f %5.1f %5.1f %7.1f'
-    #np.savetxt(filename_save, ['time     Dst [nT]     Kp     aurora [GW]   B [nT]    Bx [nT]     By [nT]     Bz [nT]    N [ccm-3]   V [km/s]    '])
+    column_vals = '{:>17}{:>16}{:>7}{:>7}{:>7}{:>7}{:>9}{:>9}{:>8}{:>7}{:>8}{:>12}'.format(
+        'Y  m  d  H  M  S', 'matplotlib_time', 'B[nT]', 'Bx', 'By', 'Bz', 'N[ccm-3]', 'V[km/s]',
+        'Dst[nT]', 'Kp', 'AP[GW]', 'Ec[Wb/s]')
+    time_cols_fmt = '%4i %2i %2i %2i %2i %2i %15.6f'
+    b_cols_fmt = 4*'%7.2f'
+    p_cols_fmt = '%9.0i%9.0i'
+    indices_fmt = '%8.0f%7.2f%8.1f%12.1f'
+    float_fmt = time_cols_fmt + b_cols_fmt + p_cols_fmt + indices_fmt
     np.savetxt(filename_save, vartxtout, delimiter='',fmt=float_fmt, header=column_vals)
 
     # Save real-time files with the same name to be overwritten and in working directory
@@ -510,7 +515,7 @@ def main():
     vartxtout_m[:,13]=dst_temerin_li.interp_to_time(dism_stam['time'])['dst']
     vartxtout_m[:,14]=kp_newell.interp_to_time(dism_stam['time'])['kp']
     vartxtout_m[:,15]=aurora_power.interp_to_time(dism_stam['time'])['aurora']
-    vartxtout_m[:,16]=newell_coupling.interp_to_time(dism_stam['time'])['ec']
+    vartxtout_m[:,16]=newell_coupling.interp_to_time(dism_stam['time'])['ec']*100.
     # 1-min data
     np.savetxt('predstorm_real_1m.txt', vartxtout_m, delimiter='',fmt=float_fmt, header=column_vals)
 
