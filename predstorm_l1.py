@@ -101,7 +101,7 @@ import sunpy.time
 
 import predstorm as ps
 # Old imports (remove later)
-from predstorm.data import make_dst_from_wind, get_dscovr_data_real_old
+from predstorm.data import make_dst_from_wind, get_dscovr_data_real_old, get_omni_data_old
 from predstorm.predict import make_dst_from_wind
 
 #========================================================================================
@@ -363,7 +363,7 @@ if not os.path.exists('data/omni2_all_years.dat'):
 #if omni2 hourly data is not yet converted and saved as pickle, do it:
 if not os.path.exists('data/omni2_all_years_pickle.p'):
  #load OMNI2 dataset from .dat file with a function from dst_module.py
- o=ps.get_omni_data()
+ o=ps.get_omni_data_old()
  #contains: o. time,day,hour,btot,bx,by,bz,bygsm,bzgsm,speed,speedx,den,pdyn,dst,kp
  #save for faster loading later
  pickle.dump(o, open('data/omni2_all_years_pickle.p', 'wb') )

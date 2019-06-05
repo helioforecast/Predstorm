@@ -23,16 +23,257 @@ Future steps:
 import copy
 import numpy as np
 from matplotlib.dates import num2date
+from numba import njit, jit
 import sunpy.time
 
 
-def calc_coupling_newell(by, bz, v):
-    ''' 
+def calc_dst_burton(time, bz, speed, density):
+    """Calculates Dst from solar wind input according to Burton et al. 1975 method.
+
+    Parameters
+    ==========
+    time : np.array
+        Array containing time variables.
+    bz : np.array
+        Array containing Bz in coordinate system ?.
+    speed : np.array
+        Array containing solar wind speed.
+    density : np.array
+        Array containing Bz in coordinate system ?.
+
+    Returns
+    =======
+    dst_burton : np.array
+        Array with calculated values over timesteps time.
+    """
+
+    protonmass=1.6726219*1e-27  #kg
+    bzneg = copy.deepcopy(bz)
+    bzneg[bz > 0] = 0
+    pdyn = density*1e6*protonmass*(speed*1e3)**2*1e9  #in nanoPascal
+    Ey = speed*abs(bzneg)*1e-3; #now Ey is in mV/m
+
+    dst_burton = np.zeros(len(bz))
+    Ec=0.5  
+    a=3.6*1e-5
+    b=0.2*100 #*100 due to different dynamic pressure einheit in Burton
+    c=20  
+    d=-1.5/1000 
+    lrc=0
+    for i in range(len(bz)-1):
+        if Ey[i] > Ec:
+            F = d*(Ey[i]-Ec) 
+        else: F=0
+        #Burton 1975 p4208: Dst=Dst0+bP^1/2-c
+        # Ring current Dst
+        deltat_sec = (time[i+1]-time[i])*86400  #deltat must be in seconds
+        rc = (F-a*lrc)*deltat_sec + lrc
+        # Dst of ring current and magnetopause currents 
+        dst_burton[i+1] = rc + b*np.sqrt(pdyn[i+1]) - c
+        lrc = rc
+
+    return dst_burton
+
+
+def calc_dst_obrien(time, bz, speed, density):
+    """Calculates Dst from solar wind input according to OBrien and McPherron 2000 method.
+
+    Parameters
+    ==========
+    time : np.array
+        Array containing time variables.
+    bz : np.array
+        Array containing Bz in coordinate system ?.
+    speed : np.array
+        Array containing solar wind speed.
+    density : np.array
+        Array containing Bz in coordinate system ?.
+
+    Returns
+    =======
+    dst_burton : np.array
+        Array with calculated values over timesteps time.
+    """
+
+    protonmass=1.6726219*1e-27  #kg
+    bzneg = copy.deepcopy(bz)
+    bzneg[bz > 0] = 0
+    pdyn = density*1e6*protonmass*(speed*1e3)**2*1e9  #in nanoPascal
+    Ey = speed*abs(bzneg)*1e-3; #now Ey is in mV/m
+
+    Ec=0.49
+    b=7.26  
+    c=11  #nT
+    lrc=0
+    dst_obrien = np.zeros(len(bz))
+    for i in range(len(bz)-1):
+        if Ey[i] > Ec:            #Ey in mV m
+            Q = -4.4 * (Ey[i]-Ec) 
+        else: Q=0
+        tau = 2.4 * np.exp(9.74/(4.69 + Ey[i])) #tau in hours
+        # Ring current Dst
+        deltat_hours=(time[i+1]-time[i])*24 # time should be in hours
+        rc = ((Q - lrc/tau))*deltat_hours + lrc
+        # Dst of ring current and magnetopause currents 
+        dst_obrien[i+1] = rc + b*np.sqrt(pdyn[i+1])-c; 
+        lrc = rc
+
+    return dst_obrien
+
+
+def calc_dst_temerin_li(time, btot, bx, by, bz, speed, speedx, density):
+    """Calculates Dst from solar wind input according to Temerin and Li 2002 method.
+    Credits to Xinlin Li LASP Colorado and Mike Temerin.
+    Calls _jit_calc_dst_temerin_li. All constants are defined in there.
+    Note: vx has to be used with a positive sign throughout the calculation.
+
+    Parameters
+    ==========
+    time : np.array
+        Array containing time variables.
+    btot : np.array
+        Array containing Btot.
+    bx : np.array
+        Array containing Bx in coordinate system ?.
+    by : np.array
+        Array containing By in coordinate system ?.
+    bz : np.array
+        Array containing Bz in coordinate system ?.
+    speed : np.array
+        Array containing solar wind speed.
+    speedx : np.array
+        Array containing solar wind speed in x-direction.
+    density : np.array
+        Array containing solar wind density.
+
+    Returns
+    =======
+    dst_burton : np.array
+        Array with calculated Dst values over timesteps time.
+    """
+    
+    # Arrays
+    dst1=np.zeros(len(bz))
+    dst2=np.zeros(len(bz))
+    dst3=np.zeros(len(bz))
+    dst_tl=np.zeros(len(bz))
+    julian_days = [sunpy.time.julian_day(num2date(x)) for x in time]
+    
+    # Define inital values (needed for convergence, see Temerin and Li 2002 note)
+    dst1[0:10]=-15
+    dst2[0:10]=-13
+    dst3[0:10]=-2
+
+    return _jit_calc_dst_temerin_li(time, btot, bx, by, bz, speed, speedx, density, dst1, dst2, dst3, dst_tl, julian_days)
+
+@njit
+def _jit_calc_dst_temerin_li(time, btot, bx, by, bz, speed, speedx, density, dst1, dst2, dst3, dst_tl, julian_days):
+    """Fast(er) calculation of Dst using jit on Temerin-Li method."""
+
+    #define all constants
+    p1, p2, p3 = 0.9, 2.18e-4, 14.7
+    
+    # these need to be found with a fit for 1-2 years before calculation
+    # taken from the TL code:    offset_term_s1 = 6.70       ;formerly named dsto
+    #   offset_term_s2 = 0.158       ;formerly hard-coded     2.27 for 1995-1999
+    #   offset_term_s3 = -0.94       ;formerly named phasea  -1.11 for 1995-1999
+    #   offset_term_s4 = -0.00954    ;formerly hard-coded
+    #   offset_term_s5 = 8.159e-6    ;formerly hard-coded
+
+    #found by own offset optimization for 2015
+    #s4 and s5 as in the TL 2002 paper are not used due to problems with the time
+    s1, s2, s3 = 4.29, 5.94, -3.97
+    a1, a2, a3 = 6.51e-2, 1.37, 8.4e-3 
+    a4, a5, a6 = 6.053e-3, 1.12e-3, 1.55e-3
+    
+    tau1, tau2, tau3 = 0.14, 0.18, 9e-2 #days
+    b1, b2, b3 = 0.792, 1.326, 1.29e-2  
+    c1, c2 = -24.3, 5.2e-2
+
+    yearli=365.24 
+    alpha=0.078
+    beta=1.22
+
+    for i in np.arange(1,len(bz)-1):
+
+        #t time in days since beginning of 1995   #1 Jan 1995 in Julian days
+        #t1=sunpy.time.julian_day(mdates.num2date(time_in[i]))-sunpy.time.julian_day('1995-1-1 00:00')
+        # sunpy.time.julian_day('2015-1-1 00:00') = 2457023.5
+        t1=julian_days[i]-2457023.5
+       
+        tt=2*np.pi*t1/yearli
+        ttt=2*np.pi*t1
+        cosphi=np.sin(tt+alpha)*np.sin(ttt-tt-beta)*(9.58589*1e-2)+np.cos(tt+alpha)*(0.39+0.104528*np.cos(ttt-tt-beta))
+       
+        #equation 1 use phi from equation 2
+        sinphi=(1-cosphi**2)**0.5
+        
+        pressureterm=(p1*(btot[i]**2)+density[i]*((p2*((speed[i])**2)/(sinphi**2.52))+p3))**0.5
+        
+        #2 direct IMF bz term
+        directterm=0.478*bz[i]*(sinphi**11.0)
+
+        #3 offset term - the last two terms were cut because don't make sense as t1 rises extremely for later years
+        offset=s1+s2*np.sin(2*np.pi*t1/yearli+s3)
+        #or just set it constant
+        #offset[i]=-5
+        bt=(by[i]**2+bz[i]**2)**0.5  
+        #mistake in 2002 paper - bt is similarly defined as bp (with by bz); but in Temerin and Li's code (dst.pro) bp depends on by and bx
+        bp=(by[i]**2+bx[i]**2)**0.5  
+        #contains t1, but in cos and sin 
+        dh=bp*np.cos(np.arctan2(bx[i],by[i])+6.10) * ((3.59e-2)*np.cos(2*np.pi*t1/yearli+0.04)-2.18e-2*np.sin(2*np.pi*t1-1.60))
+        theta_li=-(np.arccos(-bz[i]/bt)-np.pi)/2
+        exx=1e-3*abs(speedx[i])*bt*np.sin(theta_li)**6.1
+        #t1 and dt are in days
+        dttl=julian_days[i+1]-julian_days[i]
+       
+        #4 dst1 
+        #find value of dst1(t-tau1) 
+        #time is in matplotlib format in days: 
+        #im time den index suchen wo time-tau1 am nächsten ist
+        #und dann bei dst1 den wert mit dem index nehmen der am nächsten ist, das ist dann dst(t-tau1)
+        #wenn index nicht existiert (am anfang) einfach index 0 nehmen
+        #check for index where timesi is greater than t minus tau
+        
+        indtau1=np.where(time > (time[i]-tau1))
+        dst1tau1=dst1[indtau1[0][0]]
+        #similar search for others  
+        dst2tau1=dst2[indtau1[0][0]]
+        th1=0.725*(sinphi**-1.46)
+        th2=1.83*(sinphi**-1.46)
+        fe1=(-4.96e-3)*  (1+0.28*dh)*  (2*exx+abs(exx-th1)+abs(exx-th2)-th1-th2)*  (abs(speedx[i])**1.11)*((density[i])**0.49)*(sinphi**6.0)
+        dst1[i+1]=dst1[i]+  (a1*(-dst1[i])**a2   +fe1*   (1+(a3*dst1tau1+a4*dst2tau1)/(1-a5*dst1tau1-a6*dst2tau1)))  *dttl
+        
+        #5 dst2    
+        indtau2=np.where(time > (time[i]-tau2))
+        dst1tau2=dst1[indtau2[0][0]]
+        df2=(-3.85e-8)*(abs(speedx[i])**1.97)*(btot[i]**1.16)*(np.sin(theta_li)**5.7)*((density[i])**0.41)*(1+dh)
+        fe2=(2.02*1e3)*(sinphi**3.13)*df2/(1-df2)
+        dst2[i+1]=dst2[i]+(b1*(-dst2[i])**b2+fe2*(1+(b3*dst1tau2)/(1-b3*dst1tau2)))*dttl
+        
+        #6 dst3  
+        indtau3=np.where(time > (time[i]-tau3))
+        dst3tau3=dst3[indtau3[0][0]]
+        df3=-4.75e-6*(abs(speedx[i])**1.22)*(bt**1.11)*np.sin(theta_li)**5.5*((density[i])**0.24)*(1+dh)
+        fe3=3.45e3*(sinphi**0.9)*df3/(1-df3)
+        dst3[i+1]=dst3[i]+  (c1*dst3[i]   + fe3*(1+(c2*dst3tau3)/(1-c2*dst3tau3)))*dttl
+        
+        #The dst1, dst2, dst3, (pressure term), (direct IMF bz term), and (offset terms) 
+        # are added (after interpolations) with time delays of 7.1, 21.0, 43.4, 2.0, 23.1 and 7.1 min, 
+        # respectively, for comparison with the ‘‘Kyoto Dst.’’ 
+        dst_tl[i]=dst1[i]+dst2[i]+dst3[i]+pressureterm+directterm+offset
+
+    return dst_tl
+
+
+@njit
+def calc_newell_coupling(by, bz, v):
+    """
     Empirical Formula for dFlux/dt - the Newell coupling
     e.g. paragraph 25 in Newell et al. 2010 doi:10.1029/2009JA014805
     IDL ovation: sol_coup.pro - contains 33 coupling functions in total
     input: needs arrays for by, bz, v 
-    ''' 
+    """
     
     bt = np.sqrt(by**2 + bz**2)
     bztemp = bz

@@ -9,9 +9,7 @@ to do:
 - remove CMEs in situ at STB from test time range
 - add conversion STB HEEQ to GSE to GSM
 - more error analyses (point (4))
-- ....
-
-
+- make function to create position file
 
 -----------------
 MIT LICENSE
@@ -39,10 +37,10 @@ OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 from scipy import stats
 import scipy
 import sys
-import datetime
+from datetime import datetime, timedelta
 import matplotlib
 import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
+from matplotlib.dates import num2date, date2num
 import numpy as np
 import sunpy.time
 import pickle
@@ -51,13 +49,12 @@ import seaborn as sns
 import os
 import pdb
 
-from predstorm_module import getpositions
-from predstorm_module import make_dst_from_wind
-from predstorm_module import time_to_num_cat
-from predstorm_module import converttime
-from predstorm_module import get_omni_data
-from predstorm_module import convert_GSE_to_GSM
-from predstorm_module import round_to_hour
+import predstorm as ps
+# Old imports (remove later)
+from predstorm.data import SatData, getpositions
+from predstorm.data import time_to_num_cat, converttime, round_to_hour
+from predstorm.predict import make_dst_from_wind
+from predstorm.data import convert_GSE_to_GSM
 
 ################################## INPUT PARAMETERS ######################################
 
@@ -68,87 +65,88 @@ from predstorm_l5_input import *
 
 def convert_HEEQ_to_GSE_stb_l1(cbr,cbt,cbn,ctime,pos_stereo_heeq):
 
- ########## ******* for STB only convert from HEEQ to GSM
- #function call [dbr,dbt,dbn]=convert_RTN_to_GSE_sta_l1(sta_br7,sta_bt7,sta_bn7,sta_time7, pos.sta)
+    ########## ******* for STB only convert from HEEQ to GSM
+    #function call [dbr,dbt,dbn]=convert_RTN_to_GSE_sta_l1(sta_br7,sta_bt7,sta_bn7,sta_time7, pos.sta)
 
- #pdb.set_trace()	for debugging
- #convert STEREO A magnetic field from RTN to GSE
- #for prediction of structures seen at STEREO-A later at Earth L1
- #so we do not include a rotation of the field to the Earth position
+    #pdb.set_trace()	for debugging
+    #convert STEREO A magnetic field from RTN to GSE
+    #for prediction of structures seen at STEREO-A later at Earth L1
+    #so we do not include a rotation of the field to the Earth position
 
- #output variables
- heeq_bx=np.zeros(len(ctime))
- heeq_by=np.zeros(len(ctime))
- heeq_bz=np.zeros(len(ctime))
- 
- bxgse=np.zeros(len(ctime))
- bygse=np.zeros(len(ctime))
- bzgse=np.zeros(len(ctime))
- 
-  
- heeq_bx=cbr
- heeq_by=cbt
- heeq_bz=cbn
+    #output variables
+    heeq_bx=np.zeros(len(ctime))
+    heeq_by=np.zeros(len(ctime))
+    heeq_bz=np.zeros(len(ctime))
+    
+    bxgse=np.zeros(len(ctime))
+    bygse=np.zeros(len(ctime))
+    bzgse=np.zeros(len(ctime))
+    
+     
+    heeq_bx=cbr
+    heeq_by=cbt
+    heeq_bz=cbn
 
-  
+     
 
- #get modified Julian Date for conversion as in Hapgood 1992
- jd=np.zeros(len(ctime))
- mjd=np.zeros(len(ctime))
- 
- #then HEEQ to GSM
- #-------------- loop go through each date
- for i in np.arange(0,len(ctime)):
-  sunpy_time=sunpy.time.break_time(mdates.num2date(ctime[i]))
-  jd[i]=sunpy.time.julian_day(sunpy_time)
-  mjd[i]=float(int(jd[i]-2400000.5)) #use modified julian date    
-  #then lambda_sun
-  T00=(mjd[i]-51544.5)/36525.0
-  dobj=mdates.num2date(ctime[i])
-  UT=dobj.hour + dobj.minute / 60. + dobj.second / 3600. #time in UT in hours   
-  LAMBDA=280.460+36000.772*T00+0.04107*UT
-  M=357.528+35999.050*T00+0.04107*UT
-  #lt2 is lambdasun in Hapgood, equation 5, here in rad
-  lt2=(LAMBDA+(1.915-0.0048*T00)*np.sin(M*np.pi/180)+0.020*np.sin(2*M*np.pi/180))*np.pi/180
-  #note that some of these equations are repeated later for the GSE to GSM conversion
-  S1=np.matrix([[np.cos(lt2+np.pi), np.sin(lt2+np.pi),  0], [-np.sin(lt2+np.pi) , np.cos(lt2+np.pi) , 0], [0,  0,  1]])
-  #create S2 matrix with angles with reversed sign for transformation HEEQ to HAE
-  omega_node=(73.6667+0.013958*((mjd[i]+3242)/365.25))*np.pi/180 #in rad
-  S2_omega=np.matrix([[np.cos(-omega_node), np.sin(-omega_node),  0], [-np.sin(-omega_node) , np.cos(-omega_node) , 0], [0,  0,  1]])
-  inclination_ecl=7.25*np.pi/180
-  S2_incl=np.matrix([[1,0,0],[0,np.cos(-inclination_ecl), np.sin(-inclination_ecl)], [0, -np.sin(-inclination_ecl), np.cos(-inclination_ecl)]])
-  #calculate theta
-  theta_node=np.arctan(np.cos(inclination_ecl)*np.tan(lt2-omega_node)) 
+    #get modified Julian Date for conversion as in Hapgood 1992
+    jd=np.zeros(len(ctime))
+    mjd=np.zeros(len(ctime))
+    
+    #then HEEQ to GSM
+    #-------------- loop go through each date
+    for i in np.arange(0,len(ctime)):
+        sunpy_time=sunpy.time.break_time(num2date(ctime[i]))
+        jd[i]=sunpy.time.julian_day(sunpy_time)
+        mjd[i]=float(int(jd[i]-2400000.5)) #use modified julian date    
+        #then lambda_sun
+        T00=(mjd[i]-51544.5)/36525.0
+        dobj=num2date(ctime[i])
+        UT=dobj.hour + dobj.minute / 60. + dobj.second / 3600. #time in UT in hours   
+        LAMBDA=280.460+36000.772*T00+0.04107*UT
+        M=357.528+35999.050*T00+0.04107*UT
+        #lt2 is lambdasun in Hapgood, equation 5, here in rad
+        lt2=(LAMBDA+(1.915-0.0048*T00)*np.sin(M*np.pi/180)+0.020*np.sin(2*M*np.pi/180))*np.pi/180
+        #note that some of these equations are repeated later for the GSE to GSM conversion
+        S1=np.matrix([[np.cos(lt2+np.pi), np.sin(lt2+np.pi),  0], [-np.sin(lt2+np.pi) , np.cos(lt2+np.pi) , 0], [0,  0,  1]])
+        #create S2 matrix with angles with reversed sign for transformation HEEQ to HAE
+        omega_node=(73.6667+0.013958*((mjd[i]+3242)/365.25))*np.pi/180 #in rad
+        S2_omega=np.matrix([[np.cos(-omega_node), np.sin(-omega_node),  0], [-np.sin(-omega_node) , np.cos(-omega_node) , 0], [0,  0,  1]])
+        inclination_ecl=7.25*np.pi/180
+        S2_incl=np.matrix([[1,0,0],[0,np.cos(-inclination_ecl), np.sin(-inclination_ecl)], [0, -np.sin(-inclination_ecl), np.cos(-inclination_ecl)]])
+        #calculate theta
+        theta_node=np.arctan(np.cos(inclination_ecl)*np.tan(lt2-omega_node)) 
 
-  #quadrant of theta must be opposite lt2 - omega_node Hapgood 1992 end of section 5   
-  #get lambda-omega angle in degree mod 360   
-  lambda_omega_deg=np.mod(lt2-omega_node,2*np.pi)*180/np.pi
-  #get theta_node in deg
-  theta_node_deg=theta_node*180/np.pi
-  #if in same quadrant, then theta_node = theta_node +pi   
-  if abs(lambda_omega_deg-theta_node_deg) < 180: theta_node=theta_node+np.pi
-  S2_theta=np.matrix([[np.cos(-theta_node), np.sin(-theta_node),  0], [-np.sin(-theta_node) , np.cos(-theta_node) , 0], [0,  0,  1]])
+        #quadrant of theta must be opposite lt2 - omega_node Hapgood 1992 end of section 5   
+        #get lambda-omega angle in degree mod 360   
+        lambda_omega_deg=np.mod(lt2-omega_node,2*np.pi)*180/np.pi
+        #get theta_node in deg
+        theta_node_deg=theta_node*180/np.pi
+        #if in same quadrant, then theta_node = theta_node +pi   
+        if abs(lambda_omega_deg-theta_node_deg) < 180: theta_node=theta_node+np.pi
+        S2_theta=np.matrix([[np.cos(-theta_node), np.sin(-theta_node),  0], [-np.sin(-theta_node) , np.cos(-theta_node) , 0], [0,  0,  1]])
 
-  #make S2 matrix
-  S2=np.dot(np.dot(S2_omega,S2_incl),S2_theta)
-  #this is the matrix S2^-1 x S1
-  HEEQ_to_HEE_matrix=np.dot(S1, S2)
-  #convert HEEQ components to HEE
-  HEEQ=np.matrix([[heeq_bx[i]],[heeq_by[i]],[heeq_bz[i]]]) 
-  HEE=np.dot(HEEQ_to_HEE_matrix,HEEQ)
-  #change of sign HEE X / Y to GSE is needed
-  bxgse[i]=-HEE.item(0)
-  bygse[i]=-HEE.item(1)
-  bzgse[i]=HEE.item(2)
-  
- #-------------- loop over
+        #make S2 matrix
+        S2=np.dot(np.dot(S2_omega,S2_incl),S2_theta)
+        #this is the matrix S2^-1 x S1
+        HEEQ_to_HEE_matrix=np.dot(S1, S2)
+        #convert HEEQ components to HEE
+        HEEQ=np.matrix([[heeq_bx[i]],[heeq_by[i]],[heeq_bz[i]]]) 
+        HEE=np.dot(HEEQ_to_HEE_matrix,HEEQ)
+        #change of sign HEE X / Y to GSE is needed
+        bxgse[i]=-HEE.item(0)
+        bygse[i]=-HEE.item(1)
+        bzgse[i]=HEE.item(2)
 
-
- return (bxgse,bygse,bzgse)
+    return (bxgse,bygse,bzgse)
 
 
 
 ######################################## MAIN PROGRAM ####################################
+
+logger = ps.init_logging(verbose=True)
+
+AU=149597870.700 #AU in km
 
 #closes all plots
 plt.close('all')
@@ -160,33 +158,40 @@ print()
 print('Christian Moestl, IWF-helio, Graz, last update April 2019.')
 
 
-
-
-
-
-
 ##########################################################################################
 ########################################## (1) GET DATA ##################################
 ##########################################################################################
 
-
-
 ########### get STEREO-B in situ data
 
-print( 'read STEREO-B data. Change path to the data file if necessary.')
-stb= pickle.load( open( "../catpy/DATACAT/STB_2007to2014_HEEQ.p", "rb" ) )
+logger.info( 'read STEREO-B data. Change path to the data file if necessary.')
+try:
+    stb_p= pickle.load( open( "../catpy/DATACAT/STB_2007to2014_HEEQ.p", "rb" ) )
+except:
+    # NOTE: SCEQ/HEEQ makes small difference in results
+    stb_p= pickle.load( open( "data/STB_2007to2014_SCEQ.p", "rb" ) )
 #convert time - takes a while, so save pickle and reload when done
 #stb_time=IDL_time_to_num(stb.time)
 #pickle.dump([stb_time], open( "../catpy/DATACAT/insitu_times_mdates_stb_2007_2014.p", "wb" ) )
-[stb_time]=pickle.load( open( "../catpy/DATACAT/insitu_times_mdates_stb_2007_2014.p", "rb" ) )
+[stb_time]=pickle.load( open( "data/insitu_times_mdates_stb_2007_2014.p", "rb" ) )
 print( 'read data done.')
+
+# Pack STEREO-B data into SatData object
+# TODO: move this into normal read eventually
+stb = SatData({'time': stb_time,
+               'btot': stb_p.btot, 'bx': stb_p.bx, 'by': stb_p.by, 'bz': stb_p.bz,
+               'speed': stb_p.vtot, 'density': stb_p.density, 'temp': stb_p.temperature},
+               source='STEREO-B')
+stb.h['DataSource'] = "STEREO-B (pickled)"
+stb.h['SamplingRate'] = stb_p.time[1] - stb_p.time[0]
+stb.h['CoordinateSystem'] = 'SCEQ'
 
 
 ############# get sc positions
 print('load spacecraft and planetary positions')
 pos=getpositions('data/positions_2007_2023_HEEQ_6hours.sav')
 pos_time_num=time_to_num_cat(pos.time)
-           
+        
 #position of STEREO-B
 stb_r=pos.stb[0]
 #get longitude and latitude
@@ -205,8 +210,6 @@ l1_r=pos.earth_l1[0]
 l1_long_heeq=pos.earth_l1[1]*180/np.pi
 l1_lat_heeq=pos.earth_l1[2]*180/np.pi
 
-
-
 plt.figure(1)
 plt.plot_date(pos_time_num,l1_lat_heeq-stb_lat_heeq,'-b',label='STEREO-B')
 plt.plot_date(pos_time_num,l1_lat_heeq-sta_lat_heeq,'-r',label='STEREO-A')
@@ -218,17 +221,16 @@ mngr.window.setGeometry(50,50,600, 500)
 
 ######### get OMNI data
 print('load OMNI data for Dst')
-o=pickle.load(open('data/omni2_all_years_pickle.p', 'rb') )
-# old variable names [spot,btot,bx,by,bz,bygsm, bzgsm,speed,speedx, dst,kp,den,pdyn,year,day,hour,times1]= pickle.load( open( "data/omni2_all_years_pickle.p", "rb" ) )
+omni = ps.get_omni_data()
 
 fig=plt.figure(2)
-plt.plot_date(o.time,o.dst,'k')
+plt.plot_date(omni['time'],omni['dst'],'k')
 mngr = plt.get_current_fig_manager()
 mngr.window.setGeometry(50,600,600, 500)
 
 
 ######## load Lan Jian's SIR list for STEREO
-sir=np.genfromtxt('../catpy/ALLCATS/CIRCAT master/STEREO_Level3_SIR_clean_clean.txt',
+sir=np.genfromtxt('data/STEREO_Level3_SIR_clean_clean.txt',
                   dtype='S4,S1,i4,S5,S5,i4,S5,S5')
 sir_start=np.zeros(len(sir))                  
 sir_end=np.zeros(len(sir))                  
@@ -241,21 +243,14 @@ for i in np.arange(len(sir)):
     sir_sc[i]=str(sir[i][1])[2]
     #extract hours with minutes as fraction of day 
     hours=int(sir[i][4][0:2])/24+int(sir[i][4][3:5])/(24*60)
-    sir_start[i]=mdates.date2num(datetime.datetime(int(sir[i][0]),1,1,)+datetime.timedelta(int(sir[i][2])-1)+datetime.timedelta(hours) )
+    sir_start[i]=date2num(datetime(int(sir[i][0]),1,1,)+timedelta(int(sir[i][2])-1)+timedelta(hours) )
     hours=int(sir[i][7][0:2])/24+int(sir[i][7][3:5])/(24*60)
-    sir_end[i]=mdates.date2num(datetime.datetime(int(sir[i][0]),1,1,)+datetime.timedelta(int(sir[i][5])-1)+datetime.timedelta(hours) )
+    sir_end[i]=date2num(datetime(int(sir[i][0]),1,1,)+timedelta(int(sir[i][5])-1)+timedelta(hours) )
     
 #extract SIRs only for STB
 stbsirs=np.where(sir_sc=='B')
 sir_start_b=sir_start[stbsirs]           
 sir_end_b=sir_end[stbsirs] 
-
-
-
-
-
-
-
 
 
 ##########################################################################################
@@ -268,20 +263,21 @@ sir_end_b=sir_end[stbsirs]
 min_time=(pos_time_num[np.where(stb_long_heeq < -10)[0][0]])
 max_time=(pos_time_num[np.where(stb_long_heeq < -110)[0][0]])
 
+stbh = stb.make_hourly_data()
+stbh = stbh.cut(starttime=num2date(np.round(min_time,0)), endtime=num2date(np.round(max_time,0))).interp_nans()
+omni = omni.cut(starttime=num2date(np.round(min_time,0)), endtime=num2date(np.round(max_time,0)))
+
 #then extract the position data and in situ data indices for these times, cut 1 array dimension
 pos_ind=np.where(np.logical_and(pos_time_num > min_time, pos_time_num< max_time))[0]
 dat_ind=np.where(np.logical_and(stb_time > min_time, stb_time< max_time))[0]
 
-
-#select data only for interval
-stb_time_sel=stb_time[dat_ind]
-stb_btot_sel=stb.btot[dat_ind]
-stb_bx_sel=stb.bx[dat_ind]
-stb_by_sel=stb.by[dat_ind]
-stb_bz_sel=stb.bz[dat_ind]
-stb_den_sel=stb.density[dat_ind]
-stb_vtot_sel=stb.vtot[dat_ind]
-
+stb_time_sel=stbh['time']#stb_time[dat_ind]
+stb_btot_1h=stbh['btot']
+stb_bx_1h=stbh['bx']
+stb_by_1h=stbh['by']
+stb_bz_1h=stbh['bz']
+stb_den_1h=stbh['density']
+stb_vtot_1h=stbh['speed']
 
 #interpolate STB data
 #round the start time so it starts and ends with 00:00 UT
@@ -290,26 +286,26 @@ end_time=np.round(stb_time_sel[-1],0)
 
 #make time array, hourly steps starting with start time and finishing at end time
 #do this with datetime objects
-stb_time_1h = mdates.num2date(start_time) + np.arange(0,int(np.ceil((end_time-start_time)*24))    ,1) * datetime.timedelta(hours=1) 
+stb_time_1h = num2date(start_time) + np.arange(0,int(np.ceil((end_time-start_time)*24))    ,1) * timedelta(hours=1) 
 #convert back to matplotlib time
-stb_time_1h=mdates.date2num(stb_time_1h)
+stb_time_1h=date2num(stb_time_1h)
 
 #identify not NaN data points
-good = np.where(np.isfinite(stb_btot_sel))
-#interpolate
-stb_btot_1h=np.interp(stb_time_1h,stb_time_sel[good],stb_btot_sel[good])
-good = np.where(np.isfinite(stb_bx_sel))
-stb_bx_1h=np.interp(stb_time_1h,stb_time_sel[good],stb_bx_sel[good])
-good = np.where(np.isfinite(stb_by_sel))
-stb_by_1h=np.interp(stb_time_1h,stb_time_sel[good],stb_by_sel[good])
-good = np.where(np.isfinite(stb_bz_sel))
-stb_bz_1h=np.interp(stb_time_1h,stb_time_sel[good],stb_bz_sel[good])
+# good = np.where(np.isfinite(stb_btot_sel))
+# #interpolate
+# stb_btot_1h=np.interp(stb_time_1h,stb_time_sel[good],stb_btot_sel[good])
+# good = np.where(np.isfinite(stb_bx_sel))
+# stb_bx_1h=np.interp(stb_time_1h,stb_time_sel[good],stb_bx_sel[good])
+# good = np.where(np.isfinite(stb_by_sel))
+# stb_by_1h=np.interp(stb_time_1h,stb_time_sel[good],stb_by_sel[good])
+# good = np.where(np.isfinite(stb_bz_sel))
+# stb_bz_1h=np.interp(stb_time_1h,stb_time_sel[good],stb_bz_sel[good])
 
-#same for plasma
-good = np.where(np.isfinite(stb_vtot_sel))
-stb_vtot_1h=np.interp(stb_time_1h,stb_time_sel[good],stb_vtot_sel[good])
-good = np.where(np.isfinite(stb_den_sel))
-stb_den_1h=np.interp(stb_time_1h,stb_time_sel[good],stb_den_sel[good])
+# #same for plasma
+# good = np.where(np.isfinite(stb_vtot_sel))
+# stb_vtot_1h=np.interp(stb_time_1h,stb_time_sel[good],stb_vtot_sel[good])
+# good = np.where(np.isfinite(stb_den_sel))
+# stb_den_1h=np.interp(stb_time_1h,stb_time_sel[good],stb_den_sel[good])
 
 #interpolate positions to hourly (better with heliopy positions, but is STEREO-B included there?)
 stb_r_1h=np.interp(stb_time_1h,pos_time_num,stb_r)
@@ -353,8 +349,8 @@ sir_start_1h=np.array([])
 sir_end_1h=np.array([])
 
 for i in sir_ind:
-  sir_start_1h=np.append(sir_start_1h,mdates.date2num(round_to_hour(mdates.num2date(sir_start_b[i]))))
-  sir_end_1h=np.append(sir_end_1h,mdates.date2num(round_to_hour(mdates.num2date(sir_end_b[i]))))
+    sir_start_1h=np.append(sir_start_1h,date2num(round_to_hour(num2date(sir_start_b[i]))))
+    sir_end_1h=np.append(sir_end_1h,date2num(round_to_hour(num2date(sir_end_b[i]))))
 
 ######### get indices for STEREO-B data inside SIRs
 stb_sir_ind_1h=np.int(0)
@@ -398,15 +394,8 @@ print('Data points inside > 650 km/s, percent: ',np.round(len(stb_time_1h[stb_65
 #plot with markers to indicate intervals
 plt.plot(stb_time_1h[stb_500_ind_1h],np.zeros(len(stb_500_ind_1h))+500,'g',marker='o',markersize=3,linestyle='None')
 
-
-################ get selected data interval in 1h OMNI2 data
-o_stb_interval_ind=np.where(np.logical_and(o.time > min_time , o.time < max_time))[0]
-
 #get dst only for interval
-odst=o.dst[o_stb_interval_ind]   
-
-
-
+odst=omni['dst']  
 
 
 ##########################################################################################
@@ -438,8 +427,6 @@ print('1: mean increase of B and N by factor ',np.round(np.mean((l1_r_1h/stb_r_1
 # because the spiral leads to a later arrival of the solar wind at larger
 # heliocentric distances (this is reverse for STEREO-B!)
 
-AU=149597870.700 #AU in km
-
 #initialize array with correct size
 timelag_diff_r=np.zeros(len(l1_r_1h))
 
@@ -468,24 +455,15 @@ print('no 3: coordinate conversion of magnetic field components')
 plt.figure(5)
 plt.plot_date(stb_time_1h_to_l1,stb_vtot_1h,'-b',label='V shift STB')
 plt.plot_date(stb_time_1h,stb_vtot_1h,'--g',label='V STB')
-plt.plot_date(o.time[o_stb_interval_ind],o.speed[o_stb_interval_ind],'-k',label='V L1')
+plt.plot_date(omni['time'],omni['speed'],'-k',label='V L1')
 plt.xlabel('time')
 plt.ylabel('Vtot')
 plt.legend()
-plt.xlim([mdates.date2num(sunpy.time.parse_time('2010-Feb-1')), mdates.date2num(sunpy.time.parse_time('2010-Mar-1'))])
+plt.xlim([date2num(sunpy.time.parse_time('2010-Feb-1')), date2num(sunpy.time.parse_time('2010-Mar-1'))])
 mngr = plt.get_current_fig_manager()
 mngr.window.setGeometry(1350,600,600, 500)
 #mngr.window.setGeometry(50,50,1500, 800)
 plt.grid()
-
-
-
-
-
-
-
-
-
 
 
 ##########################################################################################
@@ -495,21 +473,17 @@ plt.grid()
 print()
 print('Dst calculation takes a few seconds')
 
-
-#make Dst calculation faster  usage: #def make_dst_from_wind(btot_in,bx_in, by_in,bz_in,v_in,vx_in,density_in,time_in):
-[dst_burton, dst_obrien, dst_temerinli]=make_dst_from_wind(stb_btot_1h, stb_bx_1h,stb_by_1h,stb_bz_1h, stb_vtot_1h,stb_vtot_1h, stb_den_1h, stb_time_1h_to_l1)
-
-
+dst_temerinli = stbh.make_dst_prediction()['dst']
 
 ############ Dst comparison plot
 
 plt.figure(6)
 plt.plot_date(stb_time_1h_to_l1,dst_temerinli,'-b',label='Dst shift STB')
-plt.plot_date(o.time[o_stb_interval_ind],odst,'-k',label='observed Dst')
+plt.plot_date(omni['time'],odst,'-k',label='observed Dst')
 plt.xlabel('time')
 plt.ylabel('Dst')
 plt.legend()
-plt.xlim([mdates.date2num(sunpy.time.parse_time('2010-Feb-1')), mdates.date2num(sunpy.time.parse_time('2010-Mar-1'))])
+plt.xlim([date2num(sunpy.time.parse_time('2010-Feb-1')), date2num(sunpy.time.parse_time('2010-Mar-1'))])
 mngr = plt.get_current_fig_manager()
 mngr.window.setGeometry(1350,50,600, 500)
 #mngr.window.setGeometry(50,50,1500, 800)
@@ -520,8 +494,8 @@ plt.grid()
 print()
 
 print('Time range covered for analysis:')
-print('start:',mdates.num2date(min_time))
-print('end:',mdates.num2date(max_time))
+print('start:',num2date(min_time))
+print('end:',num2date(max_time))
 
 print('Parts of STEREO-B data for comparison: all data points')# > 500 km/s at STB')
 
@@ -535,9 +509,9 @@ indices_for_comparison=stb_all_ind_1h
 
 #difference predicted to observed Dst for > 500 km/s at STB
 dst_diff=dst_temerinli[indices_for_comparison]-odst[indices_for_comparison]
-dst_diffm=np.round(np.nanmean(dst_temerinli[indices_for_comparison]-odst[indices_for_comparison]),0)
-dst_diffs=np.round(np.nanstd(dst_temerinli[indices_for_comparison]-odst[indices_for_comparison]),0)
-print('Dst diff mean +/- std:', dst_diffm, ' +/- ',dst_diffs)
+dst_diffm=np.nanmean(dst_temerinli[indices_for_comparison]-odst[indices_for_comparison])
+dst_diffs=np.nanstd(dst_temerinli[indices_for_comparison]-odst[indices_for_comparison])
+print('Dst diff mean +/- std: {:.1f} +/- {:.1f}'.format(dst_diffm, dst_diffs))
 
 
 
@@ -590,6 +564,8 @@ h.set_axis_labels('Predicted Dst', 'Observed Dst', fontsize=10)
 plt.tight_layout()
 mngr = plt.get_current_fig_manager()
 mngr.window.setGeometry(1300,300,600, 500)
+
+plt.show()
 
 
 

@@ -60,7 +60,8 @@ except:
 
 from . import spice
 from .predict import make_kp_from_wind, make_dst_from_wind
-from .predict import make_aurora_power_from_wind, calc_coupling_newell
+from .predict import make_aurora_power_from_wind, calc_newell_coupling
+from .predict import calc_dst_burton, calc_dst_obrien, calc_dst_temerin_li
 
 logger = logging.getLogger(__name__)
 
@@ -135,12 +136,13 @@ class SatData():
     """
 
     default_keys = ['time',
-                    'speed', 'density', 'temp', 
+                    'speed', 'density', 'temp', 'pdyn',
                     'bx', 'by', 'bz', 'btot',
                     'br', 'bt', 'bn',
                     'dst', 'kp', 'aurora', 'ec']
 
     empty_header = {'DataSource': '',
+                    'SourceURL' : '',
                     'SamplingRate': None,
                     'CoordinateSystem': '',
                     'FileVersion': {},
@@ -511,10 +513,13 @@ class SatData():
             Provide list of keys (str) to be interpolated over, otherwise all.
         """
 
-        if keys==None:
+        logger.info("interp_nans: Interpolating nans in {} data".format(self.source))
+        if keys == None:
             keys = self.vars
         for k in keys:
             inds = np.isnan(self[k])
+            if len(inds) == 0:
+                return self
             self[k][inds] = np.interp(inds.nonzero()[0], (~inds).nonzero()[0], self[k][~inds])
         return self
 
@@ -569,7 +574,7 @@ class SatData():
         input: needs arrays for by, bz, v
         """
 
-        ec = calc_coupling_newell(self['by'], self['bz'], self['speed'])
+        ec = calc_newell_coupling(self['by'], self['bz'], self['speed'])
     
         ecData = SatData({'time': self['time'], 'ec': ec})
         ecData.h['DataSource'] = "Newell coupling parameter from {} data".format(self.source)
@@ -616,15 +621,12 @@ class SatData():
             New object containing predicted Dst data.
         """
 
-        [dst_Burton, dst_Obrien, dst_TL] = make_dst_from_wind(self['btot'],self['bx'],self['by'],self['bz'],
-                                                              self['speed'],self['speed'],self['density'],self['time'])
-
         if method.lower() == 'temerin_li':
-            dst_pred = dst_TL
+            dst_pred = calc_dst_temerin_li(self['time'], self['btot'], self['bx'], self['by'], self['bz'], self['speed'], self['speed'], self['density'])
         elif method.lower() == 'obrien':
-            dst_pred = dst_Obrien
+            dst_pred = calc_dst_obrien(self['time'], self['bz'], self['speed'], self['density'])
         elif method.lower() == 'burton':
-            dst_pred = dst_Burton
+            dst_pred = calc_dst_burton(self['time'], self['bz'], self['speed'], self['density'])
 
         dstData = SatData({'time': self['time'], 'dst': dst_pred})
         dstData.h['DataSource'] = "Dst prediction from {} data using method {}".format(self.source, method)
@@ -853,6 +855,8 @@ def get_time_lag_wrt_earth(timestamp=None, satname='STEREO-A', v_mean=400., sun_
 
     if satname == 'STEREO-A':
         sat_pos = pos.sta
+    elif satname == 'STEREO-B':
+        sat_pos = pos.stb
     else:
         raise Exception("Not a valid satellite name to find position!")
     sat_r = sat_pos[0][pos_time_now_ind]
@@ -1361,7 +1365,158 @@ def get_past_dst(filepath=None, starttime=None, endtime=None):
     return dst_data
 
 
-def get_omni_data():
+def get_omni_data(filepath='', download=False, dldir='data'):
+    """
+    Will download and read OMNI2 data file (in .dat format).
+    Variable definitions from OMNI2 dataset:
+    see http://omniweb.gsfc.nasa.gov/html/ow_data.html
+
+    FORMAT(2I4,I3,I5,2I3,2I4,14F6.1,F9.0,F6.1,F6.0,2F6.1,F6.3,F6.2, F9.0,F6.1,F6.0,2F6.1,F6.3,2F7.2,F6.1,I3,I4,I6,I5,F10.2,5F9.2,I3,I4,2F6.1,2I6,F5.1)
+    1963   1  0 1771 99 99 999 999 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 9999999. 999.9 9999. 999.9 999.9 9.999 99.99 9999999. 999.9 9999. 999.9 999.9 9.999 999.99 999.99 999.9  7  23    -6  119 999999.99 99999.99 99999.99 99999.99 99999.99 99999.99  0   3 999.9 999.9 99999 99999 99.9
+
+    Parameters
+    ==========
+    filepath : str (default='', reverts to 'data/omni2_all_years.dat')
+        Path to file to read.
+    download : bool (default=False)
+        If True, file will be downloaded to directory (dldir)
+    dldir : str (default='data')
+        If using download, file will be downloaded to this dir and then be read.
+
+    Returns
+    =======
+    omni_data : predstorm.SatData
+    """
+
+    if filepath != '' and not os.path.exists(filepath):
+        raise Exception("get_omni_data: {} does not exist! Run get_omni_data(download=True) to download file.".format(filepath))
+
+    if download:
+        omni2_url='ftp://nssdcftp.gsfc.nasa.gov/pub/data/omni/low_res_omni/omni2_all_years.dat'
+        logger.info("get_omni_data: downloading OMNI2 data from {}".format(omni2_url))
+        tofile = os.path.join(dldir, 'omni2_all_years.dat')
+        try: 
+            urllib.request.urlretrieve(omni2_url, tofile)
+            logger.info("get_omni_data: OMNI2 data successfully downloaded.")
+            filepath = tofile
+        except urllib.error.URLError as e:
+            logger.error("get_omni_data: OMNI2 data download failed (reason: {})".format(e.reason))
+        pickle.dump(o, open('data/omni2_all_years_pickle.p', 'wb') )
+
+    if filepath == '':
+        filepath = 'data/omni2_all_years.dat'
+
+    #check how many rows exist in this file
+    f=open(filepath)
+    dataset= len(f.readlines())
+    #print(dataset)
+    #global Variables
+    spot=np.zeros(dataset) 
+    btot=np.zeros(dataset) #floating points
+    bx=np.zeros(dataset) #floating points
+    by=np.zeros(dataset) #floating points
+    bz=np.zeros(dataset) #floating points
+    bzgsm=np.zeros(dataset) #floating points
+    bygsm=np.zeros(dataset) #floating points
+
+    speed=np.zeros(dataset) #floating points
+    speedx=np.zeros(dataset) #floating points
+    speed_phi=np.zeros(dataset) #floating points
+    speed_theta=np.zeros(dataset) #floating points
+
+    dst=np.zeros(dataset) #float
+    kp=np.zeros(dataset) #float
+
+    den=np.zeros(dataset) #float
+    pdyn=np.zeros(dataset) #float
+    year=np.zeros(dataset)
+    day=np.zeros(dataset)
+    hour=np.zeros(dataset)
+    t=np.zeros(dataset) #index time
+    
+    
+    j=0
+    logger.info('get_omni_data: Reading OMNI2 data ...')
+    with open('data/omni2_all_years.dat') as f:
+        for line in f:
+            line = line.split() # to deal with blank 
+            #print line #41 is Dst index, in nT
+            dst[j]=line[40]
+            kp[j]=line[38]
+
+            if dst[j] == 99999: dst[j]=np.NaN
+            #40 is sunspot number
+            spot[j]=line[39]
+            #if spot[j] == 999: spot[j]=NaN
+
+            #25 is bulkspeed F6.0, in km/s
+            speed[j]=line[24]
+            if speed[j] == 9999: speed[j]=np.NaN
+
+            #get speed angles F6.1
+            speed_phi[j]=line[25]
+            if speed_phi[j] == 999.9: speed_phi[j]=np.NaN
+
+            speed_theta[j]=line[26]
+            if speed_theta[j] == 999.9: speed_theta[j]=np.NaN
+            #convert speed to GSE x see OMNI website footnote
+            speedx[j] = - speed[j] * np.cos(np.radians(speed_theta[j])) * np.cos(np.radians(speed_phi[j]))
+
+            #9 is total B  F6.1 also fill ist 999.9, in nT
+            btot[j]=line[9]
+            if btot[j] == 999.9: btot[j]=np.NaN
+
+            #GSE components from 13 to 15, so 12 to 14 index, in nT
+            bx[j]=line[12]
+            if bx[j] == 999.9: bx[j]=np.NaN
+            by[j]=line[13]
+            if by[j] == 999.9: by[j]=np.NaN
+            bz[j]=line[14]
+            if bz[j] == 999.9: bz[j]=np.NaN
+
+            #GSM
+            bygsm[j]=line[15]
+            if bygsm[j] == 999.9: bygsm[j]=np.NaN
+
+            bzgsm[j]=line[16]
+            if bzgsm[j] == 999.9: bzgsm[j]=np.NaN    
+
+            #24 in file, index 23 proton density /ccm
+            den[j]=line[23]
+            if den[j] == 999.9: den[j]=np.NaN
+
+            #29 in file, index 28 Pdyn, F6.2, fill values sind 99.99, in nPa
+            pdyn[j]=line[28]
+            if pdyn[j] == 99.99: pdyn[j]=np.NaN      
+
+            year[j]=line[0]
+            day[j]=line[1]
+            hour[j]=line[2]
+            j=j+1     
+
+    #convert time to matplotlib format
+    times1=np.zeros(len(year)) #datetime time
+    for index in range(0,len(year)):
+        #first to datetimeobject 
+        timedum=datetime(int(year[index]), 1, 1) + timedelta(day[index] - 1) +timedelta(hours=hour[index])
+        #then to matlibplot dateformat:
+        times1[index] = mdates.date2num(timedum)
+
+    omni_data = SatData({'time': times1,
+                         'btot': btot, 'bx': bx, 'by': bygsm, 'bz': bzgsm,
+                         'speed': speed, 'density': den, 'pdyn': pdyn,
+                         'dst': dst, 'kp': kp},
+                         source='OMNI')
+    omni_data.h['DataSource'] = "OMNI (NASA OMNI2 data)"
+    if download:
+        omni_data.h['SourceURL'] = omni2_url
+    omni_data.h['SamplingRate'] = times1[1] - times1[0]
+    omni_data.h['CoordinateSystem'] = 'GSM'
+    
+    return omni_data
+
+
+def get_omni_data_old():
     """FORMAT(2I4,I3,I5,2I3,2I4,14F6.1,F9.0,F6.1,F6.0,2F6.1,F6.3,F6.2, F9.0,F6.1,F6.0,2F6.1,F6.3,2F7.2,F6.1,I3,I4,I6,I5,F10.2,5F9.2,I3,I4,2F6.1,2I6,F5.1)
     1963   1  0 1771 99 99 999 999 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 9999999. 999.9 9999. 999.9 999.9 9.999 99.99 9999999. 999.9 9999. 999.9 999.9 9.999 999.99 999.99 999.9  7  23    -6  119 999999.99 99999.99 99999.99 99999.99 99999.99 99999.99  0   3 999.9 999.9 99999 99999 99.9
 

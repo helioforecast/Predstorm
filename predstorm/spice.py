@@ -113,15 +113,26 @@ def get_satellite_position_heliopy(satname, timestamp, refframe='J2000', rlonlat
     import heliopy.data.spice as spicedata
     import heliopy.spice as hspice
 
-    hspice.furnish(spicedata.get_kernel('stereo_a_pred'))
-    sta = hspice.Trajectory(satname)
-    sta.generate_positions(timestamp, 'Sun', refframe)
+    if 'stereoa' in satname.lower().replace('-','').replace('_',''):
+        if 'pred' in satname.lower():
+            heliostr = 'stereo_a_pred'
+        else:
+            heliostr = 'stereo_a'
+    elif 'stereob' in satname.lower().replace('-','').replace('_',''):
+        if 'pred' in satname.lower():
+            heliostr = 'stereo_b_pred'
+        else:
+            heliostr = 'stereo_b'
 
-    sta.change_units('AU')
+    hspice.furnish(spicedata.get_kernel(heliostr))
+    sat = hspice.Trajectory(satname)
+    sat.generate_positions(timestamp, 'Sun', refframe)
+
+    sat.change_units('AU')
     if rlonlat:
-        return cart2sphere(sta.x, sta.y, sta.z)
+        return cart2sphere(sat.x, sat.y, sat.z)
     else:
-        return (sta.x, sta.y, sta.z)
+        return (sat.x, sat.y, sat.z)
 
 
 if __name__ == '__main__':
