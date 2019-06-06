@@ -306,6 +306,9 @@ def main():
 
     # NEW METHOD:
     try:
+        # To generate these files, run:
+        # from predstorm.spice import main
+        # main()
         sta.load_positions('data/positions/STEREOA-pred_20070101-20250101_HEEQ_6h.p')
         stam.load_positions('data/positions/STEREOA-pred_20070101-20250101_HEEQ_6h.p')
         [sta_r, sta_long_heeq, sta_lat_heeq] = sta.get_position(timestamp)

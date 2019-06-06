@@ -209,14 +209,15 @@ def make_position_file(satname, timerange, refframe, refobject='Sun', samprate=6
         logger.info("make_position_file: Using heliopy to generate position file for {} for times {} till {} with resolution {} hours".format(
             satname, times[0], times[-1], samprate))
         posdata = get_satellite_position_heliopy(satname, times, refframe=refframe, 
-                                                 refobject=refobject, rlonlat=False)
+                                                 refobject=refobject, rlonlat=False,
+                                                 returnobj=True)
     else:
         print("Not yet implemented.")
         posdata = get_satellite_position(satname, times, refframe=refframe, rlonlat=False)
 
     s_timerange = datetime.strftime(timerange[0], "%Y%m%d")+'-'+datetime.strftime(timerange[-1], "%Y%m%d")
     savefile = os.path.join(posdir, "{}_{}_{}_{:d}h.p".format(satname, s_timerange, refframe, samprate))
-    pickle.dump(pos, open(savefile, "wb"))
+    pickle.dump(posdata, open(savefile, "wb"))
 
     logger.info("make_position_file: File saved to {}".format(savefile))
 
