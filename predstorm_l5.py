@@ -306,12 +306,23 @@ def main():
 
     # NEW METHOD:
     try:
-        [sta_r, sta_long_heeq, sta_lat_heeq] = sta.get_position(timestamp, refframe='HEEQ')
-        [earth_r, elon, elat] = ps.spice.get_satellite_position('EARTH', timestamp, refframe='HEEQ', rlonlat=True)
+        sta.load_positions('data/positions/STEREOA-pred_20070101-20250101_HEEQ_6h.p')
+        stam.load_positions('data/positions/STEREOA-pred_20070101-20250101_HEEQ_6h.p')
+        [sta_r, sta_long_heeq, sta_lat_heeq] = sta.get_position(timestamp)
+        EarthPos = ps.get_position_data('data/positions/Earth_20000101-20250101_HEEQ_6h.p', 
+                                        [mdates.date2num(timestamp)], rlonlat=True)
+        [earth_r, elon, elat] = EarthPos[0]
         sta_r = sta_r/AU
         earth_r = earth_r/AU * 0.99   # estimated correction to L1
         sta_long_heeq, sta_lat_heeq = sta_long_heeq*180./np.pi, sta_lat_heeq*180./np.pi
         old_pos_method = False
+        # This is equivalent to the following (but both give different Dst from original method):
+        # [sta_r, sta_long_heeq, sta_lat_heeq] = ps.spice.get_satellite_position('STEREO-A', timestamp, refframe='HEEQ', rlonlat=True)
+        # [earth_r, elon, elat] = ps.spice.get_satellite_position('EARTH', timestamp, refframe='HEEQ', rlonlat=True)
+        # sta_r = sta_r/AU
+        # earth_r = earth_r/AU * 0.99   # estimated correction to L1
+        # sta_long_heeq, sta_lat_heeq = sta_long_heeq*180./np.pi, sta_lat_heeq*180./np.pi
+        # old_pos_method = False
     # OLD METHOD:
     except:
         logger.warning("SPICE methods for position determination failed. Using old method.")

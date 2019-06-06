@@ -42,9 +42,11 @@ import os
 import sys  
 import cdflib
 import copy
+import heliopy.spice as hspice
 import logging
 import numpy as np
 import pdb
+import pickle
 import scipy
 import scipy.io
 import sunpy.time
@@ -70,13 +72,7 @@ logger = logging.getLogger(__name__)
 # =======================================================================================
 
 class SatData():
-    """Data object containing satellite data, subclass of np.ndarray.
-
-    See https://docs.scipy.org/doc/numpy-1.15.0/user/basics.subclassing.html for some
-    details on how to make this class.
-
-    Potential problem: numpy.records are slow. Other data types may be faster for
-    heavy computations.
+    """Data object containing satellite data.
 
     Init Parameters
     ===============
@@ -120,6 +116,8 @@ class SatData():
         Linearly interpolates over nans in data.
     .interp_to_time()
         Linearly interpolates over nans.
+    .load_position_data(position_data_file)
+        Loads position data from file.
     .make_aurora_power_prediction()
         Calculates aurora power.
     .make_dst_prediction()
@@ -169,7 +167,7 @@ class SatData():
             self.h = copy.copy(SatData.empty_header)
         else:
             self.h = header
-        self.position = None
+        self.pos = None
         self.vars = dt
         self.vars.remove('time')
 
@@ -318,8 +316,12 @@ class SatData():
 
         # NEW METHOD:
         if len(pos_obj) == 0 and len(pos_tnum) == 0:
-            times = [mdates.num2date(t).replace(tzinfo=None) for t in self['time']]
-            xyz_times = np.asarray(self.get_position(times, refframe='HEEQ', rlonlat=False))
+            if self.pos == None:
+                raise Exception("Load position data (SatData.load_position_data()) before calling convert_RTN_to_GSE()!")
+            xyz_times = self.pos.positions.T
+            # Which is equivalent to:
+            # times = [mdates.num2date(t).replace(tzinfo=None) for t in self['time']]
+            # xyz_times = spice.get_satellite_position('STEREO-A', times, refframe='HEEQ', rlonlat=True)
             AU = 149597870.700 #in km
             xyz_times = xyz_times/AU
         
@@ -333,7 +335,7 @@ class SatData():
                 [xa,ya,za]=sphere2cart(pos_obj[0][time_ind_pos],pos_obj[1][time_ind_pos],pos_obj[2][time_ind_pos])
             # NEW METHOD:
             else:
-                xa, ya, za = xyz_times[i]
+                xa, ya, za = sphere2cart(xyz_times[i][0], xyz_times[i][1], xyz_times[i][2])
 
             #HEEQ vectors
             X_heeq=[1,0,0]
@@ -409,7 +411,7 @@ class SatData():
         return self
 
 
-    def get_position(self, timestamp, refframe='J2000', rlonlat=True):
+    def get_position(self, timestamp):
         """Returns position of satellite at given timestamp. Coordinates
         are provided in (r,lon,lat) format. Change rlonlat to False to get
         (x,y,z) coordinates. Uses function predstorm.spice.get_satellite_position.
@@ -418,32 +420,43 @@ class SatData():
         ==========
         timestamp : datetime.datetime object / list of dt objs
             Times of positions to return.
-        refframe : str (default='J2000')
-            See SPICE Required Reading Frames. J2000 is standard, HEE/HEEQ are heliocentric.
-        rlonlat : bool (default=False)
-            If True, returns coordinates in (r, lon, lat) format, not (x,y,z).
 
         Returns
         =======
         position : array(x,y,z), list of arrays for multiple timestamps
-            Position of satellite in x, y, z with reference frame refframe and Earth as
-            observing body. Returns (r,lon,lat) if rlonlat==True.
+            Position of satellite in x,y,z or r,lon,lat.
         """
 
-        return spice.get_satellite_position(self.source, timestamp, 
-                                            refframe=refframe,
-                                            rlonlat=rlonlat)
+        if self.pos == None:
+            raise Exception("Load position data (SatData.load_position_data()) before calling get_position()!")
+
+        tind = np.where(mdates.date2num(timestamp) < self.data[0])[0][0]
+        return self.pos[tind]
 
 
-    def load_position_data(self, refframe='J2000', rlonlat=True):
-        """Loads data on satellite position into data object."""
+    def load_positions(self, posfile, rlonlat=True, heliopy=True):
+        """Loads data on satellite position into data object. Data is loaded from a
+        pickled heliopy.spice.Trajectory object.oaded into local heliopy file.
 
-        times = [mdates.num2date(t).replace(tzinfo=None) for t in self['time']]
-        pos = spice.get_satellite_position(self.source, times, 
-                                           refframe=refframe,
-                                           rlonlat=rlonlat)
+        Parameters
+        ==========
+        posfile : str
+            Path to where file will be stored.
+        rlonlat : bool (default=True)
+            If True, returns coordinates in (r, lon, lat) format, not (x,y,z).
+        heliopy : bool (default=True)
+            If True, heliopy object is loaded.
 
-        self.position = pos
+        Returns
+        =======
+        self with new data in self.pos
+        """
+
+        logger.info("load_positions: Loading position data into {} data".format(self.source))
+        refframe = os.path.split(posfile)[-1].split('_')[-2]
+        Positions = get_position_data(posfile, self['time'], rlonlat=rlonlat)
+        self.pos = Positions
+
         return self
 
     # -----------------------------------------------------------------------------------
@@ -467,11 +480,17 @@ class SatData():
         """
 
         if starttime != None and endtime == None:
-            self.data = self.data[:,np.where(self['time'] >= mdates.date2num(starttime))[0]]
+            self.data = self.data[:,np.where(self.data[0] >= mdates.date2num(starttime))[0]]
+            if self.pos != None:
+                self.pos = self.pos[:,np.where(self.data[0] >= mdates.date2num(starttime))[0]]
         elif starttime == None and endtime != None:
-            self.data = self.data[:,np.where(self['time'] < mdates.date2num(endtime))[0]]
+            self.data = self.data[:,np.where(self.data[0] < mdates.date2num(endtime))[0]]
+            if self.pos != None:
+                self.pos = self.pos[:,np.where(self.data[0] < mdates.date2num(endtime))[0]]
         elif starttime != None and endtime != None:
-            self.data = self.data[:,np.where((self['time'] >= mdates.date2num(starttime)) & (self['time'] < mdates.date2num(endtime)))[0]]
+            self.data = self.data[:,np.where((self.data[0] >= mdates.date2num(starttime)) & (self.data[0] < mdates.date2num(endtime)))[0]]
+            if self.pos != None:
+                self.pos = self.pos[:,np.where((self.data[0] >= mdates.date2num(starttime)) & (self.data[0] < mdates.date2num(endtime)))[0]]
         return self
 
 
@@ -629,7 +648,7 @@ class SatData():
             dst_pred = calc_dst_burton(self['time'], self['bz'], self['speed'], self['density'])
 
         dstData = SatData({'time': self['time'], 'dst': dst_pred})
-        dstData.h['DataSource'] = "Dst prediction from {} data using method {}".format(self.source, method)
+        dstData.h['DataSource'] = "Dst prediction from {} data using {} method".format(self.source, method)
         dstData.h['SamplingRate'] = 1./24.
 
         return dstData
@@ -655,6 +674,85 @@ class SatData():
         kpData.h['SamplingRate'] = 1./24.
 
         return kpData
+
+
+class PositionData():
+    """Data object containing satellite position data.
+
+    Init Parameters
+    ===============
+    --> PositionData(input_dict, source=None, header=None)
+    posdata : list(x,y,z) or list(r,lon,lat)
+        Dict containing the input data in the form of key: data (in array or list)
+        Example: {'time': timearray, 'bx': bxarray}. The available keys for data input
+        can be accessed in SatData.default_keys.
+    header : dict(headerkey: value)
+        Dict containing metadata on the data array provided. Useful data headers are
+        provided in SatData.empty_header but this can be expanded as needed.
+    source : str
+        Provide quick-access name of satellite/data type for source.
+
+    Attributes
+    ==========
+    .positions : np.ndarray
+        Array containing position information. Best accessed using SatData[key].
+    .h : dict
+        Dict of metadata as defined by input header.
+
+    Methods
+    =======
+    ...
+
+    Examples
+    ========
+    """
+
+    empty_header = {'ReferenceFrame': '',
+                    'CoordinateSystem': '',
+                    'Units': '',
+                    'Object': '',
+                    }
+
+
+    def __init__(self, posdata, postype, header=None):
+        """Create new instance of class."""
+
+        if not postype.lower() in ['xyz', 'rlonlat']:
+            raise Exception("PositionData __init__: postype must be either 'xyz' or 'rlonlat'!")
+        self.positions = np.asarray(posdata)
+        if header == None:               # Inititalise empty header
+            self.h = copy.copy(PositionData.empty_header)
+        else:
+            self.h = header
+        self.h['CoordinateSystem'] = postype.lower()
+        self.coors = ['x','y','z'] if postype == 'xyz' else ['r','lon','lat']
+
+
+    def __getitem__(self, var):
+        if isinstance(var, str):
+            if var in self.coors:
+                return self.positions[self.coors.index(var)]
+            else:
+                raise Exception("PositionData object does not contain data under the key '{}'!".format(var))
+        return self.positions[:,var]
+
+
+    def __setitem__(self, var, value):
+        if isinstance(var, str):
+            if var in self.coors:
+                self.positions[self.coors.index(var)] = value
+            else:
+                raise Exception("PositionData object does not contain the key '{}'!".format(var))
+        else:
+            raise ValueError("Cannot interpret {} as index for __setitem__!".format(var))
+
+
+    def __len__(self):
+        return len(self.positions[0])
+
+
+    def __str__(self):
+        return self.positions.__str__()
 
 
 # =======================================================================================
@@ -874,6 +972,22 @@ def get_time_lag_wrt_earth(timestamp=None, satname='STEREO-A', v_mean=400., sun_
     lag_diff_r = round(diff_r_deg/(360./sun_syn),2)
 
     return lag_l1, lag_diff_r
+
+
+def cart2sphere(x, y, z):
+    # convert cartesian to spherical coordinates
+    r = np.sqrt(x**2. + y**2. + z**2.)
+    theta = np.arctan2(z,np.sqrt(x**2. + y**2.))
+    phi = np.arctan2(y,x)
+    return (r, theta, phi)
+
+
+def sphere2cart(r, phi, theta):
+    # convert spherical to cartesian coordinates
+    x = r*np.cos(theta)*np.cos(phi)
+    y = r*np.cos(theta)*np.sin(phi)
+    z = r*np.sin(theta)
+    return (x, y, z) 
 
 
 # ***************************************************************************************
@@ -1912,6 +2026,46 @@ def read_stereoa_data_beacon(filepath="sta_beacon/", starttime=None, endtime=Non
     return stereo_data
 
 
+def get_position_data(filepath, times, rlonlat=False):
+    """Reads position data from pickled heliopy.spice.Trajectory into
+    PositionData object.
+
+    Parameters
+    ==========
+    filepath : str
+        Path to pickled position data.
+    times : np.array
+        Array of time values (in date2num format) for position data.
+    rlonlat : bool (default=False)
+        If True, returns coordinates in (r, lon, lat) format, not (x,y,z).
+
+    Returns
+    =======
+    Positions : predstorm.PositionData object
+    """
+
+    logger.info("get_position_data: Loading position data from {}".format(filepath))
+    refframe = os.path.split(filepath)[-1].split('_')[-2]
+    posdata = pickle.load(open(filepath, 'rb'))
+    posx = np.interp(times, mdates.date2num(posdata.times), posdata.x)
+    posy = np.interp(times, mdates.date2num(posdata.times), posdata.y)
+    posz = np.interp(times, mdates.date2num(posdata.times), posdata.z)
+
+    if rlonlat:
+        r, theta, phi = cart2sphere(posx, posy, posz)
+        Positions = PositionData([r, theta, phi], 'rlonlat')
+    else:
+        Positions = PositionData([posx, posy, posz], 'xyz')
+    Positions.h['Units'] = 'km'
+    Positions.h['ReferenceFrame'] = refframe
+    
+    return Positions
+
+
+# ***************************************************************************************
+# C. SatData handling functions:
+# ***************************************************************************************
+
 def merge_Data(satdata1, satdata2, keys=None):
     """Concatenates two SatData objects into one. Dataset #1 should be behind in time
     so that dataset #2 can just be added on to the end.
@@ -1971,22 +2125,15 @@ def merge_Data(satdata1, satdata2, keys=None):
 
     return MergedData
 
+
 # ***************************************************************************************
-# C. Basic data handling functions:
+# D. Basic data handling functions:
 # ***************************************************************************************
 
 def getpositions(filename):  
     pos=scipy.io.readsav(filename)  
     print
     return pos
-
-
-def sphere2cart(r, phi, theta):
-    #convert spherical to cartesian coordinates
-    x = r*np.cos(theta)*np.cos(phi)
-    y = r*np.cos(theta)*np.sin(phi)
-    z = r*np.sin(theta)
-    return (x, y, z) 
 
 
 def time_to_num_cat(time_in):  
