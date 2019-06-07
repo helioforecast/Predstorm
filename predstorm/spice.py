@@ -115,7 +115,7 @@ def get_satellite_position(satname, timestamp, kernelpath=None, kernellist=None,
 
 def get_satellite_position_heliopy(satname, timestamp, refframe='J2000', refobject='Sun', rlonlat=False, returnobj=False):
     """Uses Heliopy's spice to get position information. Will automatically download
-    required kernels.
+    required kernels. Returns positions in km.
 
     Parameters
     ==========
@@ -134,7 +134,8 @@ def get_satellite_position_heliopy(satname, timestamp, refframe='J2000', refobje
 
     Returns
     =======
-    None - saves pickled file to posdir with file format SATNAME_TIMERANGE_REFFRAME.p
+    If returnobj: returns heliopy.spice.Trajectory object.
+    else: returns tuple of (x,y,z) or (r,lon,lat) if rlonlat=True
     """
 
     if isinstance(timestamp, datetime):
@@ -167,9 +168,10 @@ def get_satellite_position_heliopy(satname, timestamp, refframe='J2000', refobje
     if returnobj:
         return pos
 
-    pos.change_units('AU')
+    #pos.change_units('AU')
     if rlonlat:
-        return cart2sphere(pos.x, pos.y, pos.z)
+        r, theta, phi = cart2sphere(pos.x, pos.y, pos.z)
+        return (r, phi, theta)
     else:
         return (pos.x, pos.y, pos.z)
 
@@ -181,7 +183,7 @@ def make_position_file(satname, timerange, refframe, refobject='Sun', samprate=6
     Parameters
     ==========
     satname : str
-        Satellite name. Currently available: ['stereo_a', 'stereo_a_pred', 'earth']
+        Satellite name. Currently available: ['stereo_a', 'stereo_b', 'stereo_a_pred', 'earth']
     timerange : [datetime, datetime]
         Datetime objects to iterate through and return positions for.
     refframe : str

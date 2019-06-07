@@ -7,7 +7,7 @@ possible future L5 mission or interplanetary CubeSats.
 
 Author: C. Moestl, R. Bailey, IWF Graz, Austria
 twitter @chrisoutofspace, https://github.com/cmoestl
-started April 2018, last update April 2019
+started April 2018, last update June 2019
 
 python 3.7
 packages needed to add to anaconda installation: sunpy, cdflib (https://github.com/MAVENSDC/cdflib)
@@ -174,7 +174,7 @@ def main():
     print('------------------------------------------------------------------------')
     print('')
     print('PREDSTORM L5 v1 method for geomagnetic storm and aurora forecasting. ')
-    print('Christian Moestl, IWF Graz, last update May 2019.')
+    print('Christian Moestl, IWF Graz, last update June 2019.')
     print('')
     print('Time shifting magnetic field and plasma data from STEREO-A, ')
     print('or from an L5 mission or interplanetary CubeSats, to predict')
@@ -316,7 +316,7 @@ def main():
                                         [mdates.date2num(timestamp)], rlonlat=True)
         [earth_r, elon, elat] = EarthPos[0]
         sta_r = sta_r/AU
-        earth_r = earth_r/AU * 0.99   # estimated correction to L1
+        earth_r = (earth_r - 1.5*1e6)/AU   # estimated correction to L1
         sta_long_heeq, sta_lat_heeq = sta_long_heeq*180./np.pi, sta_lat_heeq*180./np.pi
         old_pos_method = False
         # This is equivalent to the following (but both give different Dst from original method):

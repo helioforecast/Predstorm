@@ -311,6 +311,8 @@ class SatData():
         bxgse=np.zeros(len(self['time']))
         bygse=np.zeros(len(self['time']))
         bzgse=np.zeros(len(self['time']))
+
+        AU = 149597870.700 #in km
         
         ########## first RTN to HEEQ 
 
@@ -318,12 +320,6 @@ class SatData():
         if len(pos_obj) == 0 and len(pos_tnum) == 0:
             if self.pos == None:
                 raise Exception("Load position data (SatData.load_position_data()) before calling convert_RTN_to_GSE()!")
-            xyz_times = self.pos.positions.T
-            # Which is equivalent to:
-            # times = [mdates.num2date(t).replace(tzinfo=None) for t in self['time']]
-            # xyz_times = spice.get_satellite_position('STEREO-A', times, refframe='HEEQ', rlonlat=True)
-            AU = 149597870.700 #in km
-            xyz_times = xyz_times/AU
         
         #go through all data points
         for i in np.arange(0,len(self['time'])):
@@ -335,7 +331,11 @@ class SatData():
                 [xa,ya,za]=sphere2cart(pos_obj[0][time_ind_pos],pos_obj[1][time_ind_pos],pos_obj[2][time_ind_pos])
             # NEW METHOD:
             else:
-                xa, ya, za = sphere2cart(xyz_times[i][0], xyz_times[i][1], xyz_times[i][2])
+                if self.pos.h['CoordinateSystem'] == 'rlonlat':
+                    xa, ya, za = sphere2cart(self.pos['r'][i], self.pos['lon'][i], self.pos['lat'][i])
+                    xa, ya, za = xa/AU, ya/AU, za/AU
+                else:
+                    xa, ya, za = self.pos[i]/AU
 
             #HEEQ vectors
             X_heeq=[1,0,0]
@@ -482,20 +482,21 @@ class SatData():
         if starttime != None and endtime == None:
             self.data = self.data[:,np.where(self.data[0] >= mdates.date2num(starttime))[0]]
             if self.pos != None:
-                self.pos = self.pos[:,np.where(self.data[0] >= mdates.date2num(starttime))[0]]
+                self.pos.positions = self.pos.positions[:,np.where(self.data[0] >= mdates.date2num(starttime))[0]]
         elif starttime == None and endtime != None:
             self.data = self.data[:,np.where(self.data[0] < mdates.date2num(endtime))[0]]
             if self.pos != None:
-                self.pos = self.pos[:,np.where(self.data[0] < mdates.date2num(endtime))[0]]
+                self.pos.positions = self.pos.positions[:,np.where(self.data[0] < mdates.date2num(endtime))[0]]
         elif starttime != None and endtime != None:
             self.data = self.data[:,np.where((self.data[0] >= mdates.date2num(starttime)) & (self.data[0] < mdates.date2num(endtime)))[0]]
             if self.pos != None:
-                self.pos = self.pos[:,np.where((self.data[0] >= mdates.date2num(starttime)) & (self.data[0] < mdates.date2num(endtime)))[0]]
+                self.pos.positions = self.pos.positions[:,np.where((self.data[0] >= mdates.date2num(starttime)) & (self.data[0] < mdates.date2num(endtime)))[0]]
         return self
 
 
     def make_hourly_data(self):
         """Takes data with minute resolution and interpolates to hour.
+        Uses .interp_to_time(). See that function for more usability options.
 
         Parameters
         ==========
@@ -511,14 +512,7 @@ class SatData():
         stime = self['time'][0] - self['time'][0]%(1./24.)
         # Create new time array
         time_h = np.array(stime + np.arange(0, len(self['time'])/60.) * (1./24.))
-        data_dict = {'time': time_h}
-        for k in self.vars:
-            na = np.interp(time_h, self['time'], self[k])
-            data_dict[k] = na
-
-        # Create new data opject:
-        Data_h = SatData(data_dict, header=copy.copy(self.h), source=copy.copy(self.source))
-        Data_h.h['SamplingRate'] = 1./24.
+        Data_h = self.interp_to_time(time_h)
 
         return Data_h
 
@@ -566,6 +560,10 @@ class SatData():
         # Create new data opject:
         newData = SatData(data_dict, header=copy.copy(self.h), source=copy.copy(self.source))
         newData.h['SamplingRate'] = resolution
+        # Interpolate position data:
+        if self.pos != None:
+            newPos = self.pos.interp_to_time(self['time'], tarray)
+            newData.pos = newPos
 
         return newData
 
@@ -713,6 +711,9 @@ class PositionData():
                     'Object': '',
                     }
 
+    # -----------------------------------------------------------------------------------
+    # Internal methods
+    # -----------------------------------------------------------------------------------
 
     def __init__(self, posdata, postype, header=None):
         """Create new instance of class."""
@@ -753,6 +754,30 @@ class PositionData():
 
     def __str__(self):
         return self.positions.__str__()
+
+    # -----------------------------------------------------------------------------------
+    # Object data handling
+    # -----------------------------------------------------------------------------------
+
+    def interp_to_time(self, t_orig, t_new):
+        """Linearly interpolates over nans in array.
+
+        Parameters
+        ==========
+        t_orig : np.ndarray
+            Array containing original timesteps.
+        t_new : np.ndarray
+            Array containing new timesteps.
+        """
+
+        na = []
+        for k in self.coors:
+            na.append(np.interp(t_new, t_orig, self[k]))
+
+        # Create new data opject:
+        newData = PositionData(na, copy.copy(self.h['CoordinateSystem']), header=copy.copy(self.h))
+
+        return newData
 
 
 # =======================================================================================
@@ -975,7 +1000,11 @@ def get_time_lag_wrt_earth(timestamp=None, satname='STEREO-A', v_mean=400., sun_
 
 
 def cart2sphere(x, y, z):
-    # convert cartesian to spherical coordinates
+    """convert cartesian to spherical coordinates
+    theta = polar angle/elevation angle = latitude
+    phi = azimuthal angle = longitude
+    Returns (r, theta, phi)
+    """
     r = np.sqrt(x**2. + y**2. + z**2.)
     theta = np.arctan2(z,np.sqrt(x**2. + y**2.))
     phi = np.arctan2(y,x)
@@ -2029,6 +2058,9 @@ def read_stereoa_data_beacon(filepath="sta_beacon/", starttime=None, endtime=Non
 def get_position_data(filepath, times, rlonlat=False):
     """Reads position data from pickled heliopy.spice.Trajectory into
     PositionData object.
+    Note: Interpolates position data, which is faster but not as exact.
+    Use ps.spice.get_satellite_position_heliopy() for more precise orbit
+    calculations.
 
     Parameters
     ==========
@@ -2053,7 +2085,7 @@ def get_position_data(filepath, times, rlonlat=False):
 
     if rlonlat:
         r, theta, phi = cart2sphere(posx, posy, posz)
-        Positions = PositionData([r, theta, phi], 'rlonlat')
+        Positions = PositionData([r, phi, theta], 'rlonlat')
     else:
         Positions = PositionData([posx, posy, posz], 'xyz')
     Positions.h['Units'] = 'km'

@@ -68,7 +68,7 @@ def convert_HEEQ_to_GSE_stb_l1(cbr,cbt,cbn,ctime,pos_stereo_heeq):
     ########## ******* for STB only convert from HEEQ to GSM
     #function call [dbr,dbt,dbn]=convert_RTN_to_GSE_sta_l1(sta_br7,sta_bt7,sta_bn7,sta_time7, pos.sta)
 
-    #pdb.set_trace()	for debugging
+    #pdb.set_trace()    for debugging
     #convert STEREO A magnetic field from RTN to GSE
     #for prediction of structures seen at STEREO-A later at Earth L1
     #so we do not include a rotation of the field to the Earth position
@@ -146,7 +146,8 @@ def convert_HEEQ_to_GSE_stb_l1(cbr,cbt,cbn,ctime,pos_stereo_heeq):
 
 logger = ps.init_logging(verbose=True)
 
-AU=149597870.700 #AU in km
+AU = 149597870.700 #AU in km
+make_plots = False
 
 #closes all plots
 plt.close('all')
@@ -155,25 +156,25 @@ print()
 print('PREDSTORM L1 solar wind forecasting. ')
 print('Error estimation using STEREO-B data')
 print()
-print('Christian Moestl, IWF-helio, Graz, last update April 2019.')
+print('Helio group, IWF Graz, last update June 2019.')
 
 
 ##########################################################################################
 ########################################## (1) GET DATA ##################################
 ##########################################################################################
 
-########### get STEREO-B in situ data
+# ----------------------- Get STEREO-B in situ data --------------------------------------
 
 logger.info( 'read STEREO-B data. Change path to the data file if necessary.')
 try:
-    stb_p= pickle.load( open( "../catpy/DATACAT/STB_2007to2014_HEEQ.p", "rb" ) )
+    stb_p = pickle.load( open( "../catpy/DATACAT/STB_2007to2014_HEEQ.p", "rb" ) )
 except:
     # NOTE: SCEQ/HEEQ makes small difference in results
-    stb_p= pickle.load( open( "data/STB_2007to2014_SCEQ.p", "rb" ) )
+    stb_p = pickle.load( open( "data/STB_2007to2014_SCEQ.p", "rb" ) )
 #convert time - takes a while, so save pickle and reload when done
 #stb_time=IDL_time_to_num(stb.time)
 #pickle.dump([stb_time], open( "../catpy/DATACAT/insitu_times_mdates_stb_2007_2014.p", "wb" ) )
-[stb_time]=pickle.load( open( "data/insitu_times_mdates_stb_2007_2014.p", "rb" ) )
+[stb_time] = pickle.load( open( "data/insitu_times_mdates_stb_2007_2014.p", "rb" ) )
 print( 'read data done.')
 
 # Pack STEREO-B data into SatData object
@@ -186,6 +187,19 @@ stb.h['DataSource'] = "STEREO-B (pickled)"
 stb.h['SamplingRate'] = stb_p.time[1] - stb_p.time[0]
 stb.h['CoordinateSystem'] = 'SCEQ'
 
+# ----------------------------- Get OMNI 2 data -----------------------------------------
+
+print('load OMNI data for Dst')
+omni = ps.get_omni_data()
+
+if make_plots:
+    # Plot of Dst:
+    fig=plt.figure(1)
+    plt.plot_date(omni['time'], omni['dst'], 'k')
+    mngr = plt.get_current_fig_manager()
+    mngr.window.setGeometry(50,600,600,500)
+
+# ------------------------ Load spacecraft position data ---------------------------------
 
 ############# get sc positions
 print('load spacecraft and planetary positions')
@@ -193,41 +207,38 @@ pos=getpositions('data/positions_2007_2023_HEEQ_6hours.sav')
 pos_time_num=time_to_num_cat(pos.time)
         
 #position of STEREO-B
-stb_r=pos.stb[0]
+stb.load_positions('data/positions/STEREOB_20070101-20140928_HEEQ_6h.p')
+stb_r = stb.pos['r']/AU
 #get longitude and latitude
-stb_long_heeq=pos.stb[1]*180/np.pi
-stb_lat_heeq=pos.stb[2]*180/np.pi
+stb_long_heeq = stb.pos['lon']*180/np.pi
+stb_lat_heeq = stb.pos['lat']*180/np.pi
 
 #position of STEREO-A
-sta_r=pos.sta[0]
-#get longitude and latitude
-sta_long_heeq=pos.sta[1]*180/np.pi
-sta_lat_heeq=pos.sta[2]*180/np.pi
+staPos = ps.get_position_data('data/positions/STEREOA-pred_20070101-20250101_HEEQ_6h.p', 
+                              stb['time'], rlonlat=True)
+sta_r = staPos['r']/AU
+sta_long_heeq = staPos['lon']*180/np.pi
+sta_lat_heeq = staPos['lat']*180/np.pi
 
 #position of Earth L1
-l1_r=pos.earth_l1[0]
-#get longitude and latitude
-l1_long_heeq=pos.earth_l1[1]*180/np.pi
-l1_lat_heeq=pos.earth_l1[2]*180/np.pi
+EarthPos = ps.get_position_data('data/positions/Earth_20000101-20250101_HEEQ_6h.p', 
+                                stb['time'], rlonlat=True)
+l1_r = (EarthPos['r'] - 1.5*1e6)/AU
+l1_long_heeq = EarthPos['lon']*180/np.pi
+l1_lat_heeq = EarthPos['lat']*180/np.pi
 
-plt.figure(1)
-plt.plot_date(pos_time_num,l1_lat_heeq-stb_lat_heeq,'-b',label='STEREO-B')
-plt.plot_date(pos_time_num,l1_lat_heeq-sta_lat_heeq,'-r',label='STEREO-A')
-plt.xlabel('time')
-plt.ylabel('Earth latitude - STEREO latitude [° HEEQ]')
-plt.legend()
-mngr = plt.get_current_fig_manager()
-mngr.window.setGeometry(50,50,600, 500)
+if make_plots:
+    # Plot of latitude diffs between L1 and satellites:
+    plt.figure(2)
+    plt.plot_date(pos_time_num,l1_lat_heeq-stb_lat_heeq,'-b',label='STEREO-B')
+    plt.plot_date(pos_time_num,l1_lat_heeq-sta_lat_heeq,'-r',label='STEREO-A')
+    plt.xlabel('time')
+    plt.ylabel('Earth latitude - STEREO latitude [° HEEQ]')
+    plt.legend()
+    mngr = plt.get_current_fig_manager()
+    mngr.window.setGeometry(50,50,600,500)
 
-######### get OMNI data
-print('load OMNI data for Dst')
-omni = ps.get_omni_data()
-
-fig=plt.figure(2)
-plt.plot_date(omni['time'],omni['dst'],'k')
-mngr = plt.get_current_fig_manager()
-mngr.window.setGeometry(50,600,600, 500)
-
+# ----------------------------- Load data on SIRs ---------------------------------------
 
 ######## load Lan Jian's SIR list for STEREO
 sir=np.genfromtxt('data/STEREO_Level3_SIR_clean_clean.txt',
@@ -257,86 +268,55 @@ sir_end_b=sir_end[stbsirs]
 ############################### (2) Interpolate STEREO-B to 1 hour #######################
 ##########################################################################################
 
-
 # extract intervals from STB data, from -10 to -120 degree HEEQ longitude
 #first get the selected times from the position data 
-min_time=(pos_time_num[np.where(stb_long_heeq < -10)[0][0]])
-max_time=(pos_time_num[np.where(stb_long_heeq < -110)[0][0]])
+min_time=np.round(stb['time'][np.where(stb_long_heeq < -10)[0][0]], 0)
+max_time=np.round(stb['time'][np.where(stb_long_heeq < -110)[0][0]], 0)
 
 stbh = stb.make_hourly_data()
-stbh = stbh.cut(starttime=num2date(np.round(min_time,0)), endtime=num2date(np.round(max_time,0))).interp_nans()
-omni = omni.cut(starttime=num2date(np.round(min_time,0)), endtime=num2date(np.round(max_time,0)))
+stbh = stbh.cut(starttime=num2date(min_time), endtime=num2date(max_time)).interp_nans()
+omni = omni.cut(starttime=num2date(min_time), endtime=num2date(max_time))
+#get dst only for interval
+odst = omni['dst'] 
 
-#then extract the position data and in situ data indices for these times, cut 1 array dimension
-pos_ind=np.where(np.logical_and(pos_time_num > min_time, pos_time_num< max_time))[0]
-dat_ind=np.where(np.logical_and(stb_time > min_time, stb_time< max_time))[0]
-
-stb_time_sel=stbh['time']#stb_time[dat_ind]
-stb_btot_1h=stbh['btot']
-stb_bx_1h=stbh['bx']
-stb_by_1h=stbh['by']
-stb_bz_1h=stbh['bz']
-stb_den_1h=stbh['density']
-stb_vtot_1h=stbh['speed']
-
-#interpolate STB data
-#round the start time so it starts and ends with 00:00 UT
-start_time=np.round(stb_time_sel[0],0)  
-end_time=np.round(stb_time_sel[-1],0)  
-
-#make time array, hourly steps starting with start time and finishing at end time
-#do this with datetime objects
-stb_time_1h = num2date(start_time) + np.arange(0,int(np.ceil((end_time-start_time)*24))    ,1) * timedelta(hours=1) 
-#convert back to matplotlib time
-stb_time_1h=date2num(stb_time_1h)
-
-#identify not NaN data points
-# good = np.where(np.isfinite(stb_btot_sel))
-# #interpolate
-# stb_btot_1h=np.interp(stb_time_1h,stb_time_sel[good],stb_btot_sel[good])
-# good = np.where(np.isfinite(stb_bx_sel))
-# stb_bx_1h=np.interp(stb_time_1h,stb_time_sel[good],stb_bx_sel[good])
-# good = np.where(np.isfinite(stb_by_sel))
-# stb_by_1h=np.interp(stb_time_1h,stb_time_sel[good],stb_by_sel[good])
-# good = np.where(np.isfinite(stb_bz_sel))
-# stb_bz_1h=np.interp(stb_time_1h,stb_time_sel[good],stb_bz_sel[good])
-
-# #same for plasma
-# good = np.where(np.isfinite(stb_vtot_sel))
-# stb_vtot_1h=np.interp(stb_time_1h,stb_time_sel[good],stb_vtot_sel[good])
-# good = np.where(np.isfinite(stb_den_sel))
-# stb_den_1h=np.interp(stb_time_1h,stb_time_sel[good],stb_den_sel[good])
+stbh_t = stbh['time']
+stb_btot_1h = stbh['btot']
+stb_bx_1h = stbh['bx']
+stb_by_1h = stbh['by']
+stb_bz_1h = stbh['bz']
+stb_den_1h = stbh['density']
+stb_vtot_1h = stbh['speed']
 
 #interpolate positions to hourly (better with heliopy positions, but is STEREO-B included there?)
-stb_r_1h=np.interp(stb_time_1h,pos_time_num,stb_r)
-stb_long_1h=np.interp(stb_time_1h,pos_time_num,stb_long_heeq)
-stb_lat_1h=np.interp(stb_time_1h,pos_time_num,stb_lat_heeq)
-l1_r_1h=np.interp(stb_time_1h,pos_time_num,l1_r)
-l1_lon_1h=np.interp(stb_time_1h,pos_time_num,l1_long_heeq)
-l1_lat_1h=np.interp(stb_time_1h,pos_time_num,l1_lat_heeq)
+stb_r_1h = stbh.pos['r'] / AU
+stb_long_1h = stbh.pos['lon']*180/np.pi
+stb_lat_1h = stbh.pos['lat']*180/np.pi
+l1_r_1h = np.interp(stbh_t, stb['time'], l1_r)
+l1_lon_1h = np.interp(stbh_t, stb['time'], l1_long_heeq)
+l1_lat_1h = np.interp(stbh_t, stb['time'], l1_lat_heeq)
 
-#plot data
-plt.figure(3)
-plt.plot_date(stb_time_1h,stb_btot_1h,'-k',label='Btot')
-plt.plot_date(stb_time_1h,stb_bx_1h,'-r',label='Bx')
-plt.plot_date(stb_time_1h,stb_by_1h,'-g',label='By')
-plt.plot_date(stb_time_1h,stb_bz_1h,'-b',label='Btot')
-plt.xlabel('time')
-plt.ylabel('B [nT]')
-plt.legend()
-mngr = plt.get_current_fig_manager()
-mngr.window.setGeometry(700,50,600, 500)
+if make_plots:
+    # Plot of magnetic field data:
+    plt.figure(3)
+    plt.plot_date(stbh_t,stb_btot_1h,'-k',label='Btot')
+    plt.plot_date(stbh_t,stb_bx_1h,'-r',label='Bx')
+    plt.plot_date(stbh_t,stb_by_1h,'-g',label='By')
+    plt.plot_date(stbh_t,stb_bz_1h,'-b',label='Btot')
+    plt.xlabel('time')
+    plt.ylabel('B [nT]')
+    plt.legend()
+    mngr = plt.get_current_fig_manager()
+    mngr.window.setGeometry(700,50,600, 500)
 
-#plot data
-plt.figure(4)
-plt.plot_date(stb_time_1h,stb_den_1h*5,'-r',label='Den*5')
-plt.plot_date(stb_time_1h,stb_vtot_1h,'-k',label='Vtot')
-plt.xlabel('time')
-plt.ylabel('V, N*5')
-plt.legend()
-mngr = plt.get_current_fig_manager()
-mngr.window.setGeometry(700,600,600, 500)
-
+    # Plot of density and speed:
+    plt.figure(4)
+    plt.plot_date(stbh_t,stb_den_1h*5,'-r',label='Den*5')
+    plt.plot_date(stbh_t,stb_vtot_1h,'-k',label='Vtot')
+    plt.xlabel('time')
+    plt.ylabel('V, N*5')
+    plt.legend()
+    mngr = plt.get_current_fig_manager()
+    mngr.window.setGeometry(700,600,600, 500)
 
 print()
 print('get times STB inside SIR')
@@ -356,17 +336,17 @@ for i in sir_ind:
 stb_sir_ind_1h=np.int(0)
 
 for p in sir_ind:
-    inds=np.argmin(abs(sir_start_1h[p]-stb_time_1h))
-    inde=np.argmin(abs(sir_end_1h[p]-stb_time_1h))
-    plt.axvspan(stb_time_1h[inds],stb_time_1h[inde],color='b',alpha=0.2)
+    inds=np.argmin(abs(sir_start_1h[p]-stbh_t))
+    inde=np.argmin(abs(sir_end_1h[p]-stbh_t))
+    plt.axvspan(stbh_t[inds],stbh_t[inde],color='b',alpha=0.2)
 
     #append all indices between start and end times
-    if np.min(abs(sir_start_1h[p]-stb_time_1h)) < 1: 
+    if np.min(abs(sir_start_1h[p]-stbh_t)) < 1: 
         #print(inds,'  ',inde,np.arange(inds,inde,1))
         stb_sir_ind_1h=np.append(stb_sir_ind_1h,np.arange(inds,inde,1)) 
 #delete 0 from array definition  
 np.delete(stb_sir_ind_1h,0)  
-print('Data points inside SIRs, percent: ',np.round(len(stb_time_1h[stb_sir_ind_1h])/len(stb_time_1h)*100,1) )
+print('Data points inside SIRs, percent: ',np.round(len(stbh_t[stb_sir_ind_1h])/len(stbh_t)*100,1) )
 ###########
 
 
@@ -376,26 +356,19 @@ print()
 print('STEREO-B ...')
 
 stb_450_ind_1h=np.where(stb_vtot_1h>450)[0]  
-print('Data points inside > 450 km/s, percent: ',np.round(len(stb_time_1h[stb_450_ind_1h])/len(stb_time_1h)*100,1) )
-
+print('Data points inside > 450 km/s, percent: ',np.round(len(stbh_t[stb_450_ind_1h])/len(stbh_t)*100,1) )
 stb_500_ind_1h=np.where(stb_vtot_1h>500)[0]  
-print('Data points inside > 500 km/s, percent: ',np.round(len(stb_time_1h[stb_500_ind_1h])/len(stb_time_1h)*100,1) )
-
+print('Data points inside > 500 km/s, percent: ',np.round(len(stbh_t[stb_500_ind_1h])/len(stbh_t)*100,1) )
 stb_550_ind_1h=np.where(stb_vtot_1h>550)[0]  
-print('Data points inside > 550 km/s, percent: ',np.round(len(stb_time_1h[stb_550_ind_1h])/len(stb_time_1h)*100,1) )
-
+print('Data points inside > 550 km/s, percent: ',np.round(len(stbh_t[stb_550_ind_1h])/len(stbh_t)*100,1) )
 stb_600_ind_1h=np.where(stb_vtot_1h>600)[0]  
-print('Data points inside > 600 km/s, percent: ',np.round(len(stb_time_1h[stb_600_ind_1h])/len(stb_time_1h)*100,1) )
-
+print('Data points inside > 600 km/s, percent: ',np.round(len(stbh_t[stb_600_ind_1h])/len(stbh_t)*100,1) )
 stb_650_ind_1h=np.where(stb_vtot_1h>650)[0]  
-print('Data points inside > 650 km/s, percent: ',np.round(len(stb_time_1h[stb_650_ind_1h])/len(stb_time_1h)*100,1) )
-
+print('Data points inside > 650 km/s, percent: ',np.round(len(stbh_t[stb_650_ind_1h])/len(stbh_t)*100,1) )
 
 #plot with markers to indicate intervals
-plt.plot(stb_time_1h[stb_500_ind_1h],np.zeros(len(stb_500_ind_1h))+500,'g',marker='o',markersize=3,linestyle='None')
-
-#get dst only for interval
-odst=omni['dst']  
+plt.plot(stbh_t[stb_500_ind_1h],np.zeros(len(stb_500_ind_1h))+500,'g',marker='o',markersize=3,linestyle='None')
+ 
 
 
 ##########################################################################################
@@ -438,8 +411,8 @@ for i in np.arange(0,len(l1_r_1h),1):
     diff_r_deg=(-360/(sun_syn*86400))*((stb_r_1h[i]-l1_r_1h[i])*AU)/stb_vtot_1h[i]
     timelag_diff_r[i]=np.round(diff_r_deg/(360/sun_syn),3)
 
-## ADD BOTH time shifts to the stb_time_1h
-stb_time_1h_to_l1=stb_time_1h+timelag_stb_l1+timelag_diff_r
+## ADD BOTH time shifts to the stbh_t
+stbh_t_to_l1=stbh_t+timelag_stb_l1+timelag_diff_r
 
 print('2: time lag min to max , days:', np.round(np.min(timelag_stb_l1+timelag_diff_r),1),  '    ',  np.round(np.max(timelag_stb_l1+timelag_diff_r),1))
 
@@ -447,23 +420,24 @@ print('no 3: coordinate conversion of magnetic field components')
 
 ########## TO DO: NEED TO CHECK
 #convert STEREO-B RTN data to GSM as if STEREO-B was along the Sun-Earth line
-#[dbx,dby,dbz]=convert_HEEQ_to_GSE_stb_l1(stb_bx_1h,stb_by_1h,stb_bz_1h,stb_time_1h_to_l1, pos.stb)
+#[dbx,dby,dbz]=convert_HEEQ_to_GSE_stb_l1(stb_bx_1h,stb_by_1h,stb_bz_1h,stbh_t_to_l1, pos.stb)
 #GSE to GSM
-#[stb_bx_1h,stb_by_1h,stb_bz_1h]=convert_GSE_to_GSM(dbx,dby,dbz,stb_time_1h_to_l1)
+#[stb_bx_1h,stb_by_1h,stb_bz_1h]=convert_GSE_to_GSM(dbx,dby,dbz,stbh_t_to_l1)
 
-## plot comparison to show timeshift mapping
-plt.figure(5)
-plt.plot_date(stb_time_1h_to_l1,stb_vtot_1h,'-b',label='V shift STB')
-plt.plot_date(stb_time_1h,stb_vtot_1h,'--g',label='V STB')
-plt.plot_date(omni['time'],omni['speed'],'-k',label='V L1')
-plt.xlabel('time')
-plt.ylabel('Vtot')
-plt.legend()
-plt.xlim([date2num(sunpy.time.parse_time('2010-Feb-1')), date2num(sunpy.time.parse_time('2010-Mar-1'))])
-mngr = plt.get_current_fig_manager()
-mngr.window.setGeometry(1350,600,600, 500)
-#mngr.window.setGeometry(50,50,1500, 800)
-plt.grid()
+if make_plots:
+    # Plot comparison to show timeshift mapping
+    plt.figure(5)
+    plt.plot_date(stbh_t_to_l1,stb_vtot_1h,'-b',label='V shift STB')
+    plt.plot_date(stbh_t,stb_vtot_1h,'--g',label='V STB')
+    plt.plot_date(omni['time'],omni['speed'],'-k',label='V L1')
+    plt.xlabel('time')
+    plt.ylabel('Vtot')
+    plt.legend()
+    plt.xlim([date2num(sunpy.time.parse_time('2010-Feb-1')), date2num(sunpy.time.parse_time('2010-Mar-1'))])
+    mngr = plt.get_current_fig_manager()
+    mngr.window.setGeometry(1350,600,600, 500)
+    #mngr.window.setGeometry(50,50,1500, 800)
+    plt.grid()
 
 
 ##########################################################################################
@@ -475,19 +449,19 @@ print('Dst calculation takes a few seconds')
 
 dst_temerinli = stbh.make_dst_prediction()['dst']
 
-############ Dst comparison plot
-
-plt.figure(6)
-plt.plot_date(stb_time_1h_to_l1,dst_temerinli,'-b',label='Dst shift STB')
-plt.plot_date(omni['time'],odst,'-k',label='observed Dst')
-plt.xlabel('time')
-plt.ylabel('Dst')
-plt.legend()
-plt.xlim([date2num(sunpy.time.parse_time('2010-Feb-1')), date2num(sunpy.time.parse_time('2010-Mar-1'))])
-mngr = plt.get_current_fig_manager()
-mngr.window.setGeometry(1350,50,600, 500)
-#mngr.window.setGeometry(50,50,1500, 800)
-plt.grid()
+if make_plots:
+    # Dst comparison plot
+    plt.figure(6)
+    plt.plot_date(stbh_t_to_l1,dst_temerinli,'-b',label='Dst shift STB')
+    plt.plot_date(omni['time'],odst,'-k',label='observed Dst')
+    plt.xlabel('time')
+    plt.ylabel('Dst')
+    plt.legend()
+    plt.xlim([date2num(sunpy.time.parse_time('2010-Feb-1')), date2num(sunpy.time.parse_time('2010-Mar-1'))])
+    mngr = plt.get_current_fig_manager()
+    mngr.window.setGeometry(1350,50,600, 500)
+    #mngr.window.setGeometry(50,50,1500, 800)
+    plt.grid()
 
 
 ############ comparison observed/calculated for subintervals:
@@ -565,10 +539,6 @@ plt.tight_layout()
 mngr = plt.get_current_fig_manager()
 mngr.window.setGeometry(1300,300,600, 500)
 
-plt.show()
 
-
-
-
-
+    #plt.show()
 
