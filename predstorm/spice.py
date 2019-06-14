@@ -226,7 +226,7 @@ def make_position_file(satname, timerange, refframe, refobject='Sun', samprate=6
     return
 
 
-def main():
+def generate_all_position_files():
     """Automatically generate all position files."""
 
     refframe = 'HEEQ'
@@ -248,5 +248,5 @@ def main():
 
 if __name__ == '__main__':
 
-    main()
+    generate_all_position_files()
 

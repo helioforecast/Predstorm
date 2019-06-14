@@ -107,6 +107,7 @@ import urllib
 
 # Local imports
 import predstorm as ps
+from predstorm.config.constants import AU, dist_to_L1
 from predstorm.plot import plot_solarwind_and_dst_prediction
 # Old imports (remove later):
 from predstorm.data import getpositions, time_to_num_cat
@@ -174,7 +175,7 @@ def main():
     print('------------------------------------------------------------------------')
     print('')
     print('PREDSTORM L5 v1 method for geomagnetic storm and aurora forecasting. ')
-    print('Christian Moestl, IWF Graz, last update June 2019.')
+    print('Helio Group, IWF Graz, last update June 2019.')
     print('')
     print('Time shifting magnetic field and plasma data from STEREO-A, ')
     print('or from an L5 mission or interplanetary CubeSats, to predict')
@@ -188,7 +189,7 @@ def main():
 
     #================================== (1) GET DATA ========================================
 
-
+    logger.info("\n-------------------------\nDATA READS\n-------------------------")
     #------------------------ (1a) real time SDO image --------------------------------------
     #not PFSS
     sdo_latest='https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_0193.jpg'
@@ -264,16 +265,14 @@ def main():
     #get real time STEREO-A data with minute/hourly time resolution as recarray
     logger.info("Getting STEREO-A data...")
     if run_mode == 'normal':
-        ps.download_stereoa_data_beacon()
-        stam = ps.read_stereoa_data_beacon()
+        stam = ps.get_stereoa_data_beacon()
     elif run_mode == 'historic':
         lag_L1, lag_r = ps.get_time_lag_wrt_earth(timestamp=timestamp, satname='STEREO-A')
         est_timelag = lag_L1 + lag_r
-        ps.download_stereoa_data_beacon(starttime=mdates.num2date(timenow)-timedelta(days=plot_future_days+est_timelag),
-                                        endtime=mdates.num2date(timenow)+timedelta(days=2))
-        stam = ps.read_stereoa_data_beacon(starttime=mdates.num2date(timenow)-timedelta(days=plot_future_days+est_timelag),
+        stam = ps.get_stereoa_data_beacon(starttime=mdates.num2date(timenow)-timedelta(days=plot_future_days+est_timelag),
                                            endtime=mdates.num2date(timenow)+timedelta(days=2))
     stam.interp_nans()
+    stam.load_positions('data/positions/STEREOA-pred_20070101-20250101_HEEQ_6h.p')
     stam.shift_time_to_L1()
     sta = stam.make_hourly_data()
 
@@ -299,24 +298,18 @@ def main():
     #========================== (2) PREDICTION CALCULATIONS ==================================
 
     #------------------------ (2a)  Time lag for solar rotation ------------------------------
+    logger.info("\n-------------------------\nPOSITION CORRECTIONS\n-------------------------")
 
-    # Get spacecraft position
-    AU=149597870.700 #in km
     logger.info('loading spacecraft and planetary positions')
 
     # NEW METHOD:
     try:
-        # To generate these files, run:
-        # from predstorm.spice import main
-        # main()
-        sta.load_positions('data/positions/STEREOA-pred_20070101-20250101_HEEQ_6h.p')
-        stam.load_positions('data/positions/STEREOA-pred_20070101-20250101_HEEQ_6h.p')
         [sta_r, sta_long_heeq, sta_lat_heeq] = sta.get_position(timestamp)
         EarthPos = ps.get_position_data('data/positions/Earth_20000101-20250101_HEEQ_6h.p', 
                                         [mdates.date2num(timestamp)], rlonlat=True)
         [earth_r, elon, elat] = EarthPos[0]
         sta_r = sta_r/AU
-        earth_r = (earth_r - 1.5*1e6)/AU   # estimated correction to L1
+        earth_r = (earth_r - dist_to_L1)/AU   # estimated correction to L1
         sta_long_heeq, sta_lat_heeq = sta_long_heeq*180./np.pi, sta_lat_heeq*180./np.pi
         old_pos_method = False
         # This is equivalent to the following (but both give different Dst from original method):
@@ -407,6 +400,7 @@ def main():
 
     #---------------------- (2d) calculate Dst for combined data ----------------------------
 
+    logger.info("\n-------------------------\nDST PREDICTION\n-------------------------")
     logger.info('Making Dst prediction for L1 calculated from time-shifted STEREO-A beacon data.')
     #This function works as result=make_dst_from_wind(btot_in,bx_in, by_in,bz_in,v_in,vx_in,density_in,time_in):
     # ******* PROBLEM: USES vr twice (should be V and Vr in Temerin/Li 2002), take V from STEREO-A data too
@@ -450,6 +444,7 @@ def main():
 
     #-------------- (4a) Write prediction variables (plot) to pickle and txt ASCII file -----
 
+    logger.info("\n-------------------------\nWRITING RESULTS\n-------------------------")
     filename_save=outputdirectory+'/savefiles/predstorm_v1_realtime_stereo_a_save_'+ \
                   timeutcstr[0:10]+'-'+timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.p'
 
@@ -766,15 +761,21 @@ if __name__ == '__main__':
             print("")
             sys.exit()
 
-    # DEFINE OUTPUT DIRECTORIES:
+    # CHECK OUTPUT DIRECTORIES AND REQUIRED FILES:
     outputdirectory='results'
     # Check if directory for output exists (for plots and txt files)
     if os.path.isdir(outputdirectory) == False: os.mkdir(outputdirectory)
     # Make directory for savefiles
     if os.path.isdir(outputdirectory+'/savefiles') == False:
         os.mkdir(outputdirectory+'/savefiles')
-    # Check if directory for beacon data exists
-    if os.path.isdir('sta_beacon') == False: os.mkdir('sta_beacon')
+    # Check if directory for beacon data exists:
+    if os.path.isdir('data/sta_beacon') == False: 
+        logger.info("Creating folder data/stereoarchive for data downloads...")
+        os.mkdir('data/sta_beacon')
+    # Files listing satellite positions:
+    if not os.path.exists('data/positions/STEREOA-pred_20070101-20250101_HEEQ_6h.p'):
+        logger.warning("Need position files to run script! Generating files under data/positions...")
+        ps.spice.generate_all_position_files()
 
     # INITIATE LOGGING:
     logger = ps.init_logging(verbose=verbose)

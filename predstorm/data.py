@@ -38,32 +38,42 @@ CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFT
 OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
+# Standard
 import os
-import sys  
-import cdflib
+import sys
 import copy
-import heliopy.spice as hspice
+from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
+import gzip
 import logging
 import numpy as np
 import pdb
 import pickle
+import re
 import scipy
 import scipy.io
-import sunpy.time
+import shutil
+import subprocess
 import matplotlib.dates as mdates
-from datetime import datetime, timedelta
 from glob import iglob
 import json
 import urllib
+
+# External
+import cdflib
+import heliopy.spice as hspice
+import sunpy.time
 try:
     from netCDF4 import Dataset
 except:
     pass
 
+# Local
 from . import spice
 from .predict import make_kp_from_wind, make_dst_from_wind
 from .predict import make_aurora_power_from_wind, calc_newell_coupling
 from .predict import calc_dst_burton, calc_dst_obrien, calc_dst_temerin_li
+from .config.constants import AU, dist_to_L1
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +167,8 @@ class SatData():
         if 'time' not in input_dict.keys():
             raise Exception("Time variable is required for SatData object!")
         dt = [x for x in SatData.default_keys if x in input_dict.keys()]
+        if len(input_dict['time']) == 0:
+            logger.warning("SatData.__init__: Inititating empty array! Is the data missing?")
         #data = [input_dict[x[0]] for x in dt]
         data = [input_dict[x] if x in dt else np.zeros(len(input_dict['time'])) for x in SatData.default_keys]
         # Cast this to be our class type
@@ -434,7 +446,7 @@ class SatData():
         return self.pos[tind]
 
 
-    def load_positions(self, posfile, rlonlat=True, heliopy=True):
+    def load_positions(self, posfile, rlonlat=True, l1_corr=False, heliopy=True):
         """Loads data on satellite position into data object. Data is loaded from a
         pickled heliopy.spice.Trajectory object.oaded into local heliopy file.
 
@@ -455,6 +467,8 @@ class SatData():
         logger.info("load_positions: Loading position data into {} data".format(self.source))
         refframe = os.path.split(posfile)[-1].split('_')[-2]
         Positions = get_position_data(posfile, self['time'], rlonlat=rlonlat)
+        if l1_corr:
+            Positions['r'] = Positions['r'] - dist_to_L1
         self.pos = Positions
 
         return self
@@ -510,8 +524,10 @@ class SatData():
 
         # Round to nearest hour
         stime = self['time'][0] - self['time'][0]%(1./24.)
+        # Roundabout way to get time_h ensures timings with full hours:
+        nhours = (mdates.num2date(self['time'][-1])-mdates.num2date(stime)).total_seconds()/60./60.
         # Create new time array
-        time_h = np.array(stime + np.arange(0, len(self['time'])/60.) * (1./24.))
+        time_h = np.array(stime + np.arange(0, nhours)*(1./24.))
         Data_h = self.interp_to_time(time_h)
 
         return Data_h
@@ -568,14 +584,46 @@ class SatData():
         return newData
 
 
-    def shift_time_to_L1(self, sun_syn=26.24):
+    def shift_time_to_L1(self, sun_syn=26.24, method='old'):
         """Shifts the time variable to roughly correspond to solar wind at L1."""
 
-        lag_l1, lag_r = get_time_lag_wrt_earth(satname=self.source,
-            timestamp=mdates.num2date(self['time'][-1]),
-            v_mean=np.nanmean(self['speed']), sun_syn=sun_syn)
-        logger.info("shift_time_to_L1: Shifting time by {:.2f} hours".format((lag_l1 + lag_r)*24.))
-        self.data[0] = self.data[0] + lag_l1 + lag_r
+        if method == 'old':
+            lag_l1, lag_r = get_time_lag_wrt_earth(satname=self.source,
+                timestamp=mdates.num2date(self['time'][-1]),
+                v_mean=np.nanmean(self['speed']), sun_syn=sun_syn)
+            logger.info("shift_time_to_L1: Shifting time by {:.2f} hours".format((lag_l1 + lag_r)*24.))
+            self.data[0] = self.data[0] + lag_l1 + lag_r
+
+        #initialize array with correct size
+        if method == 'new':
+            if self.pos == None:
+                raise Exception("Load position data (SatData.load_position_data()) before calling shift_time_to_L1()!")
+            EarthPos = get_position_data('data/positions/Earth_20000101-20250101_HEEQ_6h.p', 
+                                         self['time'], rlonlat=True)
+            L1_r = EarthPos['r'] - dist_to_L1
+            timelag_diff_r = np.zeros(len(L1_r))
+
+            # define time lag from satellite to Earth
+            timelag_L1 = abs(self.pos['lon']*180/np.pi)/(360/sun_syn) #days
+
+            #got through all data points
+            for i in np.arange(0,len(L1_r),1):
+                diff_r_deg = (-360/(sun_syn*86400))*((self.pos['r'][i]-L1_r[i]))/self['speed'][i]
+                timelag_diff_r[i] = np.round(diff_r_deg/(360/sun_syn),3)
+
+            ## ADD BOTH time shifts to the stbh_t
+            self.data[0] = self.data[0] + timelag_L1 + timelag_diff_r
+
+        return self
+
+
+    def shift_wind_to_L1(self):
+
+        print("Not yet implemented.")
+        corr_factor = (earth_r/sat_r)**-2
+        for var in ['btot', 'br', 'bt', 'bn', 'density']:
+            self[var] = self[var] * corr_factor
+
         return self
 
 
@@ -1272,16 +1320,11 @@ def get_dscovr_data_real():
     return dscovr_data
 
 
-def get_dscovr_data_all(P_filepath=None, M_filepath=None, starttime=None, endtime=None):
+def download_dscovr_data_noaa(starttime, endtime, filepath='data/dscovrarchive'):
     """ Reads .nc format DSCOVR data from NOAA archive and returns np recarrays with
     variables under the JSON file format names.
     Data sourced from: 
     https://www.ngdc.noaa.gov/dscovr/portal/index.html#/download/1542848400000;1554163200000/f1m;m1m
-
-    Note: if providing a directory as the filepath, use '*' to denote all files,
-    which should be in the NOAA archive file format with similar string:
-    --> oe_m1m_dscovr_s20190409000000_e20190409235959_p20190410031442_pub.nc
-    (This should only be used with starttime/endtime options.)
 
     - DSCOVR data archive:
     https://www.ngdc.noaa.gov/dscovr/portal/index.html#/download/1543017600000;1543363199999
@@ -1303,6 +1346,91 @@ def get_dscovr_data_all(P_filepath=None, M_filepath=None, starttime=None, endtim
     netcdf files
 
     filenames are f1m for faraday and m1m for magnetometer, 1 minute averages
+
+    Parameters
+    ==========
+    starttime : datetime.datetime
+        Datetime object with the required starttime of the input data.
+    endtime : datetime.datetime
+        Datetime object with the required endtime of the input data.
+    filepath : str
+        Path to directory for downloaded files.
+
+    Returns
+    =======
+    True if download successful
+    """
+
+    url = "https://www.ngdc.noaa.gov/dscovr/data/"
+    nmonths = (relativedelta(endtime, starttime)).months + 1
+    if endtime.day < starttime.day:
+        nmonths += 1
+    ndays = (endtime - starttime).days + 1
+    yearmonths = [datetime.strftime(starttime + relativedelta(months=n), "%Y/%m/") for n in range(0, nmonths)]
+    days = [datetime.strftime(starttime + timedelta(days=n), "%Y%m%d000000") for n in range(0, ndays)]
+
+    # Get file list
+    logger.info("download_dscovr_data_noaa: Downloading {} DSCOVR files from months {}".format(len(days), yearmonths))
+    P_dlfiles, M_dlfiles = [], []
+    for m in yearmonths:
+        filelist = urllib.request.urlopen(url+m).read().decode('utf-8')
+        for s in re.finditer('<a href="oe_f1m_dscovr_(.+?)">', filelist):
+            filedate = s.group(1).split('_')[0]
+            if filedate.replace('s','') in days:
+                P_dlfiles.append(url+m+re.search('<a href="(.+?)">', s.group(0)).group(1))
+        for s in re.finditer('<a href="oe_m1m_dscovr_(.+?)">', filelist):
+            filedate = s.group(1).split('_')[0]
+            if filedate.replace('s','') in days:
+                M_dlfiles.append(url+m+re.search('<a href="(.+?)">', s.group(0)).group(1))
+
+    # Download files
+    P_files, M_files = [], []
+    for pf in P_dlfiles:
+        try: 
+            filename = os.path.basename(pf)
+            filedest = os.path.join(filepath, filename)
+            urllib.request.urlretrieve(pf, filedest)
+            logger.info(filename+" downloaded")
+            P_files.append(filedest)
+        except urllib.error.URLError as e:
+            logger.error("download_dscovr_data_noaa: Could not download {} for reason: ".format(filename, e.reason))
+    for mf in M_dlfiles:
+        try: 
+            filename = os.path.basename(mf)
+            filedest = os.path.join(filepath, filename)
+            urllib.request.urlretrieve(mf, filedest)
+            logger.info(filename+" downloaded")
+            M_files.append(filedest)
+        except urllib.error.URLError as e:
+            logger.error("download_dscovr_data_noaa: Could not download {} for reason: ".format(filename, e.reason))
+
+    # Unzip files
+    logger.info("download_dscovr_data_noaa: Unzipping files...")
+    for pf in P_files:
+        with gzip.open(pf, 'rb') as f_in:
+            with open(pf.replace('.gz',''), 'wb') as f_out:
+                shutil.copyfileobj(f_in, f_out)
+        os.remove(pf)
+    for mf in M_files:
+        with gzip.open(mf, 'rb') as f_in:
+            with open(mf.replace('.gz',''), 'wb') as f_out:
+                shutil.copyfileobj(f_in, f_out)
+        os.remove(mf)
+    logger.info("download_dscovr_data_noaa: Download complete.")
+
+    return True
+
+
+def get_dscovr_data_all(P_filepath='data/dscovrarchive/*', M_filepath='data/dscovrarchive/*', starttime=None, endtime=None, download=False):
+    """ Reads .nc format DSCOVR data from NOAA archive and returns np recarrays with
+    variables under the JSON file format names.
+    Data sourced from: 
+    https://www.ngdc.noaa.gov/dscovr/portal/index.html#/download/1542848400000;1554163200000/f1m;m1m
+
+    Note: if providing a directory as the filepath, use '*' to denote all files,
+    which should be in the NOAA archive file format with similar string:
+    --> oe_m1m_dscovr_s20190409000000_e20190409235959_p20190410031442_pub.nc
+    (This should only be used with starttime/endtime options.)
 
     Parameters
     ==========
@@ -1329,7 +1457,13 @@ def get_dscovr_data_all(P_filepath=None, M_filepath=None, starttime=None, endtim
     """
 
     if 'netCDF4' not in sys.modules:
-        raise ImportError("read_archive_dscovr_data: netCDF4 not imported for DSCOVR data read!")
+        raise ImportError("get_dscovr_data_all: netCDF4 not imported for DSCOVR data read!")
+
+    ndays = (endtime-starttime).days + 1
+    readdates = [datetime.strftime(starttime+timedelta(days=n), "%Y%m%d000000") for n in range(0, ndays)]
+
+    if download:
+        download_dscovr_data_noaa(starttime, endtime)
 
     # Pick out files to read:
     # -----------------------
@@ -1339,25 +1473,28 @@ def get_dscovr_data_all(P_filepath=None, M_filepath=None, starttime=None, endtim
     if P_filepath[-1] == '*':
         for filename in iglob(P_filepath):
             if 'f1m' in filename:
-                testdate = [datetime.strptime(s.strip('s'), "%Y%m%d%H%M%S")
-                            for s in filename.split('_') if s[0] == 's'][0]
-                if testdate >= starttime and testdate < endtime:
+                testdate = [s.strip('s') for s in filename.split('_') if s[0] == 's'][0]
+                if testdate in readdates:
                     P_readfiles.append(filename)
-    P_readfiles.sort()
+    else:
+        P_readfiles = [P_filepath]
 
     M_readfiles = []
     if M_filepath[-1] == '*':
         for filename in iglob(M_filepath):
             if 'm1m' in filename:
-                testdate = [datetime.strptime(s.strip('s'), "%Y%m%d%H%M%S")
-                            for s in filename.split('_') if s[0] == 's'][0]
-                if testdate >= starttime and testdate < endtime:
+                testdate = [s.strip('s') for s in filename.split('_') if s[0] == 's'][0]
+                if testdate in readdates:
                     M_readfiles.append(filename)
+    else:
+        M_readfiles = [M_filepath]
+
+    P_readfiles.sort()
     M_readfiles.sort()
 
     logger.info("get_dscovr_data_all: Reading {} DSCOVR archive files for time range {} till {}".format(len(P_readfiles),
-                                                  datetime.strftime(starttime, "%Y-%m-%d"),
-                                                  datetime.strftime(endtime, "%Y-%m-%d")))
+                datetime.strftime(starttime, "%Y-%m-%d"),
+                datetime.strftime(endtime, "%Y-%m-%d")))
 
     # Particle data:
     # --------------
@@ -1473,7 +1610,7 @@ def get_noaa_dst():
 
 def get_past_dst(filepath=None, starttime=None, endtime=None):
     """Will read Dst values from IAGA2002-format file. Data can be 
-    downloaded from this webpage:
+    downloaded from this webpage (in IAGA format):
     http://wdc.kugi.kyoto-u.ac.jp/dstae/index.html
 
     Parameters
@@ -1498,6 +1635,10 @@ def get_past_dst(filepath=None, starttime=None, endtime=None):
     datastr = [c.strip().split(' ') for c in lines if (c[0] != ' ' and c[0] != 'D')]
     dst_time = np.array([mdates.date2num(datetime.strptime(d[0]+d[1], "%Y-%m-%d%H:%M:%S.%f")) for d in datastr])
     dst = np.array([float(d[-1]) for d in datastr])
+
+    # Make sure no bad data is included:
+    dst_time = dst_time[dst < 99999]
+    dst = dst[dst < 99999]
 
     dst_data = SatData({'time': dst_time, 'dst': dst},
                        source='KyotoDst')
@@ -1820,7 +1961,7 @@ def get_predstorm_data_realtime(resolution='hour'):
     return pred_data
 
 
-def download_stereoa_data_beacon(filedir="sta_beacon", starttime=None, endtime=None, ndays=14):
+def download_stereoa_data_beacon(filedir="data/sta_beacon", starttime=None, endtime=None, ndays=14):
     """
     Downloads STEREO-A beacon data files to folder. If starttime/endtime are not
     defined, the data from the last two weeks is downloaded automatically.
@@ -1916,9 +2057,9 @@ def download_stereoa_data_beacon(filedir="sta_beacon", starttime=None, endtime=N
     return
     
 
-def read_stereoa_data_beacon(filepath="sta_beacon/", starttime=None, endtime=None, ndays=14):
+def get_stereoa_data_beacon(filedir="data/sta_beacon", starttime=None, endtime=None, ndays=14):
     """
-    Reads STEREO-A beacon data from CDF files. Files should be stored under filepath
+    Reads STEREO-A beacon data from CDF files. Files should be stored under filedir
     with the naming format STA_LB_PLA_20180502_V12.cdf. Use the function
     download_stereoa_data_beacon to get these files.
     
@@ -1967,19 +2108,21 @@ def read_stereoa_data_beacon(filepath="sta_beacon/", starttime=None, endtime=Non
 
     readdates = [datetime.strftime(starttime+timedelta(days=n), "%Y%m%d") for n in range(0, ndays)]
 
-    logger.info("read_stereoa_data_beacon: Starting data read for {} days from {} till {}".format(ndays, readdates[0], readdates[-1]))
+    logger.info("get_stereoa_data_beacon: Starting data read for {} days from {} till {}".format(ndays, readdates[0], readdates[-1]))
 
     for date in readdates:
     
         # PLASMA
         # ------
         pla_version = 'V12'
-        sta_pla_file = os.path.join(filepath, 'STA_LB_PLASTIC_'+date+'_'+pla_version+'.cdf')
+        sta_pla_file = os.path.join(filedir, 'STA_LB_PLASTIC_'+date+'_'+pla_version+'.cdf')
         if os.path.exists(sta_pla_file):
             sta_file =  cdflib.CDF(sta_pla_file)
         else:
-            logger.error("read_stereoa_data_beacon: File {} for reading doesn't exist!".format(sta_pla_file))
-            raise Exception("File {} for reading doesn't exist!".format(sta_pla_file))
+            logger.warning("get_stereoa_data_beacon: File {} doesn't exist! Downloading...".format(sta_pla_file))
+            stime = datetime.strptime(date, "%Y%m%d")
+            download_stereoa_data_beacon(filedir=filedir, starttime=stime, endtime=stime+timedelta(days=1))
+            sta_file =  cdflib.CDF(sta_pla_file)
             
         # Variables Epoch_MAG: Epoch1: CDF_EPOCH [1875]
         sta_time=epoch_to_num(sta_file.varget('Epoch1'))
@@ -2001,11 +2144,11 @@ def read_stereoa_data_beacon(filepath="sta_beacon/", starttime=None, endtime=Non
         # MAGNETIC FIELD
         # --------------
         mag_version = 'V02'
-        sta_mag_file = os.path.join(filepath, 'STA_LB_IMPACT_'+date+'_'+mag_version+'.cdf' )
+        sta_mag_file = os.path.join(filedir, 'STA_LB_IMPACT_'+date+'_'+mag_version+'.cdf' )
         if os.path.exists(sta_mag_file):
             sta_filem =  cdflib.CDF(sta_mag_file)
         else:
-            logger.error("read_stereoa_data_beacon: File {} for reading doesn't exist!".format(sta_mag_file))
+            logger.error("get_stereoa_data_beacon: File {} for reading doesn't exist!".format(sta_mag_file))
 
         #variables Epoch_MAG: CDF_EPOCH [8640]
         #MAGBField: CDF_REAL4 [8640, 3]
@@ -2310,3 +2453,5 @@ def init_logging(verbose=False):
     logger.addHandler(sh)
 
     return logger
+
+

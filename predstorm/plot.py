@@ -35,7 +35,7 @@ from glob import iglob
 import json
 import urllib
 
-from .data import read_stereoa_data_beacon, download_stereoa_data_beacon
+from .data import get_stereoa_data_beacon, download_stereoa_data_beacon
 from .data import get_dscovr_data_all, get_past_dst
 from .data import get_time_lag_wrt_earth, getpositions, time_to_num_cat
 from .config import plotting as pltcfg
@@ -264,12 +264,18 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
     logger.info('Plot saved as png:\n'+ filename)
 
 
-def plot_stereo_dscovr_comparison(timestamp=None, look_back=20, **kwargs):
+def plot_stereo_dscovr_comparison(stam, dism, dst, timestamp=None, look_back=20, outfile=None, **kwargs):
     """Plots the last days of STEREO-A and DSCOVR data for comparison alongside
     the predicted and real Dst.
 
     Parameters
     ==========
+    stam : predstorm.SatData
+        Object containing minute STEREO-A data
+    dism : predstorm.SatData
+        Object containing minute DSCOVR data.
+    dst : predstorm.SatData
+        Object containing Kyoto Dst data.
     timestamp : datetime obj
         Time for last datapoint in plot.
     look_back : float (default=20)
@@ -285,6 +291,9 @@ def plot_stereo_dscovr_comparison(timestamp=None, look_back=20, **kwargs):
 
     if timestamp == None:
         timestamp = datetime.utcnow()
+
+    if outfile == None:
+        outfile = 'sta_dsc_comparison_{}.png'.format(datetime.strftime(timestamp, "%Y-%m-%dT%H:%M"))
 
     figsize = kwargs.get('figsize', pltcfg.figsize)
     lw = kwargs.get('lw', pltcfg.lw)
@@ -303,28 +312,16 @@ def plot_stereo_dscovr_comparison(timestamp=None, look_back=20, **kwargs):
     # TODO: It would be faster to read archived hourly data rather than interped minute data...
     logger.info("plot_stereo_dscovr_comparison: Reading satellite data")
     # Get estimate of time diff:
-    lag_L1, lag_r = get_time_lag_wrt_earth(timestamp=timestamp, satname='STEREO-A')
-    est_timelag = lag_L1 + lag_r
-    stam = read_stereoa_data_beacon(starttime=timestamp-timedelta(days=look_back+est_timelag), 
-    								endtime=timestamp)
     stam.shift_time_to_L1()
     sta = stam.make_hourly_data()
     sta.interp_nans()
-    dism = get_dscovr_data_all(P_filepath="data/dscovrarchive/*",
-                               M_filepath="data/dscovrarchive/*",
-                               starttime=timestamp-timedelta(days=look_back),
-                               endtime=timestamp)
+
     dis = dism.make_hourly_data()
     dis.interp_nans()
-    dst = get_past_dst(filepath="data/dstarchive/WWW_dstae00016185.dat",
-                       starttime=timestamp-timedelta(days=look_back),
-                       endtime=timestamp)
 
     # CALCULATE PREDICTED DST:
     # ------------------------
-    pos=getpositions('data/positions_2007_2023_HEEQ_6hours.sav')
-    pos_time_num=time_to_num_cat(pos.time)
-    sta.convert_RTN_to_GSE(pos.sta, pos_time_num).convert_GSE_to_GSM()
+    sta.convert_RTN_to_GSE().convert_GSE_to_GSM()
     dst_pred = sta.make_dst_prediction()
 
     # PLOT:
@@ -424,18 +421,25 @@ def plot_stereo_dscovr_comparison(timestamp=None, look_back=20, **kwargs):
         myformat = mdates.DateFormatter('%b %d %Hh')
         ax.xaxis.set_major_formatter(myformat)
 
-    plt.savefig("results/sta_dsc_{}day_plot.png".format(look_back))
+    plt.savefig(outfile)
+    logger.info("Plot saved as {}".format(outfile))
     plt.close()
 
     return
 
 
-def plot_dst_comparison(timestamp=None, look_back=20, **kwargs):
+def plot_dst_comparison(stam, dism, dst, timestamp=None, look_back=20, outfile=None, **kwargs):
     """Plots the last days of STEREO-A and DSCOVR data for comparison alongside
     the predicted and real Dst.
 
     Parameters
     ==========
+    stam : predstorm.SatData
+        Object containing minute STEREO-A data
+    dism : predstorm.SatData
+        Object containing minute DSCOVR data.
+    dst : predstorm.SatData
+        Object containing hourly Kyoto Dst data.
     timestamp : datetime obj
         Time for last datapoint in plot.
     look_back : float (default=20)
@@ -452,6 +456,9 @@ def plot_dst_comparison(timestamp=None, look_back=20, **kwargs):
     if timestamp == None:
         timestamp = datetime.utcnow()
 
+    if outfile == None:
+        outfile = 'dst_comparison_{}.png'.format(datetime.strftime(timestamp, "%Y-%m-%dT%H:%M"))
+
     figsize = kwargs.get('figsize', pltcfg.figsize)
     lw = kwargs.get('lw', pltcfg.lw)
     fs = kwargs.get('fs', pltcfg.fs)
@@ -465,35 +472,21 @@ def plot_dst_comparison(timestamp=None, look_back=20, **kwargs):
     fs_legend = kwargs.get('fs_legend', pltcfg.fs_legend)
     fs_title = kwargs.get('fs_title', pltcfg.fs_title)
 
-    # READ DATA:
-    # ----------
+    # PREPARE DATA:
+    # -------------
     # TODO: It would be faster to read archived hourly data rather than interped minute data...
-    logger.info("plot_60_day_comparison: Reading satellite data")
-    # Get estimate of time diff:
-    lag_L1, lag_r = get_time_lag_wrt_earth(timestamp=timestamp, satname='STEREO-A')
-    est_timelag = lag_L1 + lag_r
-    stam = read_stereoa_data_beacon(starttime=timestamp-timedelta(days=look_back+est_timelag+0.5), 
-                                    endtime=timestamp)
+    logger.info("plot_dst_comparison: Preparing satellite data")
     # Correct for STEREO-A position:
     stam.shift_time_to_L1()
     sta = stam.make_hourly_data()
-    sta = sta.cut(starttime=timestamp-timedelta(days=look_back), endtime=timestamp)
-    sta.interp_nans()
-    dism = get_dscovr_data_all(P_filepath="data/dscovrarchive/*",
-                               M_filepath="data/dscovrarchive/*",
-                               starttime=timestamp-timedelta(days=look_back),
-                               endtime=timestamp)
+    sta = sta.cut(starttime=timestamp-timedelta(days=look_back), endtime=timestamp).interp_nans()
+
     dis = dism.make_hourly_data()
     dis.interp_nans()
-    dst = get_past_dst(filepath="data/dstarchive/WWW_dstae00016185.dat",
-                       starttime=timestamp-timedelta(days=look_back),
-                       endtime=timestamp)
 
     # CALCULATE PREDICTED DST:
     # ------------------------
-    pos=getpositions('data/positions_2007_2023_HEEQ_6hours.sav')
-    pos_time_num=time_to_num_cat(pos.time)
-    sta.convert_RTN_to_GSE(pos.sta, pos_time_num).convert_GSE_to_GSM()
+    sta.convert_RTN_to_GSE().convert_GSE_to_GSM()
 
     dst_h = dst.interp_to_time(sta['time'])
     dis = dis.interp_to_time(sta['time'])
@@ -577,13 +570,14 @@ def plot_dst_comparison(timestamp=None, look_back=20, **kwargs):
         myformat = mdates.DateFormatter(date_fmt)
         ax.xaxis.set_major_formatter(myformat)
 
-    plt.savefig("results/dst_prediction_{}day_plot.png".format(look_back))
+    plt.savefig(outfile)
+    logger.info("Plot saved as {}".format(outfile))
     plt.close()
 
     return
 
 
-def plot_indices(timestamp=None, look_back=20, **kwargs):
+def plot_indices(dism, timestamp=None, look_back=20, outfile=None, **kwargs):
     """
     Plots solar wind variables, past from DSCOVR and future/predicted from STEREO-A.
     Total B-field and Bz (top), solar wind speed (second), particle density (third)
@@ -591,6 +585,8 @@ def plot_indices(timestamp=None, look_back=20, **kwargs):
 
     Parameters
     ==========
+    dism : predstorm.SatData
+        Object containing minute satellite L1 data.
     timestamp : datetime obj
         Time for last datapoint in plot.
     look_back : float (default=20)
@@ -603,6 +599,12 @@ def plot_indices(timestamp=None, look_back=20, **kwargs):
     plt.savefig : .png file
         File saved to XXX
     """
+
+    if timestamp == None:
+        timestamp = datetime.utcnow()
+
+    if outfile == None:
+        outfile = 'indices_{}.png'.format(datetime.strftime(timestamp, "%Y-%m-%dT%H:%M"))
 
     figsize = kwargs.get('figsize', pltcfg.figsize)
     lw = kwargs.get('lw', pltcfg.lw)
@@ -622,14 +624,10 @@ def plot_indices(timestamp=None, look_back=20, **kwargs):
     # READ DATA:
     # ----------
     # TODO: It would be faster to read archived hourly data rather than interped minute data...
-    logger.info("plot_indices: Reading satellite data")
+    logger.info("plot_indices: Preparing satellite data")
     # Get estimate of time diff:
 
     # Read DSCOVR data:
-    dism = get_dscovr_data_all(P_filepath="data/dscovrarchive/*",
-                               M_filepath="data/dscovrarchive/*",
-                               starttime=timestamp-timedelta(days=look_back),
-                               endtime=timestamp)
     dis = dism.make_hourly_data()
     dis.interp_nans()
     dst = get_past_dst(filepath="data/dstarchive/WWW_dstae00016185.dat",
@@ -740,11 +738,8 @@ def plot_indices(timestamp=None, look_back=20, **kwargs):
         myformat = mdates.DateFormatter(date_fmt)
         ax.xaxis.set_major_formatter(myformat)
 
-    filename = os.path.join('results','indices_{}.png'.format(
-                            datetime.strftime(timestamp, "%Y-%m-%d-%H_%M")))
-
-    plt.savefig(filename)
-    logger.info('Plot saved as png:\n'+ filename)
+    plt.savefig(outfile)
+    logger.info('Plot saved as png:\n'+ outfile)
 
     plt.close()
     return
@@ -821,24 +816,49 @@ def gradient_fill(x, y, ax=None, maxval=None, **kwargs):
     return line, im
 
 
-def plot_all(timestamp=None):
+def plot_all(timestamp=None, plotdir="plots", download=True):
     """Makes plots of a time range ending with timestamp using all functions."""
+
+    import predstorm as ps
+
+    if not os.path.isdir(plotdir):
+        os.mkdir(plotdir)
 
     if timestamp == None:
         timestamp = datetime.utcnow()
-
-    lbdays = 20
-    lag_L1, lag_r = get_time_lag_wrt_earth(timestamp=timestamp, satname='STEREO-A')
+    look_back = 30
+    lag_L1, lag_r = ps.get_time_lag_wrt_earth(timestamp=timestamp, satname='STEREO-A')
     est_timelag = lag_L1 + lag_r
-    logger.info("plot_all: Downloading missing STEREO data")
-    download_stereoa_data_beacon(starttime=timestamp-timedelta(days=lbdays+est_timelag),
-                                 endtime=timestamp)
-    logger.info("plot_all: Plotting STEREO-A vs DSCOVR data")
-    plot_stereo_dscovr_comparison(timestamp=timestamp, look_back=lbdays)
-    logger.info("plot_all: Plotting comparison between Dst predictions")
-    plot_dst_comparison(timestamp=timestamp, look_back=lbdays)
-    logger.info("plot_all: Plotting all predicted indices")
-    plot_indices(timestamp=timestamp, look_back=lbdays)
+
+    logger = ps.init_logging(verbose=True)
+    logger.info("Plotting all plots...")
+
+    # STEREO DATA
+    stam = ps.get_stereoa_data_beacon(starttime=timestamp-timedelta(days=look_back+est_timelag+0.5), 
+                                      endtime=timestamp)
+    stam.load_positions('data/positions/STEREOA-pred_20070101-20250101_HEEQ_6h.p')
+    # DSCOVR DATA
+    dism = ps.get_dscovr_data_all(P_filepath="data/dscovrarchive/*",
+                                  M_filepath="data/dscovrarchive/*",
+                                  starttime=timestamp-timedelta(days=look_back),
+                                  endtime=timestamp, download=download)
+    dism.load_positions('data/positions/Earth_20000101-20250101_HEEQ_6h.p', l1_corr=True)
+    # KYOTO DST
+    dst = ps.get_past_dst(filepath="data/dstarchive/WWW_dstae00019594.dat",
+                          starttime=timestamp-timedelta(days=look_back),
+                          endtime=timestamp)
+
+    logger.info("\n-------------------------\nDst comparison\n-------------------------")
+    outfile = os.path.join(plotdir, "dst_prediction_{}day_plot.png".format(look_back))
+    plot_dst_comparison(stam, dism, dst, timestamp=timestamp, look_back=look_back, outfile=outfile)
+
+    logger.info("\n-------------------------\nSTEREO-A vs DSCOVR\n-------------------------")
+    outfile = os.path.join(plotdir, "stereoa_vs_dscovr_{}day_plot.png".format(look_back))
+    plot_stereo_dscovr_comparison(stam, dism, dst, timestamp=timestamp, look_back=look_back, outfile=outfile)
+
+    logger.info("\n-------------------------\nPredicted indices\n-------------------------")
+    outfile = os.path.join(plotdir, "indices_{}day_plot.png".format(look_back))
+    plot_indices(dism, timestamp=timestamp, look_back=look_back, outfile=outfile)
 
 
 if __name__ == '__main__':

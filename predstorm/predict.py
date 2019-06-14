@@ -159,7 +159,7 @@ def calc_dst_temerin_li(time, btot, bx, by, bz, speed, speedx, density):
     dst_tl=np.zeros(len(bz))
     julian_days = [sunpy.time.julian_day(num2date(x)) for x in time]
     
-    # Define inital values (needed for convergence, see Temerin and Li 2002 note)
+    # Define initial values (needed for convergence, see Temerin and Li 2002 note)
     dst1[0:10]=-15
     dst2[0:10]=-13
     dst3[0:10]=-2
@@ -218,10 +218,12 @@ def _jit_calc_dst_temerin_li(time, btot, bx, by, bz, speed, speedx, density, dst
         #or just set it constant
         #offset[i]=-5
         bt=(by[i]**2+bz[i]**2)**0.5  
+        if bt == 0.: bt = 1e-12  # Escape dividing by zero error
         #mistake in 2002 paper - bt is similarly defined as bp (with by bz); but in Temerin and Li's code (dst.pro) bp depends on by and bx
         bp=(by[i]**2+bx[i]**2)**0.5  
         #contains t1, but in cos and sin 
         dh=bp*np.cos(np.arctan2(bx[i],by[i])+6.10) * ((3.59e-2)*np.cos(2*np.pi*t1/yearli+0.04)-2.18e-2*np.sin(2*np.pi*t1-1.60))
+        #print(i, bx[i], by[i], bz[i])
         theta_li=-(np.arccos(-bz[i]/bt)-np.pi)/2
         exx=1e-3*abs(speedx[i])*bt*np.sin(theta_li)**6.1
         #t1 and dt are in days
@@ -234,7 +236,6 @@ def _jit_calc_dst_temerin_li(time, btot, bx, by, bz, speed, speedx, density, dst
         #und dann bei dst1 den wert mit dem index nehmen der am nächsten ist, das ist dann dst(t-tau1)
         #wenn index nicht existiert (am anfang) einfach index 0 nehmen
         #check for index where timesi is greater than t minus tau
-        
         indtau1=np.where(time > (time[i]-tau1))
         dst1tau1=dst1[indtau1[0][0]]
         #similar search for others  
