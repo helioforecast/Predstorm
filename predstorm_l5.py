@@ -458,77 +458,20 @@ def main():
 
     logger.info('PICKLE: Variables saved in: \n'+filename_save)
 
+
+    # Standard data:
     filename_save=outputdirectory+'/savefiles/predstorm_v1_realtime_stereo_a_save_'+ \
                   timenowstr[0:10]+'-'+timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.txt'
-
-    ########## ASCII file
-
-    vartxtout=np.zeros([np.size(dis_sta['time']),17])
-
-    #get date in ascii
-    for i in np.arange(np.size(dis_sta['time'])):
-       time_dummy=mdates.num2date(dis_sta['time'][i])
-       vartxtout[i,0]=time_dummy.year
-       vartxtout[i,1]=time_dummy.month
-       vartxtout[i,2]=time_dummy.day
-       vartxtout[i,3]=time_dummy.hour
-       vartxtout[i,4]=time_dummy.minute
-       vartxtout[i,5]=time_dummy.second
-
-    vartxtout[:,6]=dis_sta['time']
-    vartxtout[:,7]=dis_sta['btot']
-    vartxtout[:,8]=dis_sta['bx']
-    vartxtout[:,9]=dis_sta['by']
-    vartxtout[:,10]=dis_sta['bz']
-    vartxtout[:,11]=dis_sta['density']
-    vartxtout[:,12]=dis_sta['speed']
-    vartxtout[:,13]=dst_temerin_li['dst']
-    vartxtout[:,14]=kp_newell['kp']
-    vartxtout[:,15]=aurora_power['aurora']
-    vartxtout[:,16]=newell_coupling['ec']*100. # convert to Wb/s
-
-    #description
-    column_vals = '{:>17}{:>16}{:>7}{:>7}{:>7}{:>7}{:>9}{:>9}{:>8}{:>7}{:>8}{:>12}'.format(
-        'Y  m  d  H  M  S', 'matplotlib_time', 'B[nT]', 'Bx', 'By', 'Bz', 'N[ccm-3]', 'V[km/s]',
-        'Dst[nT]', 'Kp', 'AP[GW]', 'Ec[Wb/s]')
-    time_cols_fmt = '%4i %2i %2i %2i %2i %2i %15.6f'
-    b_cols_fmt = 4*'%7.2f'
-    p_cols_fmt = '%9.0i%9.0i'
-    indices_fmt = '%8.0f%7.2f%8.1f%12.1f'
-    float_fmt = time_cols_fmt + b_cols_fmt + p_cols_fmt + indices_fmt
-    np.savetxt(filename_save, vartxtout, delimiter='',fmt=float_fmt, header=column_vals)
-
-    # Save real-time files with the same name to be overwritten and in working directory
-    # 1-hour data
-    np.savetxt('predstorm_real.txt', vartxtout, delimiter='',fmt=float_fmt, header=column_vals)
-
-    vartxtout_m=np.zeros([np.size(dism_stam['time']),17])
-
-    #get date in ascii
-    for i in np.arange(np.size(dism_stam['time'])):
-       time_dummy=mdates.num2date(dism_stam['time'][i])
-       vartxtout_m[i,0]=time_dummy.year
-       vartxtout_m[i,1]=time_dummy.month
-       vartxtout_m[i,2]=time_dummy.day
-       vartxtout_m[i,3]=time_dummy.hour
-       vartxtout_m[i,4]=time_dummy.minute
-       vartxtout_m[i,5]=time_dummy.second
-
-    vartxtout_m[:,6]=dism_stam['time']
-    vartxtout_m[:,7]=dism_stam['btot']
-    vartxtout_m[:,8]=dism_stam['bx']
-    vartxtout_m[:,9]=dism_stam['by']
-    vartxtout_m[:,10]=dism_stam['bz']
-    vartxtout_m[:,11]=dism_stam['density']
-    vartxtout_m[:,12]=dism_stam['speed']
-    vartxtout_m[:,13]=dst_temerin_li.interp_to_time(dism_stam['time'])['dst']
-    vartxtout_m[:,14]=kp_newell.interp_to_time(dism_stam['time'])['kp']
-    vartxtout_m[:,15]=aurora_power.interp_to_time(dism_stam['time'])['aurora']
-    vartxtout_m[:,16]=newell_coupling.interp_to_time(dism_stam['time'])['ec']*100.
-    # 1-min data
-    np.savetxt('predstorm_real_1m.txt', vartxtout_m, delimiter='',fmt=float_fmt, header=column_vals)
-
-    logger.info('TXT: Variables saved in:\n'+filename_save)
+    ps.save_to_file(filename_save, wind=dis_sta, dst=dst_temerin_li, kp=kp_newell, aurora=aurora_power, ec=newell_coupling)
+    logger.info('Variables saved in TXT form: '+filename_save)
+    # Realtime 1-hour data:
+    ps.save_to_file('predstorm_real.txt', wind=dis_sta, dst=dst_temerin_li, kp=kp_newell, aurora=aurora_power, ec=newell_coupling)
+    # Realtime 1-min data:
+    ps.save_to_file('predstorm_real_1,.txt', wind=dism_stam, 
+                    dst=dst_temerin_li.interp_to_time(dism_stam['time']),
+                    kp=kp_newell.interp_to_time(dism_stam['time']), 
+                    aurora=aurora_power.interp_to_time(dism_stam['time']), 
+                    ec=newell_coupling.interp_to_time(dism_stam['time']))
 
     ################################# VERIFICATION MODE BRANCH ###############################
     #######**********************

@@ -722,6 +722,16 @@ class SatData():
         return kpData
 
 
+    # -----------------------------------------------------------------------------------
+    # Data archiving
+    # -----------------------------------------------------------------------------------
+
+    def archive(self):
+        """Make archive of long-term data."""
+
+        print("Not yet implemented.")
+
+
 class PositionData():
     """Data object containing satellite position data.
 
@@ -1068,7 +1078,7 @@ def sphere2cart(r, phi, theta):
 
 
 # ***************************************************************************************
-# B. Data reading:
+# B. Data reading and writing:
 # ***************************************************************************************
 
 def get_dscovr_data_real_old():
@@ -2236,6 +2246,47 @@ def get_position_data(filepath, times, rlonlat=False):
     
     return Positions
 
+
+def save_to_file(filepath, wind=None, dst=None, aurora=None, kp=None, ec=None):
+    """Produces output in PREDSTORM realtime format."""
+
+    out = np.zeros([np.size(wind['time']),17])
+
+    #get date in ascii
+    for i in np.arange(np.size(wind['time'])):
+       time_dummy = mdates.num2date(wind['time'][i])
+       out[i,0] = time_dummy.year
+       out[i,1] = time_dummy.month
+       out[i,2] = time_dummy.day
+       out[i,3] = time_dummy.hour
+       out[i,4] = time_dummy.minute
+       out[i,5] = time_dummy.second
+
+    out[:,6] = wind['time']
+    out[:,7] = wind['btot']
+    out[:,8] = wind['bx']
+    out[:,9] = wind['by']
+    out[:,10] = wind['bz']
+    out[:,11] = wind['density']
+    out[:,12] = wind['speed']
+    out[:,13] = dst['dst']
+    out[:,14] = kp['kp']
+    out[:,15] = aurora['aurora']
+    out[:,16] = ec['ec']
+
+    #description
+    column_vals = '{:>17}{:>16}{:>7}{:>7}{:>7}{:>7}{:>9}{:>9}{:>8}{:>7}{:>8}{:>12}'.format(
+        'Y  m  d  H  M  S', 'matplotlib_time', 'B[nT]', 'Bx', 'By', 'Bz', 'N[ccm-3]', 'V[km/s]',
+        'Dst[nT]', 'Kp', 'AP[GW]', 'Ec[Wb/s]')
+    time_cols_fmt = '%4i %2i %2i %2i %2i %2i %15.6f'
+    b_cols_fmt = 4*'%7.2f'
+    p_cols_fmt = '%9.0i%9.0i'
+    indices_fmt = '%8.0f%7.2f%8.1f%12.1f'
+    float_fmt = time_cols_fmt + b_cols_fmt + p_cols_fmt + indices_fmt
+    np.savetxt(filepath, out, delimiter='',fmt=float_fmt, header=column_vals)
+
+    return
+    
 
 # ***************************************************************************************
 # C. SatData handling functions:
