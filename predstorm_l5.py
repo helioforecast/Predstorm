@@ -306,10 +306,10 @@ def main():
     try:
         [sta_r, sta_long_heeq, sta_lat_heeq] = sta.get_position(timestamp)
         EarthPos = ps.get_position_data('data/positions/Earth_20000101-20250101_HEEQ_6h.p', 
-                                        [mdates.date2num(timestamp)], rlonlat=True)
+                                        [mdates.date2num(timestamp)], rlonlat=True, l1_corr=True)
         [earth_r, elon, elat] = EarthPos[0]
         sta_r = sta_r/AU
-        earth_r = (earth_r - dist_to_L1)/AU   # estimated correction to L1
+        earth_r = earth_r/AU   # estimated correction to L1
         sta_long_heeq, sta_lat_heeq = sta_long_heeq*180./np.pi, sta_lat_heeq*180./np.pi
         old_pos_method = False
         # This is equivalent to the following (but both give different Dst from original method):
@@ -347,20 +347,18 @@ def main():
 
     #------------------------ (2b) Corrections to time-shifted STEREO-A data ----------------
 
+    logger.info("Doing corrections to STEREO-A data...")
     # (1) make correction for heliocentric distance of STEREO-A to L1 position
     # take position of Earth and STEREO-A from positions file
     # for B and N, makes a difference of about -5 nT in Dst
-
-    # ********* TO DO CHECK exponents - are others better?
-
-    logger.info("Doing corrections to STEREO-A data...")
-    sta['btot']=sta['btot']*(earth_r/sta_r)**-2
-    sta['br']=sta['br']*(earth_r/sta_r)**-2
-    sta['bt']=sta['bt']*(earth_r/sta_r)**-2
-    sta['bn']=sta['bn']*(earth_r/sta_r)**-2
-    sta['density']=sta['density']*(earth_r/sta_r)**-2
-    resultslog.write('corrections to STEREO-A data:\n')
-    resultslog.write('\t1: decline of B and N by factor {}\n'.format(round(((earth_r/sta_r)**-2),3)))
+    if old_pos_method == False:
+        sta.shift_wind_to_L1(EarthPos)
+    else:
+        sta['btot']=sta['btot']*(earth_r/sta_r)**-2
+        sta['br']=sta['br']*(earth_r/sta_r)**-2
+        sta['bt']=sta['bt']*(earth_r/sta_r)**-2
+        sta['bn']=sta['bn']*(earth_r/sta_r)**-2
+        sta['density']=sta['density']*(earth_r/sta_r)**-2
 
     # (2) correction for timing for the Parker spiral see
     # Simunac et al. 2009 Ann. Geophys. equation 1, see also Thomas et al. 2018 Space Weather
@@ -384,6 +382,7 @@ def main():
 
     #(3) conversion from RTN to HEEQ to GSE to GSM - but done as if STA was along the Sun-Earth line
     #convert STEREO-A RTN data to GSE as if STEREO-A was along the Sun-Earth line
+    # TODO: these lines are suspect
     if old_pos_method == False:
         sta.convert_RTN_to_GSE().convert_GSE_to_GSM()
         stam.convert_RTN_to_GSE().convert_GSE_to_GSM()

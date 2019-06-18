@@ -466,9 +466,7 @@ class SatData():
 
         logger.info("load_positions: Loading position data into {} data".format(self.source))
         refframe = os.path.split(posfile)[-1].split('_')[-2]
-        Positions = get_position_data(posfile, self['time'], rlonlat=rlonlat)
-        if l1_corr:
-            Positions['r'] = Positions['r'] - dist_to_L1
+        Positions = get_position_data(posfile, self['time'], rlonlat=rlonlat, l1_corr=l1_corr)
         self.pos = Positions
 
         return self
@@ -494,17 +492,20 @@ class SatData():
         """
 
         if starttime != None and endtime == None:
-            self.data = self.data[:,np.where(self.data[0] >= mdates.date2num(starttime))[0]]
+            new_inds = np.where(self.data[0] >= mdates.date2num(starttime))[0]
+            self.data = self.data[:,new_inds]
             if self.pos != None:
-                self.pos.positions = self.pos.positions[:,np.where(self.data[0] >= mdates.date2num(starttime))[0]]
+                self.pos.positions = self.pos.positions[:,new_inds]
         elif starttime == None and endtime != None:
-            self.data = self.data[:,np.where(self.data[0] < mdates.date2num(endtime))[0]]
+            new_inds = np.where(self.data[0] < mdates.date2num(endtime))[0]
+            self.data = self.data[:,new_inds]
             if self.pos != None:
-                self.pos.positions = self.pos.positions[:,np.where(self.data[0] < mdates.date2num(endtime))[0]]
+                self.pos.positions = self.pos.positions[:,new_inds]
         elif starttime != None and endtime != None:
-            self.data = self.data[:,np.where((self.data[0] >= mdates.date2num(starttime)) & (self.data[0] < mdates.date2num(endtime)))[0]]
+            new_inds = np.where((self.data[0] >= mdates.date2num(starttime)) & (self.data[0] < mdates.date2num(endtime)))[0]
+            self.data = self.data[:,new_inds]
             if self.pos != None:
-                self.pos.positions = self.pos.positions[:,np.where((self.data[0] >= mdates.date2num(starttime)) & (self.data[0] < mdates.date2num(endtime)))[0]]
+                self.pos.positions = self.pos.positions[:,new_inds]
         return self
 
 
@@ -613,16 +614,33 @@ class SatData():
 
             ## ADD BOTH time shifts to the stbh_t
             self.data[0] = self.data[0] + timelag_L1 + timelag_diff_r
+        logger.info("shift_time_to_L1: Shifted time to L1 according to solar rotation")
 
         return self
 
 
-    def shift_wind_to_L1(self):
+    def shift_wind_to_L1(self, l1pos):
+        """Corrects for differences in B and density values due to solar wind
+        expansion at different radii.
+        
+        ********* TO DO CHECK exponents - are others better?
 
-        print("Not yet implemented.")
-        corr_factor = (earth_r/sat_r)**-2
-        for var in ['btot', 'br', 'bt', 'bn', 'density']:
+        Parameters
+        ==========
+        l1pos : predstorm.PositionData
+            Contains L1 position data with same time stamps as self.
+
+        Returns
+        =======
+        self
+        """
+
+        corr_factor = (l1pos['r']/self.pos['r'])**-2
+        shift_var_list = ['btot', 'br', 'bt', 'bn', 'bx', 'by', 'bz', 'density']
+        shift_vars = [v for v in shift_var_list if v in self.vars]
+        for var in shift_vars:
             self[var] = self[var] * corr_factor
+        logger.info("shift_wind_to_L1: Extrapolated B and density values to L1 distance")
 
         return self
 
@@ -2208,7 +2226,7 @@ def get_stereoa_data_beacon(filedir="data/sta_beacon", starttime=None, endtime=N
     return stereo_data
 
 
-def get_position_data(filepath, times, rlonlat=False):
+def get_position_data(filepath, times, rlonlat=False, l1_corr=False):
     """Reads position data from pickled heliopy.spice.Trajectory into
     PositionData object.
     Note: Interpolates position data, which is faster but not as exact.
@@ -2236,10 +2254,15 @@ def get_position_data(filepath, times, rlonlat=False):
     posy = np.interp(times, mdates.date2num(posdata.times), posdata.y)
     posz = np.interp(times, mdates.date2num(posdata.times), posdata.z)
 
+
     if rlonlat:
         r, theta, phi = cart2sphere(posx, posy, posz)
+        if l1_corr:
+            r = r - dist_to_L1
         Positions = PositionData([r, phi, theta], 'rlonlat')
     else:
+        if l1_corr:
+            posx = posx - dist_to_L1
         Positions = PositionData([posx, posy, posz], 'xyz')
     Positions.h['Units'] = 'km'
     Positions.h['ReferenceFrame'] = refframe
@@ -2286,7 +2309,7 @@ def save_to_file(filepath, wind=None, dst=None, aurora=None, kp=None, ec=None):
     np.savetxt(filepath, out, delimiter='',fmt=float_fmt, header=column_vals)
 
     return
-    
+
 
 # ***************************************************************************************
 # C. SatData handling functions:
