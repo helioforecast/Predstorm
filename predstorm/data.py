@@ -1700,7 +1700,7 @@ def get_omni_data(filepath='', download=False, dldir='data'):
     omni_data : predstorm.SatData
     """
 
-    if filepath != '' and not os.path.exists(filepath):
+    if download == False and filepath != '' and not os.path.exists(filepath):
         raise Exception("get_omni_data: {} does not exist! Run get_omni_data(download=True) to download file.".format(filepath))
 
     if download:
