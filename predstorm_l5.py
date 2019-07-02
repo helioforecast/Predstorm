@@ -225,9 +225,12 @@ def main():
     elif run_mode == 'historic':
         timestamp = historic_date
         if (datetime.utcnow() - historic_date).days < (7.-plot_past_days):
+            logger.info("Using historic mode with current DSCOVR data")
             dism = ps.get_dscovr_data_real()
+            dism = dism.cut(endtime=timestamp)
             dis = dism.make_hourly_data()
         else:
+            logger.info("Using historic mode with archive DSCOVR data")
             dism = ps.get_dscovr_data_all(P_filepath="data/dscovrarchive/*",
                                        M_filepath="data/dscovrarchive/*",
                                        starttime=timestamp-timedelta(days=plot_past_days+1),
@@ -291,9 +294,15 @@ def main():
     if run_mode == 'normal':
         dst = ps.get_noaa_dst()
     elif run_mode == 'historic':
-        dst = ps.get_past_dst(filepath="data/dstarchive/WWW_dstae00016185.dat",
-                              starttime=mdates.num2date(timenow)-timedelta(days=plot_past_days+1),
-                              endtime=mdates.num2date(timenow))
+        if (datetime.utcnow() - historic_date).days < (7.-plot_past_days):
+            dst = ps.get_noaa_dst()
+        else:
+            dst = ps.get_past_dst(filepath="data/dstarchive/WWW_dstae00016185.dat",
+                                  starttime=mdates.num2date(timenow)-timedelta(days=plot_past_days+1),
+                                  endtime=mdates.num2date(timenow))
+            if len(dst) == 0.:
+                raise Exception("Kyoto Dst data for historic mode is missing! Go to http://wdc.kugi.kyoto-u.ac.jp/dstae/index.html")
+        dst = dst.cut(endtime=timestamp)
 
     #========================== (2) PREDICTION CALCULATIONS ==================================
 
@@ -399,13 +408,10 @@ def main():
 
     #---------------------- (2d) calculate Dst for combined data ----------------------------
 
-    logger.info("\n-------------------------\nDST PREDICTION\n-------------------------")
+    logger.info("\n-------------------------\nINDEX PREDICTIONS\n-------------------------")
     logger.info('Making Dst prediction for L1 calculated from time-shifted STEREO-A beacon data.')
     #This function works as result=make_dst_from_wind(btot_in,bx_in, by_in,bz_in,v_in,vx_in,density_in,time_in):
     # ******* PROBLEM: USES vr twice (should be V and Vr in Temerin/Li 2002), take V from STEREO-A data too
-    dst_temerin_li = dis_sta.make_dst_prediction()
-    dst_obrien = dis_sta.make_dst_prediction(method='obrien')
-    dst_burton = dis_sta.make_dst_prediction(method='burton')
 
     # Predict Kp
     kp_newell = dis_sta.make_kp_prediction()
@@ -414,19 +420,27 @@ def main():
     # Calculate Newell coupling parameter
     newell_coupling = dis_sta.get_newell_coupling()
 
-    #========================== (3) PLOT RESULTS ============================================
-
-    # Prediction Dst from L1 and STEREO-A:
+    # Predict Dst from L1 and STEREO-A:
     if dst_method == 'temerin_li':      # Can compare methods later to see which is most accurate
-        dst_pred = dst_temerin_li
+        dst_pred = dis_sta.make_dst_prediction()
         dst_label = 'Dst Temerin & Li 2002'
+        dst_pred['dst'] = dst_pred['dst'] + dst_offset
     elif dst_method == 'obrien':
-        dst_pred = dst_obrien
+        dst_pred = dis_sta.make_dst_prediction(method='obrien')
         dst_label = 'Dst OBrien & McPherron 2000'
+        dst_pred['dst'] = dst_pred['dst'] + dst_offset
     elif dst_method == 'burton':
-        dst_pred = dst_burton
+        dst_pred = dis_sta.make_dst_prediction(method='burton')
         dst_label = 'Dst Burton et al. 1975'
-    dst_pred['dst'] = dst_pred['dst'] + dst_offset
+        dst_pred['dst'] = dst_pred['dst'] + dst_offset
+    elif dst_method == 'ml':
+        with open('dst_pred_model_final.pickle', 'rb') as f:
+            model = pickle.load(f)
+        dst_pred = dis_sta.make_dst_prediction_from_model(model)
+        dst_label = 'Dst predicted using ML (GBR)'
+        #dst_pred['dst'] = dst_pred['dst'] + 10
+
+    #========================== (3) PLOT RESULTS ============================================
 
     # ********************************************************************
     logger.info("Creating output plot...")
@@ -449,9 +463,9 @@ def main():
 
     #make recarrays
     combined=np.rec.array([dis_sta['time'],dis_sta['btot'],dis_sta['bx'],dis_sta['by'],dis_sta['bz'],dis_sta['density'],dis_sta['speed'],
-        dst_temerin_li['dst'], kp_newell['kp'], aurora_power['aurora'], newell_coupling['ec'],], \
+        dst_pred['dst'], kp_newell['kp'], aurora_power['aurora'], newell_coupling['ec'],], \
     dtype=[('time','f8'),('btot','f8'),('bx','f8'),('by','f8'),('bz','f8'),('den','f8'),\
-           ('vr','f8'),('dst_temerin_li','f8'),('kp_newell','f8'),('aurora_power','f8'),('newell_coupling','f8')])
+           ('vr','f8'),('dst_pred','f8'),('kp_newell','f8'),('aurora_power','f8'),('newell_coupling','f8')])
 
     pickle.dump(combined, open(filename_save, 'wb') )
 
@@ -461,13 +475,13 @@ def main():
     # Standard data:
     filename_save=outputdirectory+'/savefiles/predstorm_v1_realtime_stereo_a_save_'+ \
                   timenowstr[0:10]+'-'+timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.txt'
-    ps.save_to_file(filename_save, wind=dis_sta, dst=dst_temerin_li, kp=kp_newell, aurora=aurora_power, ec=newell_coupling)
+    ps.save_to_file(filename_save, wind=dis_sta, dst=dst_pred, kp=kp_newell, aurora=aurora_power, ec=newell_coupling)
     logger.info('Variables saved in TXT form: '+filename_save)
     # Realtime 1-hour data:
-    ps.save_to_file('predstorm_real.txt', wind=dis_sta, dst=dst_temerin_li, kp=kp_newell, aurora=aurora_power, ec=newell_coupling)
+    ps.save_to_file('predstorm_real.txt', wind=dis_sta, dst=dst_pred, kp=kp_newell, aurora=aurora_power, ec=newell_coupling)
     # Realtime 1-min data:
     ps.save_to_file('predstorm_real_1,.txt', wind=dism_stam, 
-                    dst=dst_temerin_li.interp_to_time(dism_stam['time']),
+                    dst=dst_pred.interp_to_time(dism_stam['time']),
                     kp=kp_newell.interp_to_time(dism_stam['time']), 
                     aurora=aurora_power.interp_to_time(dism_stam['time']), 
                     ec=newell_coupling.interp_to_time(dism_stam['time']))

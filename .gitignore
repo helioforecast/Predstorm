@@ -8,6 +8,7 @@ predstorm.egg*
 sta_beacon
 predstorm/spice/kernels/*
 *.png
+*.pickle
 *.log
 omni2*.*
 .DS*

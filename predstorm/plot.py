@@ -203,6 +203,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
 
     dstplotmax = np.nanmax(np.concatenate((dst['dst'], dst_pred['dst'])))+20
     dstplotmin = np.nanmin(np.concatenate((dst['dst'], dst_pred['dst'])))-20
+
     if dstplotmin > -100:       # Low activity (normal)
         plt.ylim([-100,np.nanmax(dst['dst'])+20])
     else:                       # High activity

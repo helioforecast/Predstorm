@@ -26,6 +26,39 @@ from matplotlib.dates import num2date
 from numba import njit, jit
 import sunpy.time
 
+# Machine learning specific:
+from sklearn.base import BaseEstimator, TransformerMixin
+
+
+class DstFeatureExtraction(BaseEstimator, TransformerMixin):
+    """
+    https://scikit-learn.org/dev/developers/contributing.html#rolling-your-own-estimator
+    """
+    def __init__(self, v_power=1, den_power=1, bz_power=1, m1=-4.4, m2=2.4, e1=9.74, e2=4.69):
+        self.v_power = v_power
+        self.den_power = den_power
+        self.bz_power = bz_power
+        self.m1 = m1
+        self.m2 = m2
+        self.e1 = e1
+        self.e2 = e2
+
+
+    def fit(self, X, y = None):
+        return self
+
+
+    def transform(self, X):
+
+        pressure = X[:,3]**self.den_power * X[:,2]**self.v_power
+        sqrtden = np.sqrt(X[:,3])
+        bz = X[:,5]**self.bz_power
+        dbz = np.gradient(X[:,5])
+        rc = calc_ring_current_term(X[:,-1], X[:,5], X[:,2], m1=self.m1, m2=self.m2, e1=self.e1, e2=self.e2)
+        features = np.concatenate((X, rc.reshape(-1,1), pressure.reshape(-1,1), sqrtden.reshape(-1,1), bz.reshape(-1,1), dbz.reshape(-1,1)), axis=1)
+
+        return features
+
 
 def calc_dst_burton(time, bz, speed, density):
     """Calculates Dst from solar wind input according to Burton et al. 1975 method.
@@ -266,7 +299,6 @@ def _jit_calc_dst_temerin_li(time, btot, bx, by, bz, speed, speedx, density, dst
 
     return dst_tl
 
-
 @njit
 def calc_newell_coupling(by, bz, v):
     """
@@ -286,6 +318,47 @@ def calc_newell_coupling(by, bz, v):
     ec = (v**(4/3))*(sintc**(8/3))*(bt**(2/3)) * 100. # convert to Wb/s
     
     return ec
+
+
+def calc_ring_current_term(deltat, bz, speed, m1=-4.4, m2=2.4, e1=9.74, e2=4.69):
+    """Calculates a term describing the ring current from the Burton Dst
+    prediction method.
+
+    Parameters
+    ==========
+    deltat : np.array
+        Array of timestep deltas, so that deltat[i] = time[i+1]-time[i].
+    bz : np.array
+        Array of magnetic field in z-direction.
+    speed : np.array
+        Array of solar wind speed.
+    m1, m2, e1, e2 : float
+        Constants in equation. Default values taken from Burton paper.
+
+    Returns
+    =======
+    rc : np.array
+        Array containing ring current term.
+    """
+
+    bzneg = copy.deepcopy(bz)
+    bzneg[bzneg > 0] = 0
+    Ey = speed * abs(bzneg)*1e-3 #now Ey is in mV/m
+    rc = np.zeros(len(bzneg))
+    Ec = 0.5  
+    lrc = 0
+    for i in range(len(bzneg)-1):
+        if Ey[i] > Ec:            #Ey in mV m
+            Q = m1 * (Ey[i] - Ec) 
+        else: 
+            Q=0
+        tau = m2 * np.exp(e1/(e2 + Ey[i])) #tau in hours
+        # Ring current Dst
+        #deltat_hours = (time[i+1] - time[i])*24 # time should be in hours
+        rc[i+1] = (Q - lrc/tau) * deltat[i] + lrc
+        lrc = rc[i+1]
+
+    return rc
 
  
 def make_kp_from_wind(btot_in, by_in, bz_in, v_in, density_in):

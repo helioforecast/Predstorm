@@ -44,6 +44,7 @@ import sys
 import copy
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
+from dateutil import tz
 import gzip
 import logging
 import numpy as np
@@ -70,7 +71,7 @@ except:
 
 # Local
 from . import spice
-from .predict import make_kp_from_wind, make_dst_from_wind
+from .predict import make_kp_from_wind, make_dst_from_wind, calc_ring_current_term
 from .predict import make_aurora_power_from_wind, calc_newell_coupling
 from .predict import calc_dst_burton, calc_dst_obrien, calc_dst_temerin_li
 from .config.constants import AU, dist_to_L1
@@ -649,6 +650,56 @@ class SatData():
     # Index calculations and predictions
     # -----------------------------------------------------------------------------------
 
+    def extract_data_for_ml_model(self):
+        """Extracts data required for machine learning model and returns X array.
+        """
+
+        ec = self.get_newell_coupling()['ec']
+
+        # bx and by give no improvement, neither does np.gradient(da['density'], nor V**2)
+        # Time arrays:
+        sin_DOY, cos_DOY, sin_LT, cos_LT = self.extract_local_time_variables()
+        deltat = np.asarray([(self['time'][i+1] - self['time'][i])*24. for i in range(len(self['time'])-1)] + [0.])
+        deltat[-1] = deltat[-2]
+
+        # Combine all:
+        X = np.vstack((sin_DOY, cos_DOY, self['speed'], self['density'], self['btot'], self['bz'], ec, np.gradient(self['bz']), deltat)).T
+
+        return X
+
+
+    def extract_local_time_variables(self):
+        """Takes the UTC time in numpy date format and 
+        returns local time and day of year variables, cos/sin.
+
+        Parameters:
+        -----------
+        time : np.array
+            Contains timestamps in numpy format.
+
+        Returns:
+        --------
+        sin_DOY, cos_DOY, sin_LT, cos_LT : np.arrays
+            Sine and cosine of day-of-yeat and local-time.
+        """
+
+        dtime = mdates.num2date(self['time'])
+        utczone = tz.gettz('UTC')
+        cetzone = tz.gettz('CET')
+        # Original data is in UTC:
+        dtimeUTC = [dt.replace(tzinfo=utczone) for dt in dtime]
+        # Correct to local time zone (CET) for local time:
+        dtimeCET = [dt.astimezone(cetzone) for dt in dtime]
+        dtlocaltime = np.array([(dt.hour + dt.minute/60. + dt.second/3600.) for dt in dtimeCET])
+        dtdayofyear = np.array([dt.timetuple().tm_yday for dt in dtimeCET])
+        dtdayofyear = np.array([dt.timetuple().tm_yday for dt in dtimeCET]) + dtlocaltime
+        
+        sin_DOY, cos_DOY = np.sin(2.*np.pi*dtdayofyear/365.), np.sin(2.*np.pi*dtdayofyear/365.)
+        sin_LT, cos_LT = np.sin(2.*np.pi*dtlocaltime/24.), np.sin(2.*np.pi*dtlocaltime/24.)
+
+        return sin_DOY, cos_DOY, sin_LT, cos_LT
+
+
     def get_newell_coupling(self):
         """
         Empirical Formula for dFlux/dt - the Newell coupling
@@ -679,6 +730,7 @@ class SatData():
             New object containing predicted Dst data.
         """
 
+        logger.info("Making auroral power prediction")
         aurora_power = np.round(make_aurora_power_from_wind(self['btot'], self['by'], self['bz'], self['speed'], self['density']), 2)
         #make sure that no values are < 0
         aurora_power[np.where(aurora_power < 0)]=0.0
@@ -704,6 +756,7 @@ class SatData():
             New object containing predicted Dst data.
         """
 
+        logger.info("Making Dst prediction using {} method".format(method))
         if method.lower() == 'temerin_li':
             dst_pred = calc_dst_temerin_li(self['time'], self['btot'], self['bx'], self['by'], self['bz'], self['speed'], self['speed'], self['density'])
         elif method.lower() == 'obrien':
@@ -713,6 +766,32 @@ class SatData():
 
         dstData = SatData({'time': self['time'], 'dst': dst_pred})
         dstData.h['DataSource'] = "Dst prediction from {} data using {} method".format(self.source, method)
+        dstData.h['SamplingRate'] = 1./24.
+
+        return dstData
+
+
+    def make_dst_prediction_from_model(self, model):
+        """Makes prediction of Dst from previously trained machine learning model
+        with data in array.
+
+        Parameters
+        ==========
+        method : sklearn/keras model
+            Trained model with predict() method.
+
+        Returns
+        =======
+        dstData : new SatData obj
+            New object containing predicted Dst data.
+        """
+
+        logger.info("Making Dst prediction using machine learning model")
+        X = self.extract_data_for_ml_model()
+        dst_pred = model.predict(X)
+
+        dstData = SatData({'time': self['time'], 'dst': dst_pred})
+        dstData.h['DataSource'] = "Dst prediction from {} data using ML model".format(self.source)
         dstData.h['SamplingRate'] = 1./24.
 
         return dstData
@@ -731,6 +810,7 @@ class SatData():
             New object containing predicted Dst data.
         """
 
+        logger.info("Making kp prediction")
         kp_pred = np.round(make_kp_from_wind(self['btot'], self['by'], self['bz'], self['speed'], self['density']), 1)
 
         kpData = SatData({'time': self['time'], 'kp': kp_pred})
@@ -1261,6 +1341,7 @@ def get_dscovr_data_real():
     url_plasma='http://services.swpc.noaa.gov/products/solar-wind/plasma-7-day.json'
     url_mag='http://services.swpc.noaa.gov/products/solar-wind/mag-7-day.json'
 
+    """
     #download, see URLLIB https://docs.python.org/3/howto/urllib2.html
     with urllib.request.urlopen(url_plasma) as url:
         pr = json.loads (url.read().decode())
@@ -1333,9 +1414,46 @@ def get_dscovr_data_real():
     rpv_m=np.interp(rtimes_m,rptime_num,rpv)
     rpn_m=np.interp(rtimes_m,rptime_num,rpn)
     rpt_m=np.interp(rtimes_m,rptime_num,rpt)
+    """
+
+        # Read plasma data:
+    with urllib.request.urlopen(url_plasma) as url:
+        dp = json.loads (url.read().decode())
+        dpn = [[np.nan if x == None else x for x in d] for d in dp]     # Replace None w NaN
+        dtype=[(x, 'float') for x in dp[0]]
+        dates = [mdates.date2num(datetime.strptime(x[0], "%Y-%m-%d %H:%M:%S.%f")) for x in dpn[1:]]
+        dp_ = [tuple([d]+[float(y) for y in x[1:]]) for d, x in zip(dates, dpn[1:])] 
+        DSCOVR_P = np.array(dp_, dtype=dtype)
+    # Read magnetic field data:
+    with urllib.request.urlopen(url_mag) as url:
+        dm = json.loads(url.read().decode())
+        dmn = [[np.nan if x == None else x for x in d] for d in dm]     # Replace None w NaN
+        dtype=[(x, 'float') for x in dmn[0]]
+        dates = [mdates.date2num(datetime.strptime(x[0], "%Y-%m-%d %H:%M:%S.%f")) for x in dmn[1:]]
+        dm_ = [tuple([d]+[float(y) for y in x[1:]]) for d, x in zip(dates, dm[1:])] 
+        DSCOVR_M = np.array(dm_, dtype=dtype)
+
+    last_timestep = np.min([DSCOVR_M['time_tag'][-1], DSCOVR_P['time_tag'][-1]])
+    first_timestep = np.max([DSCOVR_M['time_tag'][0], DSCOVR_P['time_tag'][0]])
+
+    # DSCOVR_M = DSCOVR_M[DSCOVR_M['time_tag'] <= last_timestep]
+    # DSCOVR_M = DSCOVR_M[DSCOVR_M['time_tag'] >= first_timestep]
+    # DSCOVR_P = DSCOVR_P[DSCOVR_P['time_tag'] <= last_timestep]
+    # DSCOVR_P = DSCOVR_P[DSCOVR_P['time_tag'] >= first_timestep]
+
+    nminutes = int((mdates.num2date(last_timestep)-mdates.num2date(first_timestep)).total_seconds()/60.)
+    itime = np.asarray([mdates.date2num(mdates.num2date(first_timestep) + timedelta(minutes=i)) for i in range(nminutes)], dtype=np.float64)
+
+    rbtot_m = np.interp(itime, DSCOVR_M['time_tag'], DSCOVR_M['bt'])
+    rbxgsm_m = np.interp(itime, DSCOVR_M['time_tag'], DSCOVR_M['bx_gsm'])
+    rbygsm_m = np.interp(itime, DSCOVR_M['time_tag'], DSCOVR_M['by_gsm'])
+    rbzgsm_m = np.interp(itime, DSCOVR_M['time_tag'], DSCOVR_M['bz_gsm'])
+    rpv_m = np.interp(itime, DSCOVR_P['time_tag'], DSCOVR_P['speed'])
+    rpn_m = np.interp(itime, DSCOVR_P['time_tag'], DSCOVR_P['density'])
+    rpt_m = np.interp(itime, DSCOVR_P['time_tag'], DSCOVR_P['temperature'])
 
     # Pack into object
-    dscovr_data = SatData({'time': rtimes_m,
+    dscovr_data = SatData({'time': itime,
                            'btot': rbtot_m, 'bx': rbxgsm_m, 'by': rbygsm_m, 'bz': rbzgsm_m,
                            'speed': rpv_m, 'density': rpn_m, 'temp': rpt_m},
                            source='DSCOVR')

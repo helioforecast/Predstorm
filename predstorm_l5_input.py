@@ -6,7 +6,7 @@
 sun_syn = 26.24
 
 # Number of days on right side of plot (future data from STEREO-A)
-plot_future_days = 7
+plot_future_days = 6.5
 
 # Number of days on left side of plot (past data)
 plot_past_days = 3.5
@@ -21,8 +21,8 @@ verify_filename = 'real/savefiles/predstorm_realtime_stereo_l1_save_v1_2018-09-1
 verify_int_start = '2018-09-09 12:00:00'
 verify_int_end =   '2018-09-12 23:00:00'
 
-# Dst method to be plotted (options = 'temerin_li', 'burton', 'obrien')
-dst_method = 'temerin_li'
+# Dst method to be plotted (options = 'ml', temerin_li', 'burton', 'obrien')
+dst_method = 'ml'
 
 # Offset for Dst in plot
 dst_offset = 0
