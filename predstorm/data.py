@@ -249,6 +249,7 @@ class SatData():
         CAUTION: Overwrites original data.
         """
      
+        logger.info("Converting GSE magn. values to GSM")
         mjd=np.zeros(len(self['time']))
 
         #output variables
@@ -316,6 +317,7 @@ class SatData():
         so we do not include a rotation of the field to the Earth position
         """
 
+        logger.info("Converting RTN magn. values to GSE")
         #output variables
         heeq_bx=np.zeros(len(self['time']))
         heeq_by=np.zeros(len(self['time']))
@@ -1327,96 +1329,14 @@ def get_dscovr_data_real():
 
     Returns
     =======
-    (data_minutes, data_hourly)
-    data_minutes : np.rec.array
-         Array of interpolated minute data with format:
-         dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
-            ('speed','f8'),('den','f8'),('temp','f8')]
-    data_hourly : np.rec.array
-         Array of interpolated hourly data with format:
-         dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
-            ('speed','f8'),('den','f8'),('temp','f8')]
+    dscovr_data : ps.SatData object
+        Object containing DSCOVR data under standard keys.
     """
     
     url_plasma='http://services.swpc.noaa.gov/products/solar-wind/plasma-7-day.json'
     url_mag='http://services.swpc.noaa.gov/products/solar-wind/mag-7-day.json'
 
-    """
-    #download, see URLLIB https://docs.python.org/3/howto/urllib2.html
-    with urllib.request.urlopen(url_plasma) as url:
-        pr = json.loads (url.read().decode())
-    with urllib.request.urlopen(url_mag) as url:
-        mr = json.loads(url.read().decode())
-    logger.info('get_dscovr_data_real: DSCOVR plasma data available')
-    logger.info(str(pr[0]))
-    logger.info('get_dscovr_data_real: DSCOVR MAG data available')
-    logger.info(str(mr[0]))
-    #kill first row which stems from the description part
-    pr=pr[1:]
-    mr=mr[1:]
-
-    #define variables 
-    #plasma
-    rptime_str=['']*len(pr)
-    rptime_num=np.zeros(len(pr))
-    rpv=np.zeros(len(pr))
-    rpn=np.zeros(len(pr))
-    rpt=np.zeros(len(pr))
-
-    #mag
-    rbtime_str=['']*len(mr)
-    rbtime_num=np.zeros(len(mr))
-    rbtot=np.zeros(len(mr))
-    rbzgsm=np.zeros(len(mr))
-    rbygsm=np.zeros(len(mr))
-    rbxgsm=np.zeros(len(mr))
-
-    #convert variables to numpy arrays
-    #mag
-    for k in np.arange(0,len(mr),1):
-
-        #handle missing data, they show up as None from the JSON data file
-        if mr[k][6] is None: mr[k][6]=np.nan
-        if mr[k][3] is None: mr[k][3]=np.nan
-        if mr[k][2] is None: mr[k][2]=np.nan
-        if mr[k][1] is None: mr[k][1]=np.nan
-
-        rbtot[k]=float(mr[k][6])
-        rbzgsm[k]=float(mr[k][3])
-        rbygsm[k]=float(mr[k][2])
-        rbxgsm[k]=float(mr[k][1])
-
-        #convert time from string to datenumber
-        rbtime_str[k]=mr[k][0][0:16]
-        rbtime_num[k]=mdates.date2num(sunpy.time.parse_time(rbtime_str[k]))
-    
-    #plasma
-    for k in np.arange(0,len(pr),1):
-        if pr[k][2] is None: pr[k][2]=np.nan
-        rpv[k]=float(pr[k][2]) #speed
-        rptime_str[k]=pr[k][0][0:16]
-        rptime_num[k]=mdates.date2num(sunpy.time.parse_time(rptime_str[k]))
-        if pr[k][1] is None: pr[k][1]=np.nan
-        rpn[k]=float(pr[k][1]) #density
-        if pr[k][3] is None: pr[k][3]=np.nan
-        rpt[k]=float(pr[k][3]) #temperature
-
-    #interpolate to minutes 
-    #rtimes_m=np.arange(rbtime_num[0],rbtime_num[-1],1.0000/(24*60))
-    rtimes_m= round_to_hour(mdates.num2date(rbtime_num[0])) + np.arange(0,len(rbtime_num)) * timedelta(minutes=1) 
-    #convert back to matplotlib time
-    rtimes_m=mdates.date2num(rtimes_m)
-
-    rbtot_m=np.interp(rtimes_m,rbtime_num,rbtot)
-    rbzgsm_m=np.interp(rtimes_m,rbtime_num,rbzgsm)
-    rbygsm_m=np.interp(rtimes_m,rbtime_num,rbygsm)
-    rbxgsm_m=np.interp(rtimes_m,rbtime_num,rbxgsm)
-    rpv_m=np.interp(rtimes_m,rptime_num,rpv)
-    rpn_m=np.interp(rtimes_m,rptime_num,rpn)
-    rpt_m=np.interp(rtimes_m,rptime_num,rpt)
-    """
-
-        # Read plasma data:
+    # Read plasma data:
     with urllib.request.urlopen(url_plasma) as url:
         dp = json.loads (url.read().decode())
         dpn = [[np.nan if x == None else x for x in d] for d in dp]     # Replace None w NaN
@@ -1435,11 +1355,6 @@ def get_dscovr_data_real():
 
     last_timestep = np.min([DSCOVR_M['time_tag'][-1], DSCOVR_P['time_tag'][-1]])
     first_timestep = np.max([DSCOVR_M['time_tag'][0], DSCOVR_P['time_tag'][0]])
-
-    # DSCOVR_M = DSCOVR_M[DSCOVR_M['time_tag'] <= last_timestep]
-    # DSCOVR_M = DSCOVR_M[DSCOVR_M['time_tag'] >= first_timestep]
-    # DSCOVR_P = DSCOVR_P[DSCOVR_P['time_tag'] <= last_timestep]
-    # DSCOVR_P = DSCOVR_P[DSCOVR_P['time_tag'] >= first_timestep]
 
     nminutes = int((mdates.num2date(last_timestep)-mdates.num2date(first_timestep)).total_seconds()/60.)
     itime = np.asarray([mdates.date2num(mdates.num2date(first_timestep) + timedelta(minutes=i)) for i in range(nminutes)], dtype=np.float64)

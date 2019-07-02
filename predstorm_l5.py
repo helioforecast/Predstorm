@@ -175,7 +175,7 @@ def main():
     print('------------------------------------------------------------------------')
     print('')
     print('PREDSTORM L5 v1 method for geomagnetic storm and aurora forecasting. ')
-    print('Helio Group, IWF Graz, last update June 2019.')
+    print('Helio Group, IWF Graz, last update July 2019.')
     print('')
     print('Time shifting magnetic field and plasma data from STEREO-A, ')
     print('or from an L5 mission or interplanetary CubeSats, to predict')
@@ -565,26 +565,26 @@ def main():
     resultslog.write('\n')
     resultslog.write('Current time: '+ timeutcstr+ ' UT')
 
-    mindst_time=dis_sta['time'][past_times[0][0]+np.nanargmin(dst_temerin_li['dst'][past_times])]
+    mindst_time=dis_sta['time'][past_times[0][0]+np.nanargmin(dst_pred['dst'][past_times])]
     #added 1 minute manually because of rounding errors in time 19:59:9999 etc.
     resultslog.write('\n')
     resultslog.write('Minimum of Dst (past times):\n')
-    resultslog.write(str(int(round(float(np.nanmin(dst_temerin_li['dst'][past_times]))))) + ' nT \n')
+    resultslog.write(str(int(round(float(np.nanmin(dst_pred['dst'][past_times]))))) + ' nT \n')
     resultslog.write('at time: '+str(mdates.num2date(mindst_time+1/(24*60)))[0:16])
     resultslog.write('\n')
 
-    mindst_time=dis_sta['time'][future_times[0][0]+np.nanargmin(dst_temerin_li['dst'][future_times])]
+    mindst_time=dis_sta['time'][future_times[0][0]+np.nanargmin(dst_pred['dst'][future_times])]
     #added 1 minute manually because of rounding errors in time 19:59:9999 etc.
 
     resultslog.write('\n')
     resultslog.write('Predicted minimum of Dst (future times):\n')
-    resultslog.write(str(int(round(float(np.nanmin(dst_temerin_li['dst'][future_times]))))) + ' nT \n')
+    resultslog.write(str(int(round(float(np.nanmin(dst_pred['dst'][future_times]))))) + ' nT \n')
     resultslog.write('at time: '+str(mdates.num2date(mindst_time+1/(24*60)))[0:16])
     resultslog.write('\n')
 
     resultslog.write('\n')
     resultslog.write('Predicted times of moderate storm levels (-50 to -100 nT):\n')
-    storm_times_ind=np.where(np.logical_and(dst_temerin_li['dst'][future_times] < -50, dst_temerin_li['dst'][future_times] > -100))[0]
+    storm_times_ind=np.where(np.logical_and(dst_pred['dst'][future_times] < -50, dst_pred['dst'][future_times] > -100))[0]
     #when there are storm times above this level, indicate:
     if len(storm_times_ind) >0:
      for i in np.arange(0,len(storm_times_ind),1):
@@ -595,7 +595,7 @@ def main():
 
     resultslog.write('\n')
     resultslog.write('Predicted times of intense storm levels (-100 to -200 nT):\n')
-    storm_times_ind=np.where(np.logical_and(dst_temerin_li['dst'][future_times] < -100, dst_temerin_li['dst'][future_times] > -200))[0]
+    storm_times_ind=np.where(np.logical_and(dst_pred['dst'][future_times] < -100, dst_pred['dst'][future_times] > -200))[0]
     #when there are storm times above this level, indicate:
     if len(storm_times_ind) >0:
       for i in np.arange(0,len(storm_times_ind),1):
@@ -606,7 +606,7 @@ def main():
 
     resultslog.write('\n')
     resultslog.write('Predicted times of super storm levels (< -200 nT):\n')
-    storm_times_ind=np.where(dst_temerin_li['dst'][future_times] < -200)[0]
+    storm_times_ind=np.where(dst_pred['dst'][future_times] < -200)[0]
     #when there are storm times above this level, indicate:
     if len(storm_times_ind) >0:
       for i in np.arange(0,len(storm_times_ind),1):
