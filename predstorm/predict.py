@@ -60,8 +60,8 @@ class DstFeatureExtraction(BaseEstimator, TransformerMixin):
         #theta = -(np.arccos(-X[:,5]/X[:,4]) - np.pi) / 2. # infinite?
         #exx = X[:,2] * X[:,4] * np.sin(theta)**7
         rc = calc_ring_current_term(X[:,-1], X[:,5], X[:,2], m1=self.m1, m2=self.m2, e1=self.e1, e2=self.e2)
-        #features = np.concatenate((X, rc.reshape(-1,1), pressure.reshape(-1,1), sqrtden.reshape(-1,1), bz.reshape(-1,1), dbz.reshape(-1,1), b2xn.reshape(-1,1)), axis=1)
-        features = np.concatenate((X, rc.reshape(-1,1), pressure.reshape(-1,1), sqrtden.reshape(-1,1), bz.reshape(-1,1), dbz.reshape(-1,1), b2xn.reshape(-1,1), dn.reshape(-1,1)), axis=1)
+        features = np.concatenate((X, rc.reshape(-1,1), pressure.reshape(-1,1), sqrtden.reshape(-1,1), bz.reshape(-1,1), dbz.reshape(-1,1)), axis=1)
+        # features = np.concatenate((X, rc.reshape(-1,1), pressure.reshape(-1,1), sqrtden.reshape(-1,1), bz.reshape(-1,1), dbz.reshape(-1,1), b2xn.reshape(-1,1), dn.reshape(-1,1)), axis=1)
 
         return features
 
@@ -362,7 +362,7 @@ def _jit_calc_dst_temerin_li_2006(t1, t2, btot, bx, by, bz, speed, speedx, densi
     idst1t1 = itest - np.where(t1 > (t1[itest] - 0.132))[0][0]
     idst2t1 = itest - np.where(t1 > (t1[itest] - 0.0903))[0][0]
     idst1t2 = itest - np.where(t1 > (t1[itest] - 0.264))[0][0]
-       
+
     # FUNCTION TERMS
     # --------------
     tt = t1*fy
@@ -395,16 +395,16 @@ def _jit_calc_dst_temerin_li_2006(t1, t2, btot, bx, by, bz, speed, speedx, densi
 
     df2 = 1440. * tst7 * fe2/(-fe2 + 922.1)
     df3 = 272.9 * tst8 * fe3/(-fe3 + 60.5)
-        
+
     # PRESSURE TERM
     # -------------
     pressureterm = ( 0.330*btot**2 * (1. + 0.100*density) + \
                 (1.621e-4 * tst6 * speed**2 + 18.70)*density )**0.5
-        
+
     # DIRECT BZ TERM
     # --------------
     directbzterm = 0.574 * tst5 * bz
-        
+
     # OFFSET TERM
     # -----------
     offsetterm = 19.35 + 0.158*np.sin(fy*t2 - 0.94) + 0.01265*t2 - 2.224e-11*t2**2.
@@ -443,7 +443,7 @@ def _jit_calc_dst_temerin_li_2006(t1, t2, btot, bx, by, bz, speed, speedx, densi
                     (1. + erf(-0.014*bz[i])) + df2[i] * \
                     (1 + erf(-0.0656*bzt4 + 0.0627*bzt5)) * \
                     np.exp(0.01482*dst1t2)) * dt
-       
+
         bzt6 = bz[i-it6]
         bzt7 = bz[i-it7]
         dst3[i+1] = dst3[i] + (5.10 * (-dst3[i])**0.952 * \

@@ -425,6 +425,10 @@ def main():
         dst_pred = dis_sta.make_dst_prediction()
         dst_label = 'Dst Temerin & Li 2002'
         dst_pred['dst'] = dst_pred['dst'] + dst_offset
+    elif dst_method == 'temerin_li_2006':      # Can compare methods later to see which is most accurate
+        dst_pred = dis_sta.make_dst_prediction(method='temerin_li_2006')
+        dst_label = 'Dst Temerin & Li 2002'
+        dst_pred['dst'] = dst_pred['dst'] + dst_offset
     elif dst_method == 'obrien':
         dst_pred = dis_sta.make_dst_prediction(method='obrien')
         dst_label = 'Dst OBrien & McPherron 2000'

@@ -2111,7 +2111,7 @@ def download_stereoa_data_beacon(filedir="data/sta_beacon", starttime=None, endt
         # Plastic
         sta_pla_file_str = 'STA_LB_PLASTIC_'+daynowstr+'_V12.cdf'
         # Impact
-        sta_mag_file_str = 'STA_LB_IMPACT_'+daynowstr+'_V02.cdf' 
+        sta_mag_file_str = 'STA_LB_IMPACT_'+daynowstr+'_V02.cdf'
         
         # Check if file is already there, otherwise download
         if not os.path.exists(os.path.join(filedir, sta_pla_file_str)):

@@ -21,7 +21,7 @@ verify_filename = 'real/savefiles/predstorm_realtime_stereo_l1_save_v1_2018-09-1
 verify_int_start = '2018-09-09 12:00:00'
 verify_int_end =   '2018-09-12 23:00:00'
 
-# Dst method to be plotted (options = 'ml', temerin_li', 'burton', 'obrien')
+# Dst method to be plotted (options = 'ml', 'temerin_li', 'temerin_li_2006', 'burton', 'obrien')
 dst_method = 'ml'
 
 # Offset for Dst in plot
