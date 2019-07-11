@@ -145,10 +145,10 @@ class SatData():
     """
 
     default_keys = ['time',
-                    'speed', 'density', 'temp', 'pdyn',
+                    'speed', 'speedx', 'density', 'temp', 'pdyn',
                     'bx', 'by', 'bz', 'btot',
                     'br', 'bt', 'bn',
-                    'dst', 'kp', 'aurora', 'ec']
+                    'dst', 'kp', 'aurora', 'ec', 'ae']
 
     empty_header = {'DataSource': '',
                     'SourceURL' : '',
@@ -664,6 +664,11 @@ class SatData():
         deltat = np.asarray([(self['time'][i+1] - self['time'][i])*24. for i in range(len(self['time'])-1)] + [0.])
         deltat[-1] = deltat[-2]
 
+        tt, ttt = 2.*np.pi*(self['time']-2449718.5)/365.24, 2.*np.pi*(self['time']-2449718.5)
+        cosphi = np.sin(tt+0.078) * np.sin(ttt-tt-1.22) * (9.58589e-2) + np.cos(tt+0.078) * (0.39+0.104528*np.cos(ttt-tt-1.22))
+        # Including this term improves overall accuracy but reduces accuracy of large negative values:
+        sinphi = (1. - cosphi*cosphi)**0.5
+
         # Combine all:
         X = np.vstack((sin_DOY, cos_DOY, self['speed'], self['density'], self['btot'], self['bz'], ec, np.gradient(self['bz']), deltat)).T
 
@@ -758,12 +763,32 @@ class SatData():
             New object containing predicted Dst data.
         """
 
-        logger.info("Making Dst prediction using {} method".format(method))
         if method.lower() == 'temerin_li':
-            dst_pred = calc_dst_temerin_li(self['time'], self['btot'], self['bx'], self['by'], self['bz'], self['speed'], self['speed'], self['density'])
+            if 'speedx' in self.vars:
+                vx = self['speedx']
+            else:
+                vx = self['speed']
+            logger.info("Calculating Dst using Temerin-Li model 2002 version (updated parameters)")
+            dst_pred = calc_dst_temerin_li(self['time'], self['btot'], self['bx'], self['by'], self['bz'], self['speed'], vx, self['density'], version='2002n')
+        elif method.lower() == 'temerin_li_2002':
+            if 'speedx' in self.vars:
+                vx = self['speedx']
+            else:
+                vx = self['speed']
+            logger.info("Calculating Dst using Temerin-Li model 2002 version")
+            dst_pred = calc_dst_temerin_li(self['time'], self['btot'], self['bx'], self['by'], self['bz'], self['speed'], vx, self['density'], version='2002')
+        elif method.lower() == 'temerin_li_2006':
+            if 'speedx' in self.vars:
+                vx = self['speedx']
+            else:
+                vx = self['speed']
+            logger.info("Calculating Dst using Temerin-Li model 2006 version")
+            dst_pred = calc_dst_temerin_li(self['time'], self['btot'], self['bx'], self['by'], self['bz'], self['speed'], vx, self['density'], version='2006')
         elif method.lower() == 'obrien':
+            logger.info("Calculating Dst using OBrien model")
             dst_pred = calc_dst_obrien(self['time'], self['bz'], self['speed'], self['density'])
         elif method.lower() == 'burton':
+            logger.info("Calculating Dst using Burton model")
             dst_pred = calc_dst_burton(self['time'], self['bz'], self['speed'], self['density'])
 
         dstData = SatData({'time': self['time'], 'dst': dst_pred})
@@ -1770,6 +1795,7 @@ def get_omni_data(filepath='', download=False, dldir='data'):
     speed_theta=np.zeros(dataset) #floating points
 
     dst=np.zeros(dataset) #float
+    ae=np.zeros(dataset) #float
     kp=np.zeros(dataset) #float
 
     den=np.zeros(dataset) #float
@@ -1787,6 +1813,7 @@ def get_omni_data(filepath='', download=False, dldir='data'):
             line = line.split() # to deal with blank 
             #print line #41 is Dst index, in nT
             dst[j]=line[40]
+            ae[j]=line[41]
             kp[j]=line[38]
 
             if dst[j] == 99999: dst[j]=np.NaN
@@ -1849,8 +1876,8 @@ def get_omni_data(filepath='', download=False, dldir='data'):
 
     omni_data = SatData({'time': times1,
                          'btot': btot, 'bx': bx, 'by': bygsm, 'bz': bzgsm,
-                         'speed': speed, 'density': den, 'pdyn': pdyn,
-                         'dst': dst, 'kp': kp},
+                         'speed': speed, 'speedx': speedx, 'density': den, 'pdyn': pdyn,
+                         'dst': dst, 'kp': kp, 'ae': ae},
                          source='OMNI')
     omni_data.h['DataSource'] = "OMNI (NASA OMNI2 data)"
     if download:

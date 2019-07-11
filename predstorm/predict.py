@@ -21,8 +21,9 @@ Future steps:
 """
 
 import copy
+from datetime import datetime
 import numpy as np
-from matplotlib.dates import num2date
+from matplotlib.dates import num2date, date2num
 from numba import njit, jit
 import sunpy.time
 
@@ -48,14 +49,19 @@ class DstFeatureExtraction(BaseEstimator, TransformerMixin):
         return self
 
 
-    def transform(self, X):
+    def transform(self, X, tarray=None):
 
         pressure = X[:,3]**self.den_power * X[:,2]**self.v_power
         sqrtden = np.sqrt(X[:,3])
         bz = X[:,5]**self.bz_power
         dbz = np.gradient(X[:,5])
+        dn = np.gradient(sqrtden)
+        b2xn = X[:,4]**2. * X[:,3]
+        #theta = -(np.arccos(-X[:,5]/X[:,4]) - np.pi) / 2. # infinite?
+        #exx = X[:,2] * X[:,4] * np.sin(theta)**7
         rc = calc_ring_current_term(X[:,-1], X[:,5], X[:,2], m1=self.m1, m2=self.m2, e1=self.e1, e2=self.e2)
-        features = np.concatenate((X, rc.reshape(-1,1), pressure.reshape(-1,1), sqrtden.reshape(-1,1), bz.reshape(-1,1), dbz.reshape(-1,1)), axis=1)
+        #features = np.concatenate((X, rc.reshape(-1,1), pressure.reshape(-1,1), sqrtden.reshape(-1,1), bz.reshape(-1,1), dbz.reshape(-1,1), b2xn.reshape(-1,1)), axis=1)
+        features = np.concatenate((X, rc.reshape(-1,1), pressure.reshape(-1,1), sqrtden.reshape(-1,1), bz.reshape(-1,1), dbz.reshape(-1,1), b2xn.reshape(-1,1), dn.reshape(-1,1)), axis=1)
 
         return features
 
@@ -84,7 +90,7 @@ def calc_dst_burton(time, bz, speed, density):
     bzneg = copy.deepcopy(bz)
     bzneg[bz > 0] = 0
     pdyn = density*1e6*protonmass*(speed*1e3)**2*1e9  #in nanoPascal
-    Ey = speed*abs(bzneg)*1e-3; #now Ey is in mV/m
+    Ey = speed*abs(bzneg)*1e-3 #now Ey is in mV/m
 
     dst_burton = np.zeros(len(bz))
     Ec=0.5  
@@ -100,7 +106,7 @@ def calc_dst_burton(time, bz, speed, density):
         #Burton 1975 p4208: Dst=Dst0+bP^1/2-c
         # Ring current Dst
         deltat_sec = (time[i+1]-time[i])*86400  #deltat must be in seconds
-        rc = (F-a*lrc)*deltat_sec + lrc
+        rc = lrc + (F-a*lrc)*deltat_sec
         # Dst of ring current and magnetopause currents 
         dst_burton[i+1] = rc + b*np.sqrt(pdyn[i+1]) - c
         lrc = rc
@@ -154,7 +160,7 @@ def calc_dst_obrien(time, bz, speed, density):
     return dst_obrien
 
 
-def calc_dst_temerin_li(time, btot, bx, by, bz, speed, speedx, density):
+def calc_dst_temerin_li(time, btot, bx, by, bz, speed, speedx, density, version='2002n'):
     """Calculates Dst from solar wind input according to Temerin and Li 2002 method.
     Credits to Xinlin Li LASP Colorado and Mike Temerin.
     Calls _jit_calc_dst_temerin_li. All constants are defined in there.
@@ -178,6 +184,8 @@ def calc_dst_temerin_li(time, btot, bx, by, bz, speed, speedx, density):
         Array containing solar wind speed in x-direction.
     density : np.array
         Array containing solar wind density.
+    version : str (default='2002')
+        String determining which model version should be used.
 
     Returns
     =======
@@ -197,10 +205,21 @@ def calc_dst_temerin_li(time, btot, bx, by, bz, speed, speedx, density):
     dst2[0:10]=-13
     dst3[0:10]=-2
 
-    return _jit_calc_dst_temerin_li(time, btot, bx, by, bz, speed, speedx, density, dst1, dst2, dst3, dst_tl, julian_days)
+    if version == '2002':
+        newparams = False
+    else:
+        newparams = True
+
+    if version in ['2002', '2002n']:
+        return _jit_calc_dst_temerin_li_2002(time, btot, bx, by, bz, speed, speedx, density, dst1, dst2, dst3, dst_tl, julian_days, newparams=newparams)
+    elif version == '2006':
+        dst1[0:10], dst2[0:10], dst3[0:10] = -10, -5, -10
+        ds1995 = time - date2num(datetime(1995,1,1))
+        ds2000 = time - date2num(datetime(2000,1,1))
+        return _jit_calc_dst_temerin_li_2006(ds1995, ds2000, btot, bx, by, bz, speed, speedx, density, dst1, dst2, dst3)
 
 @njit
-def _jit_calc_dst_temerin_li(time, btot, bx, by, bz, speed, speedx, density, dst1, dst2, dst3, dst_tl, julian_days):
+def _jit_calc_dst_temerin_li_2002(time, btot, bx, by, bz, speed, speedx, density, dst1, dst2, dst3, dst_tl, julian_days, newparams=True):
     """Fast(er) calculation of Dst using jit on Temerin-Li method."""
 
     #define all constants
@@ -215,10 +234,15 @@ def _jit_calc_dst_temerin_li(time, btot, bx, by, bz, speed, speedx, density, dst
 
     #found by own offset optimization for 2015
     #s4 and s5 as in the TL 2002 paper are not used due to problems with the time
-    s1, s2, s3 = 4.29, 5.94, -3.97
+    if not newparams:
+        s1, s2, s3, s4, s5 = -2.788, 1.44, -0.92, -1.054, 8.6e-6
+        initdate = 2449718.5
+    else:
+        s1, s2, s3, s4, s5 = 4.29, 5.94, -3.97, 0., 0.
+        initdate = 2457023.5
+
     a1, a2, a3 = 6.51e-2, 1.37, 8.4e-3 
-    a4, a5, a6 = 6.053e-3, 1.12e-3, 1.55e-3
-    
+    a4, a5, a6 = 6.053e-3, 1.21e-3, 1.55e-3 # a5 = 1.12e-3 before. Error?
     tau1, tau2, tau3 = 0.14, 0.18, 9e-2 #days
     b1, b2, b3 = 0.792, 1.326, 1.29e-2  
     c1, c2 = -24.3, 5.2e-2
@@ -232,35 +256,35 @@ def _jit_calc_dst_temerin_li(time, btot, bx, by, bz, speed, speedx, density, dst
         #t time in days since beginning of 1995   #1 Jan 1995 in Julian days
         #t1=sunpy.time.julian_day(mdates.num2date(time_in[i]))-sunpy.time.julian_day('1995-1-1 00:00')
         # sunpy.time.julian_day('2015-1-1 00:00') = 2457023.5
-        t1=julian_days[i]-2457023.5
+        t1 = julian_days[i] - initdate
        
-        tt=2*np.pi*t1/yearli
-        ttt=2*np.pi*t1
-        cosphi=np.sin(tt+alpha)*np.sin(ttt-tt-beta)*(9.58589*1e-2)+np.cos(tt+alpha)*(0.39+0.104528*np.cos(ttt-tt-beta))
+        tt = 2*np.pi*t1/yearli
+        ttt = 2*np.pi*t1
+        cosphi = np.sin(tt+alpha) * np.sin(ttt-tt-beta) * (9.58589e-2) + np.cos(tt+alpha) * (0.39+0.104528*np.cos(ttt-tt-beta))
        
         #equation 1 use phi from equation 2
-        sinphi=(1-cosphi**2)**0.5
+        sinphi = (1. - cosphi**2.)**0.5
         
-        pressureterm=(p1*(btot[i]**2)+density[i]*((p2*((speed[i])**2)/(sinphi**2.52))+p3))**0.5
+        pressureterm = (p1*(btot[i]**2) + density[i] * (p2*(speed[i])**2/(sinphi**2.52) + p3) )**0.5
         
         #2 direct IMF bz term
-        directterm=0.478*bz[i]*(sinphi**11.0)
+        directterm = 0.478 * bz[i]*(sinphi**11.0)
 
         #3 offset term - the last two terms were cut because don't make sense as t1 rises extremely for later years
-        offset=s1+s2*np.sin(2*np.pi*t1/yearli+s3)
+        offset = s1 + s2 * np.sin(2*np.pi*t1/yearli + s3) + s4*t1 + s5*t1*t1
         #or just set it constant
         #offset[i]=-5
-        bt=(by[i]**2+bz[i]**2)**0.5  
-        if bt == 0.: bt = 1e-12  # Escape dividing by zero error
+        bt = (by[i]**2 + bz[i]**2)**0.5  
+        if bt == 0.: bt = 1e-12  # Escape dividing by zero error in theta_li
         #mistake in 2002 paper - bt is similarly defined as bp (with by bz); but in Temerin and Li's code (dst.pro) bp depends on by and bx
-        bp=(by[i]**2+bx[i]**2)**0.5  
+        bp = (by[i]**2 + bx[i]**2)**0.5  
         #contains t1, but in cos and sin 
-        dh=bp*np.cos(np.arctan2(bx[i],by[i])+6.10) * ((3.59e-2)*np.cos(2*np.pi*t1/yearli+0.04)-2.18e-2*np.sin(2*np.pi*t1-1.60))
+        dh = bp*np.cos(np.arctan2(bx[i],by[i])+6.10) * (3.59e-2 * np.cos(2*np.pi*t1/yearli + 0.04) - 2.18e-2*np.sin(2*np.pi*t1-1.60))
         #print(i, bx[i], by[i], bz[i])
-        theta_li=-(np.arccos(-bz[i]/bt)-np.pi)/2
-        exx=1e-3*abs(speedx[i])*bt*np.sin(theta_li)**6.1
+        theta_li = -(np.arccos(-bz[i]/bt)-np.pi)/2
+        exx = 1e-3 * abs(speedx[i]) * bt * np.sin(theta_li)**6.1
         #t1 and dt are in days
-        dttl=julian_days[i+1]-julian_days[i]
+        dttl = julian_days[i+1]-julian_days[i]
        
         #4 dst1 
         #find value of dst1(t-tau1) 
@@ -269,35 +293,202 @@ def _jit_calc_dst_temerin_li(time, btot, bx, by, bz, speed, speedx, density, dst
         #und dann bei dst1 den wert mit dem index nehmen der am nächsten ist, das ist dann dst(t-tau1)
         #wenn index nicht existiert (am anfang) einfach index 0 nehmen
         #check for index where timesi is greater than t minus tau
-        indtau1=np.where(time > (time[i]-tau1))
-        dst1tau1=dst1[indtau1[0][0]]
-        #similar search for others  
-        dst2tau1=dst2[indtau1[0][0]]
-        th1=0.725*(sinphi**-1.46)
-        th2=1.83*(sinphi**-1.46)
-        fe1=(-4.96e-3)*  (1+0.28*dh)*  (2*exx+abs(exx-th1)+abs(exx-th2)-th1-th2)*  (abs(speedx[i])**1.11)*((density[i])**0.49)*(sinphi**6.0)
-        dst1[i+1]=dst1[i]+  (a1*(-dst1[i])**a2   +fe1*   (1+(a3*dst1tau1+a4*dst2tau1)/(1-a5*dst1tau1-a6*dst2tau1)))  *dttl
+        indtau1 = np.where(time > (time[i]-tau1))
+        dst1tau1 = dst1[indtau1[0][0]]
+        dst2tau1 = dst2[indtau1[0][0]]
+        th1 = 0.725*(sinphi**-1.46)
+        th2 = 1.83*(sinphi**-1.46)
+        fe1 = (-4.96e-3) * (1+0.28*dh) * (2*exx+abs(exx-th1) + abs(exx-th2)-th1-th2) * (abs(speedx[i])**1.11) * ((density[i])**0.49) * (sinphi**6.0)
+        dst1[i+1] = dst1[i] + (a1*(-dst1[i])**a2 + fe1*(1. + (a3*dst1tau1 + a4*dst2tau1)/(1. - a5*dst1tau1 - a6*dst2tau1))) * dttl
         
         #5 dst2    
-        indtau2=np.where(time > (time[i]-tau2))
-        dst1tau2=dst1[indtau2[0][0]]
-        df2=(-3.85e-8)*(abs(speedx[i])**1.97)*(btot[i]**1.16)*(np.sin(theta_li)**5.7)*((density[i])**0.41)*(1+dh)
-        fe2=(2.02*1e3)*(sinphi**3.13)*df2/(1-df2)
-        dst2[i+1]=dst2[i]+(b1*(-dst2[i])**b2+fe2*(1+(b3*dst1tau2)/(1-b3*dst1tau2)))*dttl
+        indtau2 = np.where(time > (time[i]-tau2))
+        dst1tau2 = dst1[indtau2[0][0]]
+        df2 = (-3.85e-8) * (abs(speedx[i])**1.97) * (bt**1.16) * np.sin(theta_li)**5.7 * (density[i])**0.41 * (1+dh)
+        fe2 = (2.02e3) * (sinphi**3.13)*df2/(1-df2)
+        dst2[i+1] = dst2[i] + (b1*(-dst2[i])**b2 + fe2*(1. + (b3*dst1tau2)/(1. - b3*dst1tau2))) * dttl
         
         #6 dst3  
-        indtau3=np.where(time > (time[i]-tau3))
-        dst3tau3=dst3[indtau3[0][0]]
-        df3=-4.75e-6*(abs(speedx[i])**1.22)*(bt**1.11)*np.sin(theta_li)**5.5*((density[i])**0.24)*(1+dh)
-        fe3=3.45e3*(sinphi**0.9)*df3/(1-df3)
-        dst3[i+1]=dst3[i]+  (c1*dst3[i]   + fe3*(1+(c2*dst3tau3)/(1-c2*dst3tau3)))*dttl
+        indtau3 = np.where(time > (time[i]-tau3))
+        dst3tau3 = dst3[indtau3[0][0]]
+        df3 = -4.75e-6 * (abs(speedx[i])**1.22) * (bt**1.11) * np.sin(theta_li)**5.5 * (density[i])**0.24 * (1+dh)
+        fe3 = 3.45e3 * (sinphi**0.9) * df3/(1.-df3)
+        dst3[i+1] = dst3[i] + (c1*dst3[i] + fe3*(1. + (c2*dst3tau3)/(1. - c2*dst3tau3))) * dttl
         
         #The dst1, dst2, dst3, (pressure term), (direct IMF bz term), and (offset terms) 
         # are added (after interpolations) with time delays of 7.1, 21.0, 43.4, 2.0, 23.1 and 7.1 min, 
         # respectively, for comparison with the ‘‘Kyoto Dst.’’ 
-        dst_tl[i]=dst1[i]+dst2[i]+dst3[i]+pressureterm+directterm+offset
+        dst_tl[i] = dst1[i] + dst2[i] + dst3[i] + pressureterm + directterm + offset
 
     return dst_tl
+
+@njit(parallel=True)#"void(f8[:],f8[:],f8[:],f8[:],f8[:],f8[:],f8[:],f8[:],f8[:],f8[:],f8[:],f8[:])"
+def _jit_calc_dst_temerin_li_2006(t1, t2, btot, bx, by, bz, speed, speedx, density, dst1, dst2, dst3):
+    """Fast(er) calculation of Dst using jit on Temerin-Li method."""
+    
+    fy = 2.*np.pi/365.24
+    sun1 = np.sin(np.pi * 10.27 / 180.)
+    sun2 = np.sin(np.pi * 10.27 / 180.) * np.cos(np.pi * 23.5 / 180.)
+    alpha = 0.0449
+
+    # SOLAR WIND VALUES
+    # -----------------
+    speedx = np.abs(speedx)
+    bt = np.sqrt(by**2 + bz**2)
+    bt[bt < 0.0001] = 1e-4      # Correction from dst.pro, escaping zero-division error
+    bp = np.sqrt(by**2 + bx**2)
+    btot = np.sqrt(bx**2. + by**2. + bz**2.)
+
+    theta = -(np.arccos(-bz/bt) - np.pi) / 2.
+    ang = np.arctan2(bx, by)
+
+    exx = speedx * bt**0.993 * np.sin(theta)**7.29
+    # exx2 = density**0.493 * speedx**2.955 * bt**1.105 * np.sin(theta)**5.24 # paper
+    # exx3 = density**0.397 * speedx**0.576 * bt**1.413 * np.sin(theta)**8.56 # paper
+    exx2 = speedx * bt**1.105 * np.sin(theta)**5.24 # code
+    exx3 = speedx * bt**1.413 * np.sin(theta)**8.56 # code
+
+    # TIME VALUES
+    # -----------
+    dh = 0.0435 * np.cos(fy*t1 + 0.1680) - 0.0208 * np.sin(2*np.pi*t1 - 1.589)
+    itest = 40
+    it1 = itest - np.where(t1 > (t1[itest] - 0.0486))[0][0]
+    it2 = itest - np.where(t1 > (t1[itest] - 0.181))[0][0]
+    it3 = itest - np.where(t1 > (t1[itest] - 0.271))[0][0]
+    it4 = itest - np.where(t1 > (t1[itest] - 0.0625))[0][0]
+    it5 = itest - np.where(t1 > (t1[itest] - 0.104))[0][0]
+    it6 = itest - np.where(t1 > (t1[itest] - 0.0278))[0][0]
+    it7 = itest - np.where(t1 > (t1[itest] - 0.139))[0][0]
+    idst1t1 = itest - np.where(t1 > (t1[itest] - 0.132))[0][0]
+    idst2t1 = itest - np.where(t1 > (t1[itest] - 0.0903))[0][0]
+    idst1t2 = itest - np.where(t1 > (t1[itest] - 0.264))[0][0]
+       
+    # FUNCTION TERMS
+    # --------------
+    tt = t1*fy
+    cosphi = sun2 * np.sin(tt + alpha) * np.sin(2.*np.pi*t1 - tt - 1.632) + \
+                np.cos(tt + alpha) * (0.39 + sun1*np.cos(2*np.pi*t1 - tt - 1.632))
+    cosphi5 = sun2 * np.sin(tt + alpha) * np.sin(2.*np.pi*t1 - tt + 0.27) + \
+                np.cos(tt + alpha) * (0.39 + sun1*np.cos(2*np.pi*t1 - tt + 0.27))
+    cosphi6 = sun2 * np.sin(tt + alpha) * np.sin(2.*np.pi*t1 - tt - 0.21) + \
+                np.cos(tt + alpha) * (0.39 + sun1*np.cos(2*np.pi*t1 - tt - 0.21))
+    cosphi7 = sun2 * np.sin(tt + alpha) * np.sin(2.*np.pi*t1 - tt - 0.79) + \
+                np.cos(tt + alpha) * (0.39 + sun1*np.cos(2*np.pi*t1 - tt - 0.79))
+    cosphi8 = sun2 * np.sin(tt + alpha) * np.sin(2.*np.pi*t1 - tt - 2.81) + \
+                np.cos(tt + alpha) * (0.39 + sun1*np.cos(2*np.pi*t1 - tt - 2.81))
+
+    sin_phi_factor = 0.95097
+    tst3 = ( np.sqrt(1. - cosphi**2.) / sin_phi_factor )**-0.13
+    tst4 = ( np.sqrt(1. - cosphi**2.) / sin_phi_factor )**6.54
+    tst5 = ( np.sqrt(1. - cosphi5**2.) / sin_phi_factor )**5.13
+    tst6 = ( np.sqrt(1. - cosphi6**2.) / sin_phi_factor )**-2.44
+    tst7 = ( np.sqrt(1. - cosphi7**2.) / sin_phi_factor )**2.84
+    tst8 = ( np.sqrt(1. - cosphi8**2.) / sin_phi_factor )**2.49
+
+    fe1 = -1.703e-6 * (1. + erf(-0.09*bp * np.cos(ang - 0.015) * dh)) * \
+                tst3 * ((exx - 1231.2/tst4 + np.abs(exx - 1231.2/tst4)) + \
+                (exx - 3942./tst4 + np.abs(exx - 3942./tst4))) * speedx**1.307 * density**0.548
+    # fe2 = 5.172e-8 * exx2 * (1. + erf(0.418*bp * np.cos(ang - 0.015) * dh) )    # paper
+    # fe3 =  -0.0412 * exx3 * (1. + erf(1.721*bp * np.cos(ang - 0.015) * dh) )    # paper
+    fe2 = -5.172e-8 * exx2 * (1. + erf(0.418*bp * np.cos(ang - 0.015) * dh) ) * speedx**1.955 * density**0.493   # code
+    fe3 =  -0.0412 * exx3 * (1. + erf(1.721*bp * np.cos(ang - 0.015) * dh) ) * speedx**-0.424 * density**0.397   # code
+
+    df2 = 1440. * tst7 * fe2/(-fe2 + 922.1)
+    df3 = 272.9 * tst8 * fe3/(-fe3 + 60.5)
+        
+    # PRESSURE TERM
+    # -------------
+    pressureterm = ( 0.330*btot**2 * (1. + 0.100*density) + \
+                (1.621e-4 * tst6 * speed**2 + 18.70)*density )**0.5
+        
+    # DIRECT BZ TERM
+    # --------------
+    directbzterm = 0.574 * tst5 * bz
+        
+    # OFFSET TERM
+    # -----------
+    offsetterm = 19.35 + 0.158*np.sin(fy*t2 - 0.94) + 0.01265*t2 - 2.224e-11*t2**2.
+
+    # INITIAL DST LOOP
+    # ----------------
+    for i in range(0,40):
+
+        dt = (t1[i+1] - t1[i])#/6.   # TODO remove this changed from hr to 10mins
+
+        # Code
+        dst1[i+1] = dst1[i] + (0.005041 * (-dst1[i])**2.017 + fe1[i]) * dt
+        dst2[i+1] = dst2[i] + (0.00955 * (-dst2[i])**2.269 + df2[i] * (1. + 0.01482*dst1[i] / (1. - 0.01482*dst1[i]) )) * dt
+        dst3[i+1] = dst3[i] + (-5.10*dst3[i] + df3[i]) * dt
+
+    # MAIN DST LOOP
+    # -------------
+    for i in range(40,len(bz)-1):
+
+        # DST TERMS
+        # ---------
+        bzt1 = bz[i-it1]
+        bzt2 = bz[i-it2]
+        bzt3 = bz[i-it3]
+        dst1t1 = dst1[i-idst1t1]
+        dst2t1 = dst2[i-idst2t1]
+        dst1[i+1] = dst1[i] + (5.041e-3 * (-dst1[i])**2.017 * \
+                    (1. + erf(-0.010*bz[i])) + fe1[i] * \
+                    (1. + erf(-0.0094*bzt1 - 0.0118*bzt2 + 0.0138*bzt3)) * \
+                    np.exp(0.00313*dst1t1 + 0.01872*dst2t1)) * dt
+
+        bzt4 = bz[i-it4]
+        bzt5 = bz[i-it5]
+        dst1t2 = dst1[i-idst1t2]
+        dst2[i+1] = dst2[i] + (0.00955 * (-dst2[i])**2.017 * \
+                    (1. + erf(-0.014*bz[i])) + df2[i] * \
+                    (1 + erf(-0.0656*bzt4 + 0.0627*bzt5)) * \
+                    np.exp(0.01482*dst1t2)) * dt
+       
+        bzt6 = bz[i-it6]
+        bzt7 = bz[i-it7]
+        dst3[i+1] = dst3[i] + (5.10 * (-dst3[i])**0.952 * \
+                    (1. + erf(-0.027*bz[i])) + df3[i] * \
+                    (1. + erf(-0.0471*bzt6 + 0.0184*bzt7))) * dt
+
+    # ANNUAL VARIATIONS
+    # -----------------
+    dst1_ = dst1 * (1. + 0.0807*np.sin(t1*fy + 1.886))
+    dst2_ = dst2 * (1. + 0.0251*np.sin(t1*fy + 3.18))
+    dst3_ = dst3 * (1. + 0.0901*np.sin(t1*fy + 5.31)) * (1.-0.00007*dst1_)
+    # directbzterm_ = directbzterm * (1. + 0.293 * np.sin(t1[i]*fy + 3.19)) * (1. + 0.0034*dst1_) # paper
+    directbzterm_ = directbzterm * (1. + 0.293 * np.sin(t1[i]*fy + 3.19))   # code
+    pressureterm_ = pressureterm * (1. + 0.0986*np.sin(t1[i]*fy - 1.383)) * (1. + 0.00184*dst1_)
+
+    # FINAL DST
+    # ---------
+    dst_tl = dst1_ + dst2_ + dst3_ + pressureterm_ + directbzterm_ + offsetterm
+
+    # YEARLY DRIFT CORRECTION TERM (NOT IN PAPER)
+    # -------------------------------------------
+    drift_corr = -0.014435865642103548 * t2 + 9.57670996872173
+    dst_tl += drift_corr
+
+    return dst_tl
+
+@njit
+def erf(x):
+    # adjusted from https://stackoverflow.com/questions/457408/is-there-an-easily-available-implementation-of-erf-for-python
+    # save the sign of x
+    sign = np.sign(x)
+    x = np.abs(x)
+
+    # constants
+    a1 =  0.254829592
+    a2 = -0.284496736
+    a3 =  1.421413741
+    a4 = -1.453152027
+    a5 =  1.061405429
+    p  =  0.3275911
+
+    # A&S formula 7.1.26
+    t = 1.0/(1.0 + p*x)
+    y = 1.0 - (((((a5*t + a4)*t) + a3)*t + a2)*t + a1) * t * np.exp(-x*x)
+    return sign*y # erf(-x) = -erf(x)
 
 @njit
 def calc_newell_coupling(by, bz, v):

@@ -67,5 +67,5 @@ def liability_text():
     plt.figtext(0.01,0.01,'We will not be liable for any losses and damages in connection with using the provided information.' , fontsize=8, ha='left')
 
 def group_info_text():
-    plt.figtext(0.99,0.05,'Helio Group, IWF Graz, Austria', fontsize=12, ha='right')
+    plt.figtext(0.99,0.05,'IWF-Helio Group, Graz, Austria', fontsize=12, ha='right')
     plt.figtext(0.99,0.025,'https://twitter.com/chrisoutofspace', fontsize=12, ha='right')

@@ -717,6 +717,9 @@ if __name__ == '__main__':
             print("")
             sys.exit()
 
+    # INITIATE LOGGING:
+    logger = ps.init_logging(verbose=verbose)
+
     # CHECK OUTPUT DIRECTORIES AND REQUIRED FILES:
     outputdirectory='results'
     # Check if directory for output exists (for plots and txt files)
@@ -732,9 +735,6 @@ if __name__ == '__main__':
     if not os.path.exists('data/positions/STEREOA-pred_20070101-20250101_HEEQ_6h.p'):
         logger.warning("Need position files to run script! Generating files under data/positions...")
         ps.spice.generate_all_position_files()
-
-    # INITIATE LOGGING:
-    logger = ps.init_logging(verbose=verbose)
 
     # Closes all plots
     plt.close('all')
