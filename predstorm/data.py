@@ -8,7 +8,7 @@ twitter @chrisoutofspace, https://github.com/cmoestl
 started April 2018, last update May 2019
 
 Python 3.7
-Packages not included in anaconda installation: sunpy, cdflib (https://github.com/MAVENSDC/cdflib)
+Packages not included in anaconda installation: cdflib (https://github.com/MAVENSDC/cdflib)
 
 Issues:
 - ...
@@ -63,7 +63,7 @@ import urllib
 # External
 import cdflib
 import heliopy.spice as hspice
-import sunpy.time
+import astropy.time
 try:
     from netCDF4 import Dataset
 except:
@@ -259,7 +259,7 @@ class SatData():
 
         for i in np.arange(0,len(self['time'])):
             #get all dates right
-            jd=sunpy.time.julian_day(sunpy.time.break_time(mdates.num2date(self['time'][i])))
+            jd=astropy.time.Time(mdates.num2date(self['time'][i]), format='datetime', scale='utc').jd
             mjd[i]=float(int(jd-2400000.5)) #use modified julian date    
             T00=(mjd[i]-51544.5)/36525.0
             dobj=mdates.num2date(self['time'][i])
@@ -375,8 +375,7 @@ class SatData():
         #then HEEQ to GSM
         #-------------- loop go through each date
         for i in np.arange(0,len(self['time'])):
-            sunpy_time=sunpy.time.break_time(mdates.num2date(self['time'][i]))
-            jd[i]=sunpy.time.julian_day(sunpy_time)
+            jd[i]=astropy.time.Time(mdates.num2date(self['time'][i]), format='datetime', scale='utc').jd
             mjd[i]=float(int(jd[i]-2400000.5)) #use modified julian date    
             #then lambda_sun
             T00=(mjd[i]-51544.5)/36525.0
@@ -988,7 +987,7 @@ def convert_GSE_to_GSM(bxgse,bygse,bzgse,timegse):
 
     for i in np.arange(0,len(timegse)):
         #get all dates right
-        jd=sunpy.time.julian_day(sunpy.time.break_time(mdates.num2date(timegse[i])))
+        jd=astropy.time.Time(mdates.num2date(timegse[i]), format='datetime', scale='utc').jd
         mjd[i]=float(int(jd-2400000.5)) #use modified julian date    
         T00=(mjd[i]-51544.5)/36525.0
         dobj=mdates.num2date(timegse[i])
@@ -1085,8 +1084,7 @@ def convert_RTN_to_GSE_sta_l1(cbr,cbt,cbn,ctime,pos_stereo_heeq,pos_time_num):
     #then HEEQ to GSM
     #-------------- loop go through each date
     for i in np.arange(0,len(ctime)):
-        sunpy_time=sunpy.time.break_time(mdates.num2date(ctime[i]))
-        jd[i]=sunpy.time.julian_day(sunpy_time)
+        jd[i]=astropy.time.Time(mdates.num2date(ctime[i]), format='datetime', scale='utc').jd
         mjd[i]=float(int(jd[i]-2400000.5)) #use modified julian date    
         #then lambda_sun
         T00=(mjd[i]-51544.5)/36525.0
@@ -1683,7 +1681,7 @@ def get_noaa_dst():
         rdst[k]=float(dr[k][1])
         #convert time from string to datenumber
         rdst_time_str[k]=dr[k][0][0:16]
-        rdst_time[k]=mdates.date2num(sunpy.time.parse_time(rdst_time_str[k]))
+        rdst_time[k]=mdates.date2num(datetime.strptime(rdst_time_str[k], "%Y-%m-%d %H:%M"))
     logger.info("NOAA real-time Dst data loaded.")
 
     dst_data = SatData({'time': rdst_time, 'dst': rdst},
@@ -1991,7 +1989,6 @@ def get_omni_data_old():
       
 
     #convert time to matplotlib format
-    #http://docs.sunpy.org/en/latest/guide/time.html
     #http://matplotlib.org/examples/pylab_examples/date_demo2.html
 
     times1=np.zeros(len(year)) #datetime time
@@ -2446,36 +2443,28 @@ def getpositions(filename):
 
 
 def time_to_num_cat(time_in):  
-  #for time conversion  
-  #for all catalogues
-  #time_in is the time in format: 2007-11-17T07:20:00 
-  #for times help see: 
-  #http://docs.sunpy.org/en/latest/guide/time.html
-  #http://matplotlib.org/examples/pylab_examples/date_demo2.html
+    #for time conversion  
+    #for all catalogues
+    #time_in is the time in format: 2007-11-17T07:20:00 
+    #for times help see:
+    #http://matplotlib.org/examples/pylab_examples/date_demo2.html
   
-  j=0
-  #time_str=np.empty(np.size(time_in),dtype='S19')
-  time_str= ['' for x in range(len(time_in))]
-  #=np.chararray(np.size(time_in),itemsize=19)
-  time_num=np.zeros(np.size(time_in))
- 
-  for i in time_in:
-   #convert from bytes (output of scipy.readsav) to string
-   time_str[j]=time_in[j][0:16].decode()+':00'
-   year=int(time_str[j][0:4])
-   #convert time to sunpy friendly time and to matplotlibdatetime
-   #only for valid times so 9999 in year is not converted
-   #pdb.set_trace()
-   if year < 2100:
-    	  time_num[j]=mdates.date2num(sunpy.time.parse_time(time_str[j]))
-   j=j+1  
-   #the date format in matplotlib is e.g. 735202.67569444
-   #this is time in days since 0001-01-01 UTC, plus 1.
-  return time_num
+    j=0
+    #time_str=np.empty(np.size(time_in),dtype='S19')
+    time_str= ['' for x in range(len(time_in))]
+    #=np.chararray(np.size(time_in),itemsize=19)
+    time_num=np.zeros(np.size(time_in))
+   
+    for i in time_in:
+        #convert from bytes (output of scipy.readsav) to string
+        time_str[j]=time_in[j][0:16].decode()+':00'
+        time_num[j]=mdates.date2num(datetime.strptime(time_str[j], "%Y-%m-%dT%H:%M:%S"))
+        j=j+1  
+    return time_num
 
 
 def converttime():
-    """http://docs.sunpy.org/en/latest/guide/time.html
+    """
     http://matplotlib.org/examples/pylab_examples/date_demo2.html
     """
 

@@ -25,7 +25,7 @@ from datetime import datetime
 import numpy as np
 from matplotlib.dates import num2date, date2num
 from numba import njit, jit
-import sunpy.time
+import astropy.time
 
 # Machine learning specific:
 from sklearn.base import BaseEstimator, TransformerMixin
@@ -198,7 +198,6 @@ def calc_dst_temerin_li(time, btot, bx, by, bz, speed, speedx, density, version=
     dst2=np.zeros(len(bz))
     dst3=np.zeros(len(bz))
     dst_tl=np.zeros(len(bz))
-    julian_days = [sunpy.time.julian_day(num2date(x)) for x in time]
     
     # Define initial values (needed for convergence, see Temerin and Li 2002 note)
     dst1[0:10]=-15
@@ -211,6 +210,8 @@ def calc_dst_temerin_li(time, btot, bx, by, bz, speed, speedx, density, version=
         newparams = True
 
     if version in ['2002', '2002n']:
+        # julian_days = [sunpy.time.julian_day(num2date(x)) for x in time]
+        julian_days = [astropy.time.Time(num2date(x), format='datetime', scale='utc').jd for x in time]
         return _jit_calc_dst_temerin_li_2002(time, btot, bx, by, bz, speed, speedx, density, dst1, dst2, dst3, dst_tl, julian_days, newparams=newparams)
     elif version == '2006':
         dst1[0:10], dst2[0:10], dst3[0:10] = -10, -5, -10
