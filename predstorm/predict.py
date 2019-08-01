@@ -35,7 +35,7 @@ class DstFeatureExtraction(BaseEstimator, TransformerMixin):
     """
     https://scikit-learn.org/dev/developers/contributing.html#rolling-your-own-estimator
     """
-    def __init__(self, v_power=1, den_power=1, bz_power=1, m1=-4.4, m2=2.4, e1=9.74, e2=4.69):
+    def __init__(self, v_power=1, den_power=1, bz_power=1, m1=-4.4, m2=2.4, e1=9.74, e2=4.69, look_back=5):
         self.v_power = v_power
         self.den_power = den_power
         self.bz_power = bz_power
@@ -43,6 +43,7 @@ class DstFeatureExtraction(BaseEstimator, TransformerMixin):
         self.m2 = m2
         self.e1 = e1
         self.e2 = e2
+        self.look_back = look_back
 
 
     def fit(self, X, y = None):
@@ -50,6 +51,17 @@ class DstFeatureExtraction(BaseEstimator, TransformerMixin):
 
 
     def transform(self, X, tarray=None):
+
+        def create_dataset(data, look_back=1):
+            shifted = []
+            # Fill up empty values with mean:
+            for i in range(look_back):
+                shifted.append(np.full((look_back), np.nanmean(data)))
+            # Fill rest of array with past values:
+            for i in range(len(data)-look_back):
+                a = data[i:(i+look_back)]
+                shifted.append(a)
+            return np.array(shifted)
 
         pressure = X[:,3]**self.den_power * X[:,2]**self.v_power
         sqrtden = np.sqrt(X[:,3])
@@ -60,10 +72,24 @@ class DstFeatureExtraction(BaseEstimator, TransformerMixin):
         #theta = -(np.arccos(-X[:,5]/X[:,4]) - np.pi) / 2. # infinite?
         #exx = X[:,2] * X[:,4] * np.sin(theta)**7
         rc = calc_ring_current_term(X[:,-1], X[:,5], X[:,2], m1=self.m1, m2=self.m2, e1=self.e1, e2=self.e2)
-        features = np.concatenate((X, rc.reshape(-1,1), pressure.reshape(-1,1), sqrtden.reshape(-1,1), bz.reshape(-1,1), dbz.reshape(-1,1)), axis=1)
+        # Calculate past terms:
+        past_b2xn = create_dataset(b2xn, look_back=self.look_back)
+        past_pressure = create_dataset(pressure, look_back=self.look_back)
+        past_rc = create_dataset(rc, look_back=self.look_back)
+        #features = np.concatenate((X, rc.reshape(-1,1), pressure.reshape(-1,1), sqrtden.reshape(-1,1), bz.reshape(-1,1), dbz.reshape(-1,1)), axis=1)
         # features = np.concatenate((X, rc.reshape(-1,1), pressure.reshape(-1,1), sqrtden.reshape(-1,1), bz.reshape(-1,1), dbz.reshape(-1,1), b2xn.reshape(-1,1), dn.reshape(-1,1)), axis=1)
+        features = np.concatenate((X, rc.reshape(-1,1), pressure.reshape(-1,1), sqrtden.reshape(-1,1), bz.reshape(-1,1), 
+                                   dbz.reshape(-1,1), b2xn.reshape(-1,1), dn.reshape(-1,1),
+                                   past_b2xn, past_pressure, past_rc), axis=1)
 
         return features
+
+
+def dst_loss_function(y_true, y_pred):
+    rsme_all = math.sqrt(mean_squared_error(y_true, y_pred))
+    inds = np.where(y_true < 0.3)   # Lowest 30% (0 to 1 MinMaxScaler)
+    rmse_cut = math.sqrt(mean_squared_error(y_true[inds], y_pred[inds]))
+    return (rsme_all + rmse_cut)
 
 
 def calc_dst_burton(time, bz, speed, density):

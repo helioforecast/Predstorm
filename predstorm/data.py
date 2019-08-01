@@ -368,6 +368,11 @@ class SatData():
             heeq_by[i]=np.dot(np.dot(self['br'][i],Xrtn)+np.dot(self['bt'][i],Yrtn)+np.dot(self['bn'][i],Zrtn),Y_heeq)
             heeq_bz[i]=np.dot(np.dot(self['br'][i],Xrtn)+np.dot(self['bt'][i],Yrtn)+np.dot(self['bn'][i],Zrtn),Z_heeq)
 
+        # just testing - remove this later!
+        # heeq_bx=self['br']
+        # heeq_by=self['bt']
+        # heeq_bz=self['bn']
+
         #get modified Julian Date for conversion as in Hapgood 1992
         jd=np.zeros(len(self['time']))
         mjd=np.zeros(len(self['time']))
