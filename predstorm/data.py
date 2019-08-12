@@ -55,13 +55,15 @@ import scipy
 import scipy.io
 import shutil
 import subprocess
-import matplotlib.dates as mdates
+from matplotlib.dates import date2num, num2date
 from glob import iglob
 import json
 import urllib
 
 # External
 import cdflib
+import heliosat
+from heliosat.proc import transform_reference_frame
 import heliopy.spice as hspice
 import astropy.time
 try:
@@ -153,7 +155,7 @@ class SatData():
     empty_header = {'DataSource': '',
                     'SourceURL' : '',
                     'SamplingRate': None,
-                    'CoordinateSystem': '',
+                    'ReferenceFrame': '',
                     'FileVersion': {},
                     'Instruments': []
                     }
@@ -220,8 +222,8 @@ class SatData():
 
         ostr = "Length of data:\t\t{}\n".format(len(self))
         ostr += "Keys in data:\t\t{}\n".format(self.vars)
-        ostr += "First data point:\t{}\n".format(mdates.num2date(self['time'][0]))
-        ostr += "Last data point:\t{}\n".format(mdates.num2date(self['time'][-1]))
+        ostr += "First data point:\t{}\n".format(num2date(self['time'][0]))
+        ostr += "Last data point:\t{}\n".format(num2date(self['time'][-1]))
         ostr += "\n"
         ostr += "Header information:\n"
         for j in self.h:
@@ -259,10 +261,10 @@ class SatData():
 
         for i in np.arange(0,len(self['time'])):
             #get all dates right
-            jd=astropy.time.Time(mdates.num2date(self['time'][i]), format='datetime', scale='utc').jd
+            jd=astropy.time.Time(num2date(self['time'][i]), format='datetime', scale='utc').jd
             mjd[i]=float(int(jd-2400000.5)) #use modified julian date    
             T00=(mjd[i]-51544.5)/36525.0
-            dobj=mdates.num2date(self['time'][i])
+            dobj=num2date(self['time'][i])
             UT=dobj.hour + dobj.minute / 60. + dobj.second / 3600. #time in UT in hours    
             #define position of geomagnetic pole in GEO coordinates
             pgeo=78.8+4.283*((mjd[i]-46066)/365.25)*0.01 #in degrees
@@ -301,7 +303,7 @@ class SatData():
         self['bx'] = bxgsm
         self['by'] = bygsm
         self['bz'] = bzgsm
-        self.h['CoordinateSystem'].replace('GSE', 'GSM')
+        self.h['ReferenceFrame'].replace('GSE', 'GSM')
 
         return self
 
@@ -380,11 +382,11 @@ class SatData():
         #then HEEQ to GSM
         #-------------- loop go through each date
         for i in np.arange(0,len(self['time'])):
-            jd[i]=astropy.time.Time(mdates.num2date(self['time'][i]), format='datetime', scale='utc').jd
+            jd[i]=astropy.time.Time(num2date(self['time'][i]), format='datetime', scale='utc').jd
             mjd[i]=float(int(jd[i]-2400000.5)) #use modified julian date    
             #then lambda_sun
             T00=(mjd[i]-51544.5)/36525.0
-            dobj=mdates.num2date(self['time'][i])
+            dobj=num2date(self['time'][i])
             UT=dobj.hour + dobj.minute / 60. + dobj.second / 3600. #time in UT in hours   
             LAMBDA=280.460+36000.772*T00+0.04107*UT
             M=357.528+35999.050*T00+0.04107*UT
@@ -425,7 +427,7 @@ class SatData():
         self['bx'] = bxgse
         self['by'] = bygse
         self['bz'] = bzgse
-        self.h['CoordinateSystem'] += '-GSE'
+        self.h['ReferenceFrame'] += '-GSE'
 
         return self
 
@@ -449,7 +451,7 @@ class SatData():
         if self.pos == None:
             raise Exception("Load position data (SatData.load_position_data()) before calling get_position()!")
 
-        tind = np.where(mdates.date2num(timestamp) < self.data[0])[0][0]
+        tind = np.where(date2num(timestamp) < self.data[0])[0][0]
         return self.pos[tind]
 
 
@@ -499,17 +501,17 @@ class SatData():
         """
 
         if starttime != None and endtime == None:
-            new_inds = np.where(self.data[0] >= mdates.date2num(starttime))[0]
+            new_inds = np.where(self.data[0] >= date2num(starttime))[0]
             self.data = self.data[:,new_inds]
             if self.pos != None:
                 self.pos.positions = self.pos.positions[:,new_inds]
         elif starttime == None and endtime != None:
-            new_inds = np.where(self.data[0] < mdates.date2num(endtime))[0]
+            new_inds = np.where(self.data[0] < date2num(endtime))[0]
             self.data = self.data[:,new_inds]
             if self.pos != None:
                 self.pos.positions = self.pos.positions[:,new_inds]
         elif starttime != None and endtime != None:
-            new_inds = np.where((self.data[0] >= mdates.date2num(starttime)) & (self.data[0] < mdates.date2num(endtime)))[0]
+            new_inds = np.where((self.data[0] >= date2num(starttime)) & (self.data[0] < date2num(endtime)))[0]
             self.data = self.data[:,new_inds]
             if self.pos != None:
                 self.pos.positions = self.pos.positions[:,new_inds]
@@ -533,7 +535,7 @@ class SatData():
         # Round to nearest hour
         stime = self['time'][0] - self['time'][0]%(1./24.)
         # Roundabout way to get time_h ensures timings with full hours:
-        nhours = (mdates.num2date(self['time'][-1])-mdates.num2date(stime)).total_seconds()/60./60.
+        nhours = (num2date(self['time'][-1])-num2date(stime)).total_seconds()/60./60.
         # Create new time array
         time_h = np.array(stime + np.arange(0, nhours)*(1./24.))
         Data_h = self.interp_to_time(time_h)
@@ -597,7 +599,7 @@ class SatData():
 
         if method == 'old':
             lag_l1, lag_r = get_time_lag_wrt_earth(satname=self.source,
-                timestamp=mdates.num2date(self['time'][-1]),
+                timestamp=num2date(self['time'][-1]),
                 v_mean=np.nanmean(self['speed']), sun_syn=sun_syn)
             logger.info("shift_time_to_L1: Shifting time by {:.2f} hours".format((lag_l1 + lag_r)*24.))
             self.data[0] = self.data[0] + lag_l1 + lag_r
@@ -694,7 +696,7 @@ class SatData():
             Sine and cosine of day-of-yeat and local-time.
         """
 
-        dtime = mdates.num2date(self['time'])
+        dtime = num2date(self['time'])
         utczone = tz.gettz('UTC')
         cetzone = tz.gettz('CET')
         # Original data is in UTC:
@@ -992,10 +994,10 @@ def convert_GSE_to_GSM(bxgse,bygse,bzgse,timegse):
 
     for i in np.arange(0,len(timegse)):
         #get all dates right
-        jd=astropy.time.Time(mdates.num2date(timegse[i]), format='datetime', scale='utc').jd
+        jd=astropy.time.Time(num2date(timegse[i]), format='datetime', scale='utc').jd
         mjd[i]=float(int(jd-2400000.5)) #use modified julian date    
         T00=(mjd[i]-51544.5)/36525.0
-        dobj=mdates.num2date(timegse[i])
+        dobj=num2date(timegse[i])
         UT=dobj.hour + dobj.minute / 60. + dobj.second / 3600. #time in UT in hours    
         #define position of geomagnetic pole in GEO coordinates
         pgeo=78.8+4.283*((mjd[i]-46066)/365.25)*0.01 #in degrees
@@ -1089,11 +1091,11 @@ def convert_RTN_to_GSE_sta_l1(cbr,cbt,cbn,ctime,pos_stereo_heeq,pos_time_num):
     #then HEEQ to GSM
     #-------------- loop go through each date
     for i in np.arange(0,len(ctime)):
-        jd[i]=astropy.time.Time(mdates.num2date(ctime[i]), format='datetime', scale='utc').jd
+        jd[i]=astropy.time.Time(num2date(ctime[i]), format='datetime', scale='utc').jd
         mjd[i]=float(int(jd[i]-2400000.5)) #use modified julian date    
         #then lambda_sun
         T00=(mjd[i]-51544.5)/36525.0
-        dobj=mdates.num2date(ctime[i])
+        dobj=num2date(ctime[i])
         UT=dobj.hour + dobj.minute / 60. + dobj.second / 3600. #time in UT in hours   
         LAMBDA=280.460+36000.772*T00+0.04107*UT
         M=357.528+35999.050*T00+0.04107*UT
@@ -1155,7 +1157,7 @@ def get_time_lag_wrt_earth(timestamp=None, satname='STEREO-A', v_mean=400., sun_
 
     if timestamp == None:
         timestamp = datetime.utcnow()
-    timestamp = mdates.date2num(timestamp)
+    timestamp = date2num(timestamp)
 
     pos = getpositions('data/positions_2007_2023_HEEQ_6hours.sav')
     pos_time_num = time_to_num_cat(pos.time)
@@ -1285,14 +1287,14 @@ def get_dscovr_data_real_old():
 
         #convert time from string to datenumber
         rbtime_str[k]=mr[k][0][0:16]
-        rbtime_num[k]=mdates.date2num(sunpy.time.parse_time(rbtime_str[k]))
+        rbtime_num[k]=date2num(sunpy.time.parse_time(rbtime_str[k]))
     
     #plasma
     for k in np.arange(0,len(pr),1):
         if pr[k][2] is None: pr[k][2]=np.nan
         rpv[k]=float(pr[k][2]) #speed
         rptime_str[k]=pr[k][0][0:16]
-        rptime_num[k]=mdates.date2num(sunpy.time.parse_time(rptime_str[k]))
+        rptime_num[k]=date2num(sunpy.time.parse_time(rptime_str[k]))
         if pr[k][1] is None: pr[k][1]=np.nan
         rpn[k]=float(pr[k][1]) #density
         if pr[k][3] is None: pr[k][3]=np.nan
@@ -1301,9 +1303,9 @@ def get_dscovr_data_real_old():
 
     #interpolate to minutes 
     #rtimes_m=np.arange(rbtime_num[0],rbtime_num[-1],1.0000/(24*60))
-    rtimes_m= round_to_hour(mdates.num2date(rbtime_num[0])) + np.arange(0,len(rbtime_num)) * timedelta(minutes=1) 
+    rtimes_m= round_to_hour(num2date(rbtime_num[0])) + np.arange(0,len(rbtime_num)) * timedelta(minutes=1) 
     #convert back to matplotlib time
-    rtimes_m=mdates.date2num(rtimes_m)
+    rtimes_m=date2num(rtimes_m)
 
     rbtot_m=np.interp(rtimes_m,rbtime_num,rbtot)
     rbzgsm_m=np.interp(rtimes_m,rbtime_num,rbzgsm)
@@ -1315,8 +1317,8 @@ def get_dscovr_data_real_old():
     
     #interpolate to hours 
     #rtimes_h=np.arange(np.ceil(rbtime_num)[0],rbtime_num[-1],1.0000/24.0000)
-    rtimes_h= round_to_hour(mdates.num2date(rbtime_num[0])) + np.arange(0,len(rbtime_num)/(60)) * timedelta(hours=1) 
-    rtimes_h=mdates.date2num(rtimes_h)
+    rtimes_h= round_to_hour(num2date(rbtime_num[0])) + np.arange(0,len(rbtime_num)/(60)) * timedelta(hours=1) 
+    rtimes_h=date2num(rtimes_h)
 
     
     rbtot_h=np.interp(rtimes_h,rbtime_num,rbtot)
@@ -1369,7 +1371,7 @@ def get_dscovr_data_real():
         dp = json.loads (url.read().decode())
         dpn = [[np.nan if x == None else x for x in d] for d in dp]     # Replace None w NaN
         dtype=[(x, 'float') for x in dp[0]]
-        dates = [mdates.date2num(datetime.strptime(x[0], "%Y-%m-%d %H:%M:%S.%f")) for x in dpn[1:]]
+        dates = [date2num(datetime.strptime(x[0], "%Y-%m-%d %H:%M:%S.%f")) for x in dpn[1:]]
         dp_ = [tuple([d]+[float(y) for y in x[1:]]) for d, x in zip(dates, dpn[1:])] 
         DSCOVR_P = np.array(dp_, dtype=dtype)
     # Read magnetic field data:
@@ -1377,15 +1379,15 @@ def get_dscovr_data_real():
         dm = json.loads(url.read().decode())
         dmn = [[np.nan if x == None else x for x in d] for d in dm]     # Replace None w NaN
         dtype=[(x, 'float') for x in dmn[0]]
-        dates = [mdates.date2num(datetime.strptime(x[0], "%Y-%m-%d %H:%M:%S.%f")) for x in dmn[1:]]
+        dates = [date2num(datetime.strptime(x[0], "%Y-%m-%d %H:%M:%S.%f")) for x in dmn[1:]]
         dm_ = [tuple([d]+[float(y) for y in x[1:]]) for d, x in zip(dates, dm[1:])] 
         DSCOVR_M = np.array(dm_, dtype=dtype)
 
     last_timestep = np.min([DSCOVR_M['time_tag'][-1], DSCOVR_P['time_tag'][-1]])
     first_timestep = np.max([DSCOVR_M['time_tag'][0], DSCOVR_P['time_tag'][0]])
 
-    nminutes = int((mdates.num2date(last_timestep)-mdates.num2date(first_timestep)).total_seconds()/60.)
-    itime = np.asarray([mdates.date2num(mdates.num2date(first_timestep) + timedelta(minutes=i)) for i in range(nminutes)], dtype=np.float64)
+    nminutes = int((num2date(last_timestep)-num2date(first_timestep)).total_seconds()/60.)
+    itime = np.asarray([date2num(num2date(first_timestep) + timedelta(minutes=i)) for i in range(nminutes)], dtype=np.float64)
 
     rbtot_m = np.interp(itime, DSCOVR_M['time_tag'], DSCOVR_M['bt'])
     rbxgsm_m = np.interp(itime, DSCOVR_M['time_tag'], DSCOVR_M['bx_gsm'])
@@ -1402,7 +1404,7 @@ def get_dscovr_data_real():
                            source='DSCOVR')
     dscovr_data.h['DataSource'] = "DSCOVR (NOAA)"
     dscovr_data.h['SamplingRate'] = 1./24./60.
-    dscovr_data.h['CoordinateSystem'] = 'GSM'
+    dscovr_data.h['ReferenceFrame'] = 'GSM'
     
     logger.info('get_dscovr_data_real: DSCOVR data read completed.')
     
@@ -1592,7 +1594,7 @@ def get_dscovr_data_all(P_filepath='data/dscovrarchive/*', M_filepath='data/dsco
     dp_time_m, dp_time_h = np.array([]), np.array([])
     for filepath in P_readfiles:
         ncdata = Dataset(filepath, 'r')
-        time = np.array([mdates.date2num(datetime.utcfromtimestamp(x/1000.))
+        time = np.array([date2num(datetime.utcfromtimestamp(x/1000.))
                          for x in ncdata.variables['time'][...]])
         dtype = [('time_tag', 'float'), ('density', 'float'), ('speed', 'float')]
         density = np.array((ncdata.variables['proton_density'])[...])
@@ -1618,7 +1620,7 @@ def get_dscovr_data_all(P_filepath='data/dscovrarchive/*', M_filepath='data/dsco
     dm_time_m, dm_time_h = np.array([]), np.array([])
     for filepath in M_readfiles:
         ncdata = Dataset(filepath, 'r')
-        time = np.array([mdates.date2num(datetime.utcfromtimestamp(x/1000.))
+        time = np.array([date2num(datetime.utcfromtimestamp(x/1000.))
                          for x in ncdata.variables['time'][...]])
         bx = np.array((ncdata.variables['bx_gse'])[...])
         by = np.array((ncdata.variables['by_gse'])[...])
@@ -1647,7 +1649,7 @@ def get_dscovr_data_all(P_filepath='data/dscovrarchive/*', M_filepath='data/dsco
                            source='DSCOVR')
     dscovr_data.h['DataSource'] = "DSCOVR (NOAA archives)"
     dscovr_data.h['SamplingRate'] = 1./24./60.
-    dscovr_data.h['CoordinateSystem'] = 'GSM'
+    dscovr_data.h['ReferenceFrame'] = 'GSM'
     dscovr_data = dscovr_data.cut(starttime=starttime, endtime=endtime)
     
     logger.info('get_dscovr_data_all: DSCOVR data successfully read.')
@@ -1686,7 +1688,7 @@ def get_noaa_dst():
         rdst[k]=float(dr[k][1])
         #convert time from string to datenumber
         rdst_time_str[k]=dr[k][0][0:16]
-        rdst_time[k]=mdates.date2num(datetime.strptime(rdst_time_str[k], "%Y-%m-%d %H:%M"))
+        rdst_time[k]=date2num(datetime.strptime(rdst_time_str[k], "%Y-%m-%d %H:%M"))
     logger.info("NOAA real-time Dst data loaded.")
 
     dst_data = SatData({'time': rdst_time, 'dst': rdst},
@@ -1722,7 +1724,7 @@ def get_past_dst(filepath=None, starttime=None, endtime=None):
 
     # Remove header data and split strings:
     datastr = [c.strip().split(' ') for c in lines if (c[0] != ' ' and c[0] != 'D')]
-    dst_time = np.array([mdates.date2num(datetime.strptime(d[0]+d[1], "%Y-%m-%d%H:%M:%S.%f")) for d in datastr])
+    dst_time = np.array([date2num(datetime.strptime(d[0]+d[1], "%Y-%m-%d%H:%M:%S.%f")) for d in datastr])
     dst = np.array([float(d[-1]) for d in datastr])
 
     # Make sure no bad data is included:
@@ -1875,7 +1877,7 @@ def get_omni_data(filepath='', download=False, dldir='data'):
         #first to datetimeobject 
         timedum=datetime(int(year[index]), 1, 1) + timedelta(day[index] - 1) +timedelta(hours=hour[index])
         #then to matlibplot dateformat:
-        times1[index] = mdates.date2num(timedum)
+        times1[index] = date2num(timedum)
 
     omni_data = SatData({'time': times1,
                          'btot': btot, 'bx': bx, 'by': bygsm, 'bz': bzgsm,
@@ -1886,7 +1888,7 @@ def get_omni_data(filepath='', download=False, dldir='data'):
     if download:
         omni_data.h['SourceURL'] = omni2_url
     omni_data.h['SamplingRate'] = times1[1] - times1[0]
-    omni_data.h['CoordinateSystem'] = 'GSM'
+    omni_data.h['ReferenceFrame'] = 'GSM'
     
     return omni_data
 
@@ -2002,7 +2004,7 @@ def get_omni_data_old():
         #first to datetimeobject 
         timedum=datetime(int(year[index]), 1, 1) + timedelta(day[index] - 1) +timedelta(hours=hour[index])
         #then to matlibplot dateformat:
-        times1[index] = mdates.date2num(timedum)
+        times1[index] = date2num(timedum)
     print('convert time done')   #for time conversion
 
     print('all done.')
@@ -2046,7 +2048,7 @@ def get_predstorm_data_realtime(resolution='hour'):
                         source='PREDSTORM')
     pred_data.h['DataSource'] = "PREDSTORM (L5-to-L1 prediction)"
     pred_data.h['SamplingRate'] = 1./24.
-    pred_data.h['CoordinateSystem'] = 'GSM'
+    pred_data.h['ReferenceFrame'] = 'GSM'
 
     return pred_data
 
@@ -2147,7 +2149,83 @@ def download_stereoa_data_beacon(filedir="data/sta_beacon", starttime=None, endt
     return
     
 
-def get_stereoa_data_beacon(filedir="data/sta_beacon", starttime=None, endtime=None, ndays=14):
+def get_stereoa_beacon_data(starttime, endtime, resolution='min', stride=1):
+    """Read STEREO-B data into SatData object.
+
+    Notes: 
+        - HGRTN != RTN: http://www.srl.caltech.edu/STEREO/docs/coordinate_systems.html"""
+
+    logger = logging.getLogger(__name__)
+    logger.info("Reading STEREO-A beacon data")
+
+    STA_ = heliosat.STA(data_source='beacon')
+
+    # Magnetometer data
+    magt, magdata = STA_.get_mag(starttime, endtime, use_threading=False,
+                                 ignore_missing_files=True, stride=stride)
+    magt = [datetime.fromtimestamp(t) for t in magt]
+    magdata[magdata < -1e20] = np.nan
+    br, bt, bn = magdata[:,0], magdata[:,1], magdata[:,2]
+    btot = np.sqrt(br**2. + bt**2. + bn**2.)
+
+    # Particle data
+    if starttime <= datetime(2009, 9, 13):
+        STA_._fc_cdf_keys = ["Epoch1", "Density", "Velocity_HGRTN", "Temperature_Inst"]
+        if endtime > datetime(2009, 9, 13):
+            fct_s, fcdata_s = STA_.get_fc(starttime, datetime(2009, 9, 13, 23, 59, 00), use_threading=False,
+                                     ignore_missing_files=True, stride=stride)
+            temp_total = np.sqrt(fcdata_s[:,-3]**2. + fcdata_s[:,-2]**2. + fcdata_s[:,-1]**2.)
+            fcdata_s = np.hstack((fcdata_s[:,:-3], temp_total))
+            STA_._fc_cdf_keys = ["Epoch1", "Density", "Velocity_RTN", "Temperature_Inst"]
+            fct_e, fcdata_e = STA_.get_fc(datetime(2009, 9, 14), endtime, use_threading=False,
+                                     ignore_missing_files=True, stride=stride)
+            fct = np.vstack((fct_s, fct_e))
+            fcdata = np.vstack((fcdata_s, fcdata_e))
+        else:
+            fct, fcdata = STA_.get_fc(starttime, endtime, use_threading=False,
+                                      ignore_missing_files=True, stride=stride)
+    else:
+        fct, fcdata = STA_.get_fc(starttime, endtime, use_threading=False,
+                                  ignore_missing_files=True, stride=stride)
+
+    fct = [datetime.fromtimestamp(t) for t in fct]
+    fcdata[fcdata < -1e29] = np.nan
+    density = fcdata[:,0]
+    vx, vtot = fcdata[:,1], fcdata[:,4]
+    temperature = fcdata[:,5]
+
+    stime = date2num(starttime) - date2num(starttime)%(1./24.)
+    # Roundabout way to get time_h ensures timings with full hours/mins:
+    if resolution == 'hour':
+        nhours = (endtime.replace(tzinfo=None) - num2date(stime).replace(tzinfo=None)).total_seconds()/60./60.
+        tarray = np.array(stime + np.arange(0, nhours)*(1./24.))
+    elif resolution == 'min':
+        nmins = (endtime.replace(tzinfo=None) - num2date(stime).replace(tzinfo=None)).total_seconds()/60.
+        tarray = np.array(stime + np.arange(0, nmins)*(1./24./60.))
+
+    # Interpolate variables to time:
+    br_int = np.interp(tarray, date2num(magt), br)
+    bt_int = np.interp(tarray, date2num(magt), bt)
+    bn_int = np.interp(tarray, date2num(magt), bn)
+    btot_int = np.interp(tarray, date2num(magt), btot)
+    density_int = np.interp(tarray, date2num(fct), density)
+    vx_int = np.interp(tarray, date2num(fct), vx)
+    vtot_int = np.interp(tarray, date2num(fct), vtot)
+    temp_int = np.interp(tarray, date2num(fct), temperature)
+
+    # Pack into object:
+    sta = SatData({'time': tarray,
+                   'btot': btot_int, 'br': br_int, 'bt': bt_int, 'bn': bn_int,
+                   'speed': vtot_int, 'speedx': vx_int, 'density': density_int, 'temp': temp_int},
+                   source='STEREO-A')
+    sta.h['DataSource'] = "STEREO-A Beacon"
+    sta.h['SamplingRate'] = tarray[1] - tarray[0]
+    sta.h['ReferenceFrame'] = STA_._mag_reference_frame
+
+    return sta
+
+
+def get_stereoa_data_beacon_old(filedir="data/sta_beacon", starttime=None, endtime=None, ndays=14):
     """
     Reads STEREO-A beacon data from CDF files. Files should be stored under filedir
     with the naming format STA_LB_PLA_20180502_V12.cdf. Use the function
@@ -2278,7 +2356,7 @@ def get_stereoa_data_beacon(filedir="data/sta_beacon", starttime=None, endtime=N
                            source='STEREO-A')
     stereo_data.h['DataSource'] = "STEREO-A (beacon)"
     stereo_data.h['SamplingRate'] = 1./24./60.
-    stereo_data.h['CoordinateSystem'] = 'RTN'
+    stereo_data.h['ReferenceFrame'] = 'RTN'
     stereo_data.h['Instruments'] = ['PLASTIC', 'IMPACT']
     stereo_data.h['FileVersion'] = {'PLASTIC': pla_version, 'IMPACT': mag_version}
     stereo_data = stereo_data.cut(starttime=starttime, endtime=endtime)
@@ -2312,9 +2390,9 @@ def get_position_data(filepath, times, rlonlat=False, l1_corr=False):
     logger.info("get_position_data: Loading position data from {}".format(filepath))
     refframe = os.path.split(filepath)[-1].split('_')[-2]
     posdata = pickle.load(open(filepath, 'rb'))
-    posx = np.interp(times, mdates.date2num(posdata.times), posdata.x)
-    posy = np.interp(times, mdates.date2num(posdata.times), posdata.y)
-    posz = np.interp(times, mdates.date2num(posdata.times), posdata.z)
+    posx = np.interp(times, date2num(posdata.times), posdata.x)
+    posy = np.interp(times, date2num(posdata.times), posdata.y)
+    posz = np.interp(times, date2num(posdata.times), posdata.z)
 
 
     if rlonlat:
@@ -2339,7 +2417,7 @@ def save_to_file(filepath, wind=None, dst=None, aurora=None, kp=None, ec=None):
 
     #get date in ascii
     for i in np.arange(np.size(wind['time'])):
-       time_dummy = mdates.num2date(wind['time'][i])
+       time_dummy = num2date(wind['time'][i])
        out[i,0] = time_dummy.year
        out[i,1] = time_dummy.month
        out[i,2] = time_dummy.day
@@ -2422,13 +2500,13 @@ def merge_Data(satdata1, satdata2, keys=None):
     MergedData = SatData(datadict, source=satdata1.source+'+'+satdata2.source)
     tf = "%Y-%m-%d %H:%M:%S"
     MergedData.h['DataSource'] = '{} ({} - {}) & {} ({} - {})'.format(satdata1.h['DataSource'],
-                                                datetime.strftime(mdates.num2date(satdata1['time'][0]), tf),
-                                                datetime.strftime(mdates.num2date(satdata1['time'][-1]), tf),
+                                                datetime.strftime(num2date(satdata1['time'][0]), tf),
+                                                datetime.strftime(num2date(satdata1['time'][-1]), tf),
                                                 satdata2.h['DataSource'],
-                                                datetime.strftime(mdates.num2date(new_time[0]), tf),
-                                                datetime.strftime(mdates.num2date(new_time[-1]), tf))
+                                                datetime.strftime(num2date(new_time[0]), tf),
+                                                datetime.strftime(num2date(new_time[-1]), tf))
     MergedData.h['SamplingRate'] = timestep
-    MergedData.h['CoordinateSystem'] = satdata1.h['CoordinateSystem']
+    MergedData.h['ReferenceFrame'] = satdata1.h['ReferenceFrame']
     MergedData.h['Instruments'] = satdata1.h['Instruments'] + satdata2.h['Instruments']
     MergedData.h['FileVersion'] = {**satdata1.h['FileVersion'], **satdata2.h['FileVersion']}
 
@@ -2463,7 +2541,7 @@ def time_to_num_cat(time_in):
     for i in time_in:
         #convert from bytes (output of scipy.readsav) to string
         time_str[j]=time_in[j][0:16].decode()+':00'
-        time_num[j]=mdates.date2num(datetime.strptime(time_str[j], "%Y-%m-%dT%H:%M:%S"))
+        time_num[j]=date2num(datetime.strptime(time_str[j], "%Y-%m-%dT%H:%M:%S"))
         j=j+1  
     return time_num
 

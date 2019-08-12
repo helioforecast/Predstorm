@@ -22,7 +22,7 @@ verify_int_start = '2018-09-09 12:00:00'
 verify_int_end =   '2018-09-12 23:00:00'
 
 # Dst method to be plotted (options = 'ml', 'temerin_li', 'temerin_li_2006', 'burton', 'obrien')
-dst_method = 'ml'
+dst_method = 'temerin_li_2006'
 
 # Offset for Dst in plot
 dst_offset = 0

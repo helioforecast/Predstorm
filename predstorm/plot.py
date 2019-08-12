@@ -35,7 +35,7 @@ from glob import iglob
 import json
 import urllib
 
-from .data import get_stereoa_data_beacon, download_stereoa_data_beacon
+from .data import get_stereoa_beacon_data, download_stereoa_data_beacon
 from .data import get_dscovr_data_all, get_past_dst
 from .data import get_time_lag_wrt_earth, getpositions, time_to_num_cat
 from .config import plotting as pltcfg

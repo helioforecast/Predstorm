@@ -187,6 +187,7 @@ def main():
     logger.info("Starting PREDSTORM_L5 script. Running in mode {}".format(run_mode.upper()))
 
     timestamp = datetime.utcnow()
+    startread = timestamp - timedelta(days=plot_future_days+7)
 
     #================================== (1) GET DATA ========================================
 
@@ -269,11 +270,11 @@ def main():
     #get real time STEREO-A data with minute/hourly time resolution as recarray
     logger.info("Getting STEREO-A data...")
     if run_mode == 'normal':
-        stam = ps.get_stereoa_data_beacon()
+        stam = ps.get_stereoa_beacon_data(starttime=startread, endtime=timestamp)
     elif run_mode == 'historic':
         lag_L1, lag_r = ps.get_time_lag_wrt_earth(timestamp=timestamp, satname='STEREO-A')
         est_timelag = lag_L1 + lag_r
-        stam = ps.get_stereoa_data_beacon(starttime=mdates.num2date(timenow)-timedelta(days=plot_future_days+est_timelag),
+        stam = ps.get_stereoa_beacon_data(starttime=mdates.num2date(timenow)-timedelta(days=plot_future_days+est_timelag),
                                            endtime=mdates.num2date(timenow)+timedelta(days=2))
     stam.interp_nans()
     stam.load_positions('data/positions/STEREOA-pred_20070101-20250101_HEEQ_6h.p')
@@ -394,6 +395,7 @@ def main():
     #convert STEREO-A RTN data to GSE as if STEREO-A was along the Sun-Earth line
     # TODO: these lines are suspect
     if old_pos_method == False:
+        sta['bx'], sta['by'], sta['bz'] = sta['br'], -sta['bt'], sta['bn']
         sta.convert_RTN_to_GSE().convert_GSE_to_GSM()
         stam.convert_RTN_to_GSE().convert_GSE_to_GSM()
     else:
