@@ -106,6 +106,7 @@ import sunpy.time
 import urllib
 
 # Local imports
+import heliosat
 import predstorm as ps
 from predstorm.config.constants import AU, dist_to_L1
 from predstorm.plot import plot_solarwind_and_dst_prediction
@@ -277,7 +278,7 @@ def main():
         stam = ps.get_stereoa_beacon_data(starttime=mdates.num2date(timenow)-timedelta(days=plot_future_days+est_timelag),
                                            endtime=mdates.num2date(timenow)+timedelta(days=2))
     stam.interp_nans()
-    stam.load_positions('data/positions/STEREOA-pred_20070101-20250101_HEEQ_6h.p')
+    stam.load_positions()
     stam.shift_time_to_L1()
     sta = stam.make_hourly_data()
 
@@ -313,43 +314,13 @@ def main():
 
     logger.info('loading spacecraft and planetary positions')
 
-    # NEW METHOD:
-    try:
-        [sta_r, sta_long_heeq, sta_lat_heeq] = sta.get_position(timestamp)
-        EarthPos = ps.get_position_data('data/positions/Earth_20000101-20250101_HEEQ_6h.p', 
-                                        [mdates.date2num(timestamp)], rlonlat=True, l1_corr=True)
-        [earth_r, elon, elat] = EarthPos[0]
-        sta_r = sta_r/AU
-        earth_r = earth_r/AU   # estimated correction to L1
-        sta_long_heeq, sta_lat_heeq = sta_long_heeq*180./np.pi, sta_lat_heeq*180./np.pi
-        old_pos_method = False
-        # This is equivalent to the following (but both give different Dst from original method):
-        # [sta_r, sta_long_heeq, sta_lat_heeq] = ps.spice.get_satellite_position('STEREO-A', timestamp, refframe='HEEQ', rlonlat=True)
-        # [earth_r, elon, elat] = ps.spice.get_satellite_position('EARTH', timestamp, refframe='HEEQ', rlonlat=True)
-        # sta_r = sta_r/AU
-        # earth_r = earth_r/AU * 0.99   # estimated correction to L1
-        # sta_long_heeq, sta_lat_heeq = sta_long_heeq*180./np.pi, sta_lat_heeq*180./np.pi
-        # old_pos_method = False
-    # OLD METHOD:
-    except:
-        logger.warning("SPICE methods for position determination failed. Using old method.")
-        pos = getpositions('data/positions_2007_2023_HEEQ_6hours.sav')
-        pos_time_num = time_to_num_cat(pos.time)
-        #take position of STEREO-A for time now from position file
-        pos_time_now_ind=np.where(timenow < pos_time_num)[0][0]
-        sta_r=pos.sta[0][pos_time_now_ind]
-        earth_r=pos.earth_l1[0][pos_time_now_ind]
-
-        # Get longitude and latitude
-        sta_long_heeq = pos.sta[1][pos_time_now_ind]*180./np.pi
-        sta_lat_heeq = pos.sta[2][pos_time_now_ind]*180./np.pi
-
-        #print a few important numbers for current prediction
-        stereostr = return_stereoa_details(pos, dism['time'][-1])
-        resultslog.write('\n')
-        resultslog.write(stereostr)
-        resultslog.write('\n')
-        old_pos_method = True
+    [sta_r, sta_long_heeq, sta_lat_heeq] = sta.get_position(timestamp)
+    Earth = heliosat.SpiceObject(None, "EARTH")
+    [earth_r, elon, elat] = Earth.trajectory(timestamp, reference_frame='HEEQ', units='AU', observer='SUN')
+    earth_r = earth_r - dist_to_L1/AU
+    EarthPos = ps.PositionData([earth_r, elon, elat], 'rlonlat')
+    EarthPos.h['Units'] = 'AU'
+    sta_long_heeq, sta_lat_heeq = sta_long_heeq*180./np.pi, sta_lat_heeq*180./np.pi
 
     # define time lag from STEREO-A to Earth
     timelag_sta_l1=abs(sta_long_heeq)/(360./sun_syn) #days
@@ -362,14 +333,7 @@ def main():
     # (1) make correction for heliocentric distance of STEREO-A to L1 position
     # take position of Earth and STEREO-A from positions file
     # for B and N, makes a difference of about -5 nT in Dst
-    if old_pos_method == False:
-        sta.shift_wind_to_L1(EarthPos)
-    else:
-        sta['btot']=sta['btot']*(earth_r/sta_r)**-2
-        sta['br']=sta['br']*(earth_r/sta_r)**-2
-        sta['bt']=sta['bt']*(earth_r/sta_r)**-2
-        sta['bn']=sta['bn']*(earth_r/sta_r)**-2
-        sta['density']=sta['density']*(earth_r/sta_r)**-2
+    sta.shift_wind_to_L1(EarthPos)
 
     # (2) correction for timing for the Parker spiral see
     # Simunac et al. 2009 Ann. Geophys. equation 1, see also Thomas et al. 2018 Space Weather
@@ -381,8 +345,8 @@ def main():
     # because the spiral leads to a later arrival of the solar wind at larger
     # heliocentric distances (this is reverse for STEREO-B!)
     #************** problem -> MEAN IS NOT FULLY CORRECT
-    diff_r_deg=-(360/(sun_syn*86400))*((sta_r-earth_r)*AU)/np.nanmean(sta['speed'])
-    time_lag_diff_r=round(diff_r_deg/(360/sun_syn),2)
+    diff_r_deg = -(360/(sun_syn*86400))*((sta_r-earth_r)*AU)/np.nanmean(sta['speed'])
+    time_lag_diff_r = round(diff_r_deg/(360/sun_syn),2)
     resultslog.write('\t2: time lag due to Parker spiral in hours: {}\n'.format(round(time_lag_diff_r*24,1)))
 
     ## ADD BOTH time shifts to the sta['time']
@@ -394,13 +358,10 @@ def main():
     #(3) conversion from RTN to HEEQ to GSE to GSM - but done as if STA was along the Sun-Earth line
     #convert STEREO-A RTN data to GSE as if STEREO-A was along the Sun-Earth line
     # TODO: these lines are suspect
-    if old_pos_method == False:
-        sta['bx'], sta['by'], sta['bz'] = sta['br'], -sta['bt'], sta['bn']
-        sta.convert_RTN_to_GSE().convert_GSE_to_GSM()
-        stam.convert_RTN_to_GSE().convert_GSE_to_GSM()
-    else:
-        sta.convert_RTN_to_GSE(pos_obj=pos.sta, pos_tnum=pos_time_num).convert_GSE_to_GSM()
-        stam.convert_RTN_to_GSE(pos_obj=pos.sta, pos_tnum=pos_time_num).convert_GSE_to_GSM()
+    sta['bx'], sta['by'], sta['bz'] = sta['br'], -sta['bt'], sta['bn']
+    stam['bx'], stam['by'], stam['bz'] = stam['br'], -stam['bt'], stam['bn']
+    # sta.convert_RTN_to_GSE().convert_GSE_to_GSM()
+    # stam.convert_RTN_to_GSE().convert_GSE_to_GSM()
 
     resultslog.write('\t3: coordinate conversion of magnetic field components RTN > HEEQ > GSE > GSM.\n')
 

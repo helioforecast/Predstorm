@@ -63,7 +63,7 @@ import urllib
 # External
 import cdflib
 import heliosat
-from heliosat.proc import transform_reference_frame
+from heliosat import transform_ref_frame
 import heliopy.spice as hspice
 import astropy.time
 try:
@@ -240,6 +240,18 @@ class SatData():
     # -----------------------------------------------------------------------------------
     # Position data handling and coordinate conversions
     # -----------------------------------------------------------------------------------
+
+    def convert_mag_to(self, refframe):
+        """Converts MAG from one refframe to another."""
+        
+        barray = np.stack((self['bx'], self['by'], self['bz']), axis=1)
+        tarray = [num2date(t).replace(tzinfo=None) for t in self['time']]
+        b_transformed = transform_ref_frame(tarray, barray, self.h['ReferenceFrame'], refframe)
+        self['bx'], self['by'], self['bz'] = b_transformed[:,0], b_transformed[:,1], b_transformed[:,2]
+        self.h['ReferenceFrame'] = refframe
+
+        return self
+
 
     def convert_GSE_to_GSM(self):
         """GSE to GSM conversion
@@ -455,18 +467,22 @@ class SatData():
         return self.pos[tind]
 
 
-    def load_positions(self, posfile, rlonlat=True, l1_corr=False, heliopy=True):
+    def load_positions(self, refframe='HEEQ', units='AU', observer='SUN', rlonlat=True, l1_corr=False):
         """Loads data on satellite position into data object. Data is loaded from a
         pickled heliopy.spice.Trajectory object.oaded into local heliopy file.
 
         Parameters
         ==========
-        posfile : str
-            Path to where file will be stored.
+        refframe : str (default=='HEEQ')
+            observer reference frame
+        observer : str (default='SUN')
+            observer body name
+        units : str (default='AU')
+            output units - m / km / AU
         rlonlat : bool (default=True)
             If True, returns coordinates in (r, lon, lat) format, not (x,y,z).
-        heliopy : bool (default=True)
-            If True, heliopy object is loaded.
+        l1_corr : bool (default=False)
+            Corrects Earth position to L1 position if True.
 
         Returns
         =======
@@ -474,8 +490,28 @@ class SatData():
         """
 
         logger.info("load_positions: Loading position data into {} data".format(self.source))
-        refframe = os.path.split(posfile)[-1].split('_')[-2]
-        Positions = get_position_data(posfile, self['time'], rlonlat=rlonlat, l1_corr=l1_corr)
+        t_traj = [num2date(i).replace(tzinfo=None) for i in self['time']]
+        traj = self.h['HeliosatObject'].trajectory(t_traj, reference_frame=refframe, units=units,
+                                                   observer=observer)
+        posx, posy, posz = traj[:,0], traj[:,1], traj[:,2]
+
+        if l1_corr:
+            if units == 'AU':
+                corr = dist_to_L1/AU
+            elif units == 'm':
+                corr = dist_to_L1/1e3
+            elif units == 'km':
+                corr = dist_to_L1
+            posx = posx - corr
+        if rlonlat:
+            r, theta, phi = cart2sphere(posx, posy, posz)
+            Positions = PositionData([r, phi, theta], 'rlonlat')
+        else:
+            Positions = PositionData([posx, posy, posz], 'xyz')
+
+        Positions.h['Units'] = units
+        Positions.h['ReferenceFrame'] = refframe
+        Positions.h['Observer'] = observer
         self.pos = Positions
 
         return self
@@ -643,6 +679,9 @@ class SatData():
         =======
         self
         """
+
+        if l1pos.h['Units'] == self.pos.h['Units']:
+            logger.error("shift_wind_to_L1: mismatched position units! {} / {}".format(l1pos.h['Units'], self.pos.h['Units']))
 
         corr_factor = (l1pos['r']/self.pos['r'])**-2
         shift_var_list = ['btot', 'br', 'bt', 'bn', 'bx', 'by', 'bz', 'density']
@@ -2149,7 +2188,7 @@ def download_stereoa_data_beacon(filedir="data/sta_beacon", starttime=None, endt
     return
     
 
-def get_stereoa_beacon_data(starttime, endtime, resolution='min', stride=1):
+def get_stereoa_beacon_data(starttime, endtime, resolution='min', skip_files=True):
     """Read STEREO-B data into SatData object.
 
     Notes: 
@@ -2158,11 +2197,10 @@ def get_stereoa_beacon_data(starttime, endtime, resolution='min', stride=1):
     logger = logging.getLogger(__name__)
     logger.info("Reading STEREO-A beacon data")
 
-    STA_ = heliosat.STA(data_source='beacon')
+    STA_ = heliosat.STA()
 
     # Magnetometer data
-    magt, magdata = STA_.get_mag(starttime, endtime, use_threading=False,
-                                 ignore_missing_files=True, stride=stride)
+    magt, magdata = STA_.get_data_raw(starttime, endtime, 'mag_beacon', skip_files=skip_files)
     magt = [datetime.fromtimestamp(t) for t in magt]
     magdata[magdata < -1e20] = np.nan
     br, bt, bn = magdata[:,0], magdata[:,1], magdata[:,2]
@@ -2172,27 +2210,23 @@ def get_stereoa_beacon_data(starttime, endtime, resolution='min', stride=1):
     if starttime <= datetime(2009, 9, 13):
         STA_._fc_cdf_keys = ["Epoch1", "Density", "Velocity_HGRTN", "Temperature_Inst"]
         if endtime > datetime(2009, 9, 13):
-            fct_s, fcdata_s = STA_.get_fc(starttime, datetime(2009, 9, 13, 23, 59, 00), use_threading=False,
-                                     ignore_missing_files=True, stride=stride)
-            temp_total = np.sqrt(fcdata_s[:,-3]**2. + fcdata_s[:,-2]**2. + fcdata_s[:,-1]**2.)
-            fcdata_s = np.hstack((fcdata_s[:,:-3], temp_total))
-            STA_._fc_cdf_keys = ["Epoch1", "Density", "Velocity_RTN", "Temperature_Inst"]
-            fct_e, fcdata_e = STA_.get_fc(datetime(2009, 9, 14), endtime, use_threading=False,
-                                     ignore_missing_files=True, stride=stride)
-            fct = np.vstack((fct_s, fct_e))
-            fcdata = np.vstack((fcdata_s, fcdata_e))
+            pt_s, pdata_s = STA_.get_data_raw(starttime, datetime(2009, 9, 13, 23, 59, 00), 'proton_beacon',
+                                              extra_data=["Velocity_HGRTN:4"], skip_files=skip_files)
+            pt_e, pdata_e = STA_.get_data_raw(datetime(2009, 9, 14), endtime, 'proton_beacon',
+                                              extra_data=["Velocity_RTN:4"], skip_files=skip_files)
+            pt = np.vstack((pt_s, pt_e))
+            pdata = np.vstack((pdata_s, pdata_e))
         else:
-            fct, fcdata = STA_.get_fc(starttime, endtime, use_threading=False,
-                                      ignore_missing_files=True, stride=stride)
+            pt_s, pdata_s = STA_.get_data_raw(starttime, endtime, 'proton_beacon',
+                                              extra_data=["Velocity_HGRTN:4"], skip_files=skip_files)
     else:
-        fct, fcdata = STA_.get_fc(starttime, endtime, use_threading=False,
-                                  ignore_missing_files=True, stride=stride)
+        pt, pdata = STA_.get_data_raw(starttime, endtime, 'proton_beacon', extra_data=["Velocity_RTN:4"], skip_files=skip_files)
 
-    fct = [datetime.fromtimestamp(t) for t in fct]
-    fcdata[fcdata < -1e29] = np.nan
-    density = fcdata[:,0]
-    vx, vtot = fcdata[:,1], fcdata[:,4]
-    temperature = fcdata[:,5]
+    pt = [datetime.fromtimestamp(t) for t in pt]
+    pdata[pdata < -1e29] = np.nan
+    density = pdata[:,0]
+    temperature = pdata[:,1]
+    vx, vtot = pdata[:,2], pdata[:,5]
 
     stime = date2num(starttime) - date2num(starttime)%(1./24.)
     # Roundabout way to get time_h ensures timings with full hours/mins:
@@ -2208,10 +2242,10 @@ def get_stereoa_beacon_data(starttime, endtime, resolution='min', stride=1):
     bt_int = np.interp(tarray, date2num(magt), bt)
     bn_int = np.interp(tarray, date2num(magt), bn)
     btot_int = np.interp(tarray, date2num(magt), btot)
-    density_int = np.interp(tarray, date2num(fct), density)
-    vx_int = np.interp(tarray, date2num(fct), vx)
-    vtot_int = np.interp(tarray, date2num(fct), vtot)
-    temp_int = np.interp(tarray, date2num(fct), temperature)
+    density_int = np.interp(tarray, date2num(pt), density)
+    vx_int = np.interp(tarray, date2num(pt), vx)
+    vtot_int = np.interp(tarray, date2num(pt), vtot)
+    temp_int = np.interp(tarray, date2num(pt), temperature)
 
     # Pack into object:
     sta = SatData({'time': tarray,
@@ -2220,7 +2254,8 @@ def get_stereoa_beacon_data(starttime, endtime, resolution='min', stride=1):
                    source='STEREO-A')
     sta.h['DataSource'] = "STEREO-A Beacon"
     sta.h['SamplingRate'] = tarray[1] - tarray[0]
-    sta.h['ReferenceFrame'] = STA_._mag_reference_frame
+    sta.h['ReferenceFrame'] = STA_.get_ref_frame('mag_beacon')
+    sta.h['HeliosatObject'] = STA_
 
     return sta
 
