@@ -6,7 +6,7 @@
 sun_syn = 26.24
 
 # Number of days on right side of plot (future data from STEREO-A)
-plot_future_days = 6.5
+plot_future_days = 6.0
 
 # Number of days on left side of plot (past data)
 plot_past_days = 3.5

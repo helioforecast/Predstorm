@@ -96,7 +96,7 @@ import json
 import logging
 import logging.config
 import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
+from matplotlib.dates import num2date, date2num
 import numpy as np
 import pdb
 import pickle
@@ -150,7 +150,7 @@ def return_stereoa_details(positions, timenow):
     # Define time lag from STEREO-A to Earth
     timelag_sta_l1 = abs(sta_long_heeq)/(360./sun_syn)
     arrival_time_l1_sta = timenow + timelag_sta_l1
-    arrival_time_l1_sta_str = str(mdates.num2date(arrival_time_l1_sta))
+    arrival_time_l1_sta_str = str(num2date(arrival_time_l1_sta))
 
     stereostr = ''
     stereostr += 'STEREO-A HEEQ longitude wrt Earth is {:.1f} degrees.\n'.format(sta_long_heeq)
@@ -177,7 +177,7 @@ def main():
     print('------------------------------------------------------------------------')
     print('')
     print('PREDSTORM L5 v1 method for geomagnetic storm and aurora forecasting. ')
-    print('Helio Group, IWF Graz, last update July 2019.')
+    print('IWF-Helio Group, Space Research Institute Graz, last update August 2019.')
     print('')
     print('Time shifting magnetic field and plasma data from STEREO-A, ')
     print('or from an L5 mission or interplanetary CubeSats, to predict')
@@ -193,42 +193,22 @@ def main():
     #================================== (1) GET DATA ========================================
 
     logger.info("\n-------------------------\nDATA READS\n-------------------------")
-    #------------------------ (1a) real time SDO image --------------------------------------
-    #not PFSS
-    sdo_latest='https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_0193.jpg'
-    #PFSS
-    #sdo_latest='https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_0193pfss.jpg'
-    try: urllib.request.urlretrieve(sdo_latest,'latest_1024_0193.jpg')
-    except urllib.error.URLError as e:
-        logger.error('Failed downloading ', sdo.latest,' ',e.reason)
-    #convert to png
-    #check if ffmpeg is available locally in the folder or systemwide
-    if os.path.isfile('ffmpeg'):
-        os.system('./ffmpeg -i latest_1024_0193.jpg latest_1024_0193.png -loglevel quiet -y')
-        ffmpeg_avail=True
-        logger.info('downloaded SDO latest_1024_0193.jpg converted to png')
-        os.system('rm latest_1024_0193.jpg')
-    else:
-        os.system('ffmpeg -i latest_1024_0193.jpg latest_1024_0193.png -loglevel quiet -y')
-        os.system('rm latest_1024_0193.jpg')
+    #get_sdo_realtime_image()
 
-    #TO DO: at some point make own PFSS model with heliopy
+    #------------------------ (1a) Get real-time DSCOVR data --------------------------------
 
-    #------------------------ (1b) Get real-time DSCOVR data --------------------------------
-
-    # Get real time DSCOVR data with minute/hourly time resolution as recarray
-    tstr_format = "%Y-%m-%d-%H_%M" # "%Y-%m-%d_%H%M" would be better
-    logger.info("Getting DSCOVR data...")
+    tstr_format = "%Y-%m-%d-%H_%M" # "%Y-%m-%dT%H%M" would be better
+    logger.info("(1) Getting DSCOVR data...")
     if run_mode == 'normal':
-        dism = ps.get_dscovr_data_real()
+        dism = ps.get_dscovr_realtime_data()
         # Get time of the last entry in the DSCOVR data
         timenow = dism['time'][-1]
         # Get UTC time now
-        timeutc = mdates.date2num(timestamp)
+        timeutc = date2num(timestamp)
     elif run_mode == 'historic':
         timestamp = historic_date
         if (datetime.utcnow() - historic_date).days < (7.-plot_past_days):
-            logger.info("Using historic mode with current DSCOVR data")
+            logger.info("Using historic mode with current DSCOVR data and {} timestamp".format(timestamp))
             dism = ps.get_dscovr_data_real()
             dism = dism.cut(endtime=timestamp)
             dis = dism.make_hourly_data()
@@ -238,7 +218,7 @@ def main():
                                        M_filepath="data/dscovrarchive/*",
                                        starttime=timestamp-timedelta(days=plot_past_days+1),
                                        endtime=timestamp)
-        timeutc = mdates.date2num(timestamp)
+        timeutc = date2num(timestamp)
         timenow = timeutc
     elif run_mode == 'verification':
         print("Verification mode coming soon.")
@@ -246,7 +226,7 @@ def main():
     dis = dism.make_hourly_data()
 
     timeutcstr = datetime.strftime(timestamp, tstr_format)
-    timenowstr = datetime.strftime(mdates.num2date(timenow), tstr_format)
+    timenowstr = datetime.strftime(num2date(timenow), tstr_format)
 
     # Open file for logging results:        # TODO use logging module
     logfile=outputdirectory+'/predstorm_v1_realtime_stereo_a_results_'+timeutcstr[0:10]+'-' \
@@ -254,46 +234,35 @@ def main():
     logger.info('Logfile for results is: '+logfile)
 
     logger.info('Current time UTC')
-    logger.info('\t'+timeutcstr)
+    logger.info('\t{}'.format(timestamp))
     logger.info('UTC Time of last datapoint in real time DSCOVR data')
-    logger.info('\t'+timenowstr)
-    logger.info('Time lag in minutes: {}'.format(int(round((timeutc-timenow)*24*60))))
+    logger.info('\t{}'.format(num2date(dism['time'][-1])))
+    logger.info('Time lag in minutes: {}'.format(int(round((timeutc-dism['time'][-1])*24*60))))
 
     resultslog = open(logfile,'wt')
-    resultslog.write('')
-    resultslog.write('PREDSTORM L5 v1 results \n')
-    resultslog.write('For UT time: \n')
-    resultslog.write(timenowstr)
-    resultslog.write('\n')
 
-    #------------------------ (1c) Get real-time STEREO-A beacon data -----------------------
+    #------------------------ (1b) Get real-time STEREO-A beacon data -----------------------
 
-    #get real time STEREO-A data with minute/hourly time resolution as recarray
-    logger.info("Getting STEREO-A data...")
+    logger.info("(2) Getting STEREO-A data...")
     if run_mode == 'normal':
-        stam = ps.get_stereoa_beacon_data(starttime=startread, endtime=timestamp)
+        stam = ps.get_stereo_beacon_data(starttime=startread, endtime=timestamp)
     elif run_mode == 'historic':
         lag_L1, lag_r = ps.get_time_lag_wrt_earth(timestamp=timestamp, satname='STEREO-A')
         est_timelag = lag_L1 + lag_r
-        stam = ps.get_stereoa_beacon_data(starttime=mdates.num2date(timenow)-timedelta(days=plot_future_days+est_timelag),
-                                           endtime=mdates.num2date(timenow)+timedelta(days=2))
+        stam = ps.get_stereo_beacon_data(starttime=num2date(timenow)-timedelta(days=plot_future_days+est_timelag),
+                                           endtime=num2date(timenow)+timedelta(days=2))
+
+    logger.info('UTC time of last datapoint in STEREO-A beacon data:')
+    logger.info('\t{}'.format(num2date(stam['time'][-1])))
+    logger.info('Time lag in minutes: {}'.format(int(round((timeutc-stam['time'][-1])*24*60))))
+
+    # Prepare data:
     stam.interp_nans()
     stam.load_positions()
-    stam.shift_time_to_L1()
-    sta = stam.make_hourly_data()
 
-    #use hourly interpolated data - the 'sta' recarray for further calculations,
-    #'stam' for plotting
+    #------------------------- (1c) Load NOAA Dst for comparison ----------------------------
 
-    laststa=stam['time'][-1]
-    laststa_time_str=str(mdates.num2date(laststa))[0:16]
-    logger.info('UTC Time of last datapoint in STEREO-A beacon data')
-    logger.info('\t'+laststa_time_str)
-    logger.info('Time lag in hours: {}'.format(int(round((timeutc-laststa)*24))))
-
-    #------------------------- (1d) Load NOAA Dst for comparison ----------------------------
-
-    logger.info("Getting Kyoto Dst data...")
+    logger.info("(3) Getting Kyoto Dst data...")
     if run_mode == 'normal':
         dst = ps.get_noaa_dst()
     elif run_mode == 'historic':
@@ -301,63 +270,30 @@ def main():
             dst = ps.get_noaa_dst()
         else:
             dst = ps.get_past_dst(filepath="data/dstarchive/WWW_dstae00016185.dat",
-                                  starttime=mdates.num2date(timenow)-timedelta(days=plot_past_days+1),
-                                  endtime=mdates.num2date(timenow))
+                                  starttime=num2date(timenow)-timedelta(days=plot_past_days+1),
+                                  endtime=num2date(timenow))
             if len(dst) == 0.:
                 raise Exception("Kyoto Dst data for historic mode is missing! Go to http://wdc.kugi.kyoto-u.ac.jp/dstae/index.html")
         dst = dst.cut(endtime=timestamp)
 
     #========================== (2) PREDICTION CALCULATIONS ==================================
 
-    #------------------------ (2a)  Time lag for solar rotation ------------------------------
-    logger.info("\n-------------------------\nPOSITION CORRECTIONS\n-------------------------")
+    logger.info("\n-------------------------\nL5-to-L1 CORRECTIONS\n-------------------------")
 
-    logger.info('loading spacecraft and planetary positions')
-
-    [sta_r, sta_long_heeq, sta_lat_heeq] = sta.get_position(timestamp)
-    Earth = heliosat.SpiceObject(None, "EARTH")
-    [earth_r, elon, elat] = Earth.trajectory(timestamp, reference_frame='HEEQ', units='AU', observer='SUN')
-    earth_r = earth_r - dist_to_L1/AU
-    EarthPos = ps.PositionData([earth_r, elon, elat], 'rlonlat')
-    EarthPos.h['Units'] = 'AU'
-    sta_long_heeq, sta_lat_heeq = sta_long_heeq*180./np.pi, sta_lat_heeq*180./np.pi
-
-    # define time lag from STEREO-A to Earth
-    timelag_sta_l1=abs(sta_long_heeq)/(360./sun_syn) #days
-    arrival_time_l1_sta=dis['time'][-1]+timelag_sta_l1
-    arrival_time_l1_sta_str=str(mdates.num2date(arrival_time_l1_sta))
-
-    #------------------------ (2b) Corrections to time-shifted STEREO-A data ----------------
+    #------------------------ (2a) Corrections to time-shifted STEREO-A data ----------------
 
     logger.info("Doing corrections to STEREO-A data...")
-    # (1) make correction for heliocentric distance of STEREO-A to L1 position
-    # take position of Earth and STEREO-A from positions file
-    # for B and N, makes a difference of about -5 nT in Dst
-    sta.shift_wind_to_L1(EarthPos)
 
-    # (2) correction for timing for the Parker spiral see
-    # Simunac et al. 2009 Ann. Geophys. equation 1, see also Thomas et al. 2018 Space Weather
-    # difference in heliocentric distance STEREO-A to Earth,
-    # actually different for every point so take average of solar wind speed
-    # Omega is 360 deg/sun_syn in days, convert to seconds; sta_r in AU to m to km;
-    # convert to degrees
-    # minus sign: from STEREO-A to Earth the diff_r_deg needs to be positive
-    # because the spiral leads to a later arrival of the solar wind at larger
-    # heliocentric distances (this is reverse for STEREO-B!)
-    #************** problem -> MEAN IS NOT FULLY CORRECT
-    diff_r_deg = -(360/(sun_syn*86400))*((sta_r-earth_r)*AU)/np.nanmean(sta['speed'])
-    time_lag_diff_r = round(diff_r_deg/(360/sun_syn),2)
-    resultslog.write('\t2: time lag due to Parker spiral in hours: {}\n'.format(round(time_lag_diff_r*24,1)))
+    logger.info("(1) Shift time at STEREO-A according to solar wind rotation")
+    stam.shift_time_to_L1()
+    sta = stam.make_hourly_data()
+    logger.info("STA-to-L1 adjusted time of last datapoint in STEREO-A:")
+    logger.info("\t{}".format(num2date(stam['time'][-1])))
 
-    ## ADD BOTH time shifts to the sta['time']
-    #for hourly data
-    # sta['time']=sta['time']+timelag_sta_l1+time_lag_diff_r
-    # #for minute data
-    # stam['time']=stam['time']+timelag_sta_l1+time_lag_diff_r
+    logger.info("(2) Make correction for difference in heliocentric distance")
+    sta.shift_wind_to_L1()
 
-    #(3) conversion from RTN to HEEQ to GSE to GSM - but done as if STA was along the Sun-Earth line
-    #convert STEREO-A RTN data to GSE as if STEREO-A was along the Sun-Earth line
-    # TODO: these lines are suspect
+    logger.info("(3) Conversion from RTN to GSM as if STEREO was on Sun-Earth line")
     sta['bx'], sta['by'], sta['bz'] = sta['br'], -sta['bt'], sta['bn']
     stam['bx'], stam['by'], stam['bz'] = stam['br'], -stam['bt'], stam['bn']
     # sta.convert_RTN_to_GSE().convert_GSE_to_GSM()
@@ -365,17 +301,15 @@ def main():
 
     resultslog.write('\t3: coordinate conversion of magnetic field components RTN > HEEQ > GSE > GSM.\n')
 
-    #------------------- (2c) COMBINE DSCOVR and time-shifted STEREO-A data -----------------
+    #------------------- (2b) COMBINE DSCOVR and time-shifted STEREO-A data -----------------
 
     dis_sta = ps.merge_Data(dis, sta)
     dism_stam = ps.merge_Data(dism, stam)
 
-    #---------------------- (2d) calculate Dst for combined data ----------------------------
+    #---------------------- (2c) calculate Dst for combined data ----------------------------
 
     logger.info("\n-------------------------\nINDEX PREDICTIONS\n-------------------------")
-    logger.info('Making Dst prediction for L1 calculated from time-shifted STEREO-A beacon data.')
-    #This function works as result=make_dst_from_wind(btot_in,bx_in, by_in,bz_in,v_in,vx_in,density_in,time_in):
-    # ******* PROBLEM: USES vr twice (should be V and Vr in Temerin/Li 2002), take V from STEREO-A data too
+    logger.info('Making index predictions for L1 calculated from time-shifted STEREO-A beacon data.')
 
     # Predict Kp
     kp_newell = dis_sta.make_kp_prediction()
@@ -385,11 +319,11 @@ def main():
     newell_coupling = dis_sta.get_newell_coupling()
 
     # Predict Dst from L1 and STEREO-A:
-    if dst_method == 'temerin_li':      # Can compare methods later to see which is most accurate
+    if dst_method == 'temerin_li':
         dst_pred = dis_sta.make_dst_prediction()
         dst_label = 'Dst Temerin & Li 2002'
         dst_pred['dst'] = dst_pred['dst'] + dst_offset
-    elif dst_method == 'temerin_li_2006':      # Can compare methods later to see which is most accurate
+    elif dst_method == 'temerin_li_2006':
         dst_pred = dis_sta.make_dst_prediction(method='temerin_li_2006')
         dst_label = 'Dst Temerin & Li 2002'
         dst_pred['dst'] = dst_pred['dst'] + dst_offset
@@ -410,6 +344,7 @@ def main():
 
     #========================== (3) PLOT RESULTS ============================================
 
+    logger.info("\n-------------------------\nPLOTTING\n-------------------------")
     # ********************************************************************
     logger.info("Creating output plot...")
     plot_solarwind_and_dst_prediction([dism, dis], [stam, sta], 
@@ -417,7 +352,7 @@ def main():
                                       past_days=plot_past_days,
                                       future_days=plot_future_days,
                                       dst_label=dst_label,
-                                      timestamp=mdates.num2date(timeutc))
+                                      timestamp=timestamp)
     # ********************************************************************
 
 
@@ -426,29 +361,17 @@ def main():
     #-------------- (4a) Write prediction variables (plot) to pickle and txt ASCII file -----
 
     logger.info("\n-------------------------\nWRITING RESULTS\n-------------------------")
-    filename_save=outputdirectory+'/savefiles/predstorm_v1_realtime_stereo_a_save_'+ \
-                  timeutcstr[0:10]+'-'+timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.p'
-
-    #make recarrays
-    combined=np.rec.array([dis_sta['time'],dis_sta['btot'],dis_sta['bx'],dis_sta['by'],dis_sta['bz'],dis_sta['density'],dis_sta['speed'],
-        dst_pred['dst'], kp_newell['kp'], aurora_power['aurora'], newell_coupling['ec'],], \
-    dtype=[('time','f8'),('btot','f8'),('bx','f8'),('by','f8'),('bz','f8'),('den','f8'),\
-           ('vr','f8'),('dst_pred','f8'),('kp_newell','f8'),('aurora_power','f8'),('newell_coupling','f8')])
-
-    pickle.dump(combined, open(filename_save, 'wb') )
-
-    logger.info('PICKLE: Variables saved in: \n'+filename_save)
-
 
     # Standard data:
     filename_save=outputdirectory+'/savefiles/predstorm_v1_realtime_stereo_a_save_'+ \
                   timenowstr[0:10]+'-'+timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.txt'
     ps.save_to_file(filename_save, wind=dis_sta, dst=dst_pred, kp=kp_newell, aurora=aurora_power, ec=newell_coupling)
     logger.info('Variables saved in TXT form: '+filename_save)
+
     # Realtime 1-hour data:
     ps.save_to_file('predstorm_real.txt', wind=dis_sta, dst=dst_pred, kp=kp_newell, aurora=aurora_power, ec=newell_coupling)
     # Realtime 1-min data:
-    ps.save_to_file('predstorm_real_1,.txt', wind=dism_stam, 
+    ps.save_to_file('predstorm_real_1m.txt', wind=dism_stam, 
                     dst=dst_pred.interp_to_time(dism_stam['time']),
                     kp=kp_newell.interp_to_time(dism_stam['time']), 
                     aurora=aurora_power.interp_to_time(dism_stam['time']), 
@@ -484,9 +407,9 @@ def main():
       print()
       print('How well was the timing?')
 
-      print('Time of Dst minimum observed:', str(mdates.num2date(rdst_time[verify_ind_obs][np.argmin(rdst[verify_ind_obs])]))[0:16] )
-      print('Time of Dst minimum Burton:', str(mdates.num2date(lcom_time[verify_ind_for][np.argmin(ldst_burton[verify_ind_for])]+1/3600))[0:16] )
-      print('Time of Dst minimum OBrien:', str(mdates.num2date(lcom_time[verify_ind_for][np.argmin(ldst_obrien[verify_ind_for])]+1/3600))[0:16] )
+      print('Time of Dst minimum observed:', str(num2date(rdst_time[verify_ind_obs][np.argmin(rdst[verify_ind_obs])]))[0:16] )
+      print('Time of Dst minimum Burton:', str(num2date(lcom_time[verify_ind_for][np.argmin(ldst_burton[verify_ind_for])]+1/3600))[0:16] )
+      print('Time of Dst minimum OBrien:', str(num2date(lcom_time[verify_ind_for][np.argmin(ldst_obrien[verify_ind_for])]+1/3600))[0:16] )
 
       print('Time difference of Dst minimum Burton:', int( (lcom_time[verify_ind_for][np.argmin(ldst_burton[verify_ind_for])]-rdst_time[verify_ind_obs][np.argmin(rdst[verify_ind_obs])])*24), ' hours' )
       print('Time difference of Dst minimum OBrien:', int( (lcom_time[verify_ind_for][np.argmin(ldst_obrien[verify_ind_for])]-rdst_time[verify_ind_obs][np.argmin(rdst[verify_ind_obs])])*24), ' hours' )
@@ -538,7 +461,7 @@ def main():
     resultslog.write('\n')
     resultslog.write('Minimum of Dst (past times):\n')
     resultslog.write(str(int(round(float(np.nanmin(dst_pred['dst'][past_times]))))) + ' nT \n')
-    resultslog.write('at time: '+str(mdates.num2date(mindst_time+1/(24*60)))[0:16])
+    resultslog.write('at time: '+str(num2date(mindst_time+1/(24*60)))[0:16])
     resultslog.write('\n')
 
     mindst_time=dis_sta['time'][future_times[0][0]+np.nanargmin(dst_pred['dst'][future_times])]
@@ -547,7 +470,7 @@ def main():
     resultslog.write('\n')
     resultslog.write('Predicted minimum of Dst (future times):\n')
     resultslog.write(str(int(round(float(np.nanmin(dst_pred['dst'][future_times]))))) + ' nT \n')
-    resultslog.write('at time: '+str(mdates.num2date(mindst_time+1/(24*60)))[0:16])
+    resultslog.write('at time: '+str(num2date(mindst_time+1/(24*60)))[0:16])
     resultslog.write('\n')
 
     resultslog.write('\n')
@@ -556,7 +479,7 @@ def main():
     #when there are storm times above this level, indicate:
     if len(storm_times_ind) >0:
      for i in np.arange(0,len(storm_times_ind),1):
-      resultslog.write(str(mdates.num2date(dis_sta['time'][future_times][storm_times_ind][i]+1/(24*60)))[0:16]+'\n')
+      resultslog.write(str(num2date(dis_sta['time'][future_times][storm_times_ind][i]+1/(24*60)))[0:16]+'\n')
     else:
       resultslog.write('None')
     resultslog.write('\n')
@@ -567,7 +490,7 @@ def main():
     #when there are storm times above this level, indicate:
     if len(storm_times_ind) >0:
       for i in np.arange(0,len(storm_times_ind),1):
-       resultslog.write(str(mdates.num2date(dis_sta['time'][future_times][storm_times_ind][i]+1/(24*60)))[0:16]+'\n')
+       resultslog.write(str(num2date(dis_sta['time'][future_times][storm_times_ind][i]+1/(24*60)))[0:16]+'\n')
     else:
       resultslog.write('None')
     resultslog.write('\n')
@@ -578,7 +501,7 @@ def main():
     #when there are storm times above this level, indicate:
     if len(storm_times_ind) >0:
       for i in np.arange(0,len(storm_times_ind),1):
-       resultslog.write(str(mdates.num2date(dis_sta['time'][future_times][storm_times_ind][i]+1/(24*60)))[0:16]+'\n')
+       resultslog.write(str(num2date(dis_sta['time'][future_times][storm_times_ind][i]+1/(24*60)))[0:16]+'\n')
     else:
       resultslog.write('None')
 
@@ -593,13 +516,13 @@ def main():
     maxvr_time=dis_sta['time'][past_times[0][0]+np.nanargmax(dis_sta['speed'][past_times])]
     resultslog.write('Maximum speed (past times):\n')
     resultslog.write(str(int(round(float(np.nanmax(dis_sta['speed'][past_times])))))+ ' km/s at '+ \
-          str(mdates.num2date(maxvr_time+1/(24*60)))[0:16])
+          str(num2date(maxvr_time+1/(24*60)))[0:16])
     resultslog.write('\n \n')
 
     maxvr_time=dis_sta['time'][future_times[0][0]+np.nanargmax(dis_sta['speed'][future_times])]
     resultslog.write('Maximum speed (future times):\n')
     resultslog.write(str(int(round(float(np.nanmax(dis_sta['speed'][future_times])))))+ ' km/s at '+ \
-          str(mdates.num2date(maxvr_time+1/(24*60)))[0:16])
+          str(num2date(maxvr_time+1/(24*60)))[0:16])
     resultslog.write('\n \n')
 
 
@@ -607,13 +530,13 @@ def main():
     maxb_time=dis_sta['time'][past_times[0][0]+np.nanargmax(dis_sta['btot'][past_times])]
     resultslog.write('Maximum Btot (past times):\n')
     resultslog.write(str(round(float(np.nanmax(dis_sta['btot'][past_times])),1))+ ' nT at '+ \
-          str(mdates.num2date(maxb_time+1/(24*60)))[0:16])
+          str(num2date(maxb_time+1/(24*60)))[0:16])
     resultslog.write('\n \n')
 
     maxb_time=dis_sta['time'][future_times[0][0]+np.nanargmax(dis_sta['btot'][future_times])]
     resultslog.write('Maximum Btot (future times):\n')
     resultslog.write(str(round(float(np.nanmax(dis_sta['btot'][future_times])),1))+ ' nT at '+ \
-          str(mdates.num2date(maxb_time+1/(24*60)))[0:16])
+          str(num2date(maxb_time+1/(24*60)))[0:16])
     resultslog.write('\n \n')
 
 
@@ -621,13 +544,13 @@ def main():
     minbz_time=dis_sta['time'][past_times[0][0]+np.nanargmin(dis_sta['bz'][past_times])]
     resultslog.write('Minimum Bz (past times):\n')
     resultslog.write(str(round(float(np.nanmin(dis_sta['bz'][past_times])),1))+ ' nT at '+ \
-          str(mdates.num2date(minbz_time+1/(24*60)))[0:16])
+          str(num2date(minbz_time+1/(24*60)))[0:16])
     resultslog.write('\n \n')
 
     minbz_time=dis_sta['time'][future_times[0][0]+np.nanargmin(dis_sta['bz'][future_times])]
     resultslog.write('Minimum Bz (future times):\n')
     resultslog.write(str(round(float(np.nanmin(dis_sta['bz'][future_times])),1))+ ' nT at '+ \
-          str(mdates.num2date(minbz_time+1/(24*60)))[0:16])
+          str(num2date(minbz_time+1/(24*60)))[0:16])
     resultslog.write('\n \n')
 
     resultslog.close()

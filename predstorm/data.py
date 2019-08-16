@@ -630,8 +630,30 @@ class SatData():
         return newData
 
 
-    def shift_time_to_L1(self, sun_syn=26.24, method='old'):
-        """Shifts the time variable to roughly correspond to solar wind at L1."""
+    def shift_time_to_L1(self, sun_syn=26.24, method='new'):
+        """Shifts the time variable to roughly correspond to solar wind at L1 using a
+        correction for timing for the Parker spiral.
+        See Simunac et al. 2009 Ann. Geophys. equation 1 and Thomas et al. 2018 Space Weather,
+        difference in heliocentric distance STEREO-A to Earth. The value is ctually different 
+        for every point but can take average of solar wind speed (method='old').
+        Omega is 360 deg/sun_syn in days, convert to seconds; sta_r in AU to m to km;
+        convert to degrees
+        minus sign: from STEREO-A to Earth the diff_r_deg needs to be positive
+        because the spiral leads to a later arrival of the solar wind at larger
+        heliocentric distances (this is reverse for STEREO-B!)
+
+        Parameters
+        ==========
+        sun_syn : float
+            Sun synodic rotation in days.
+        method : str (default='new')
+            Method to be used. 'old' means average of time diff is added, 'new' means full
+            array of time values is added to original time array.
+
+        Returns
+        =======
+        self
+        """
 
         if method == 'old':
             lag_l1, lag_r = get_time_lag_wrt_earth(satname=self.source,
@@ -640,13 +662,12 @@ class SatData():
             logger.info("shift_time_to_L1: Shifting time by {:.2f} hours".format((lag_l1 + lag_r)*24.))
             self.data[0] = self.data[0] + lag_l1 + lag_r
 
-        #initialize array with correct size
-        if method == 'new':
+        elif method == 'new':
             if self.pos == None:
-                raise Exception("Load position data (SatData.load_position_data()) before calling shift_time_to_L1()!")
-            EarthPos = get_position_data('data/positions/Earth_20000101-20250101_HEEQ_6h.p', 
-                                         self['time'], rlonlat=True)
-            L1_r = EarthPos['r'] - dist_to_L1
+                raise Exception("Load position data (SatData.load_positions()) before calling shift_time_to_L1()!")
+            dttime = [num2date(t).replace(tzinfo=None) for t in self['time']]
+            L1Pos = get_l1_position(dttime, units=self.pos.h['Units'], refframe=self.pos.h['ReferenceFrame'])
+            L1_r = L1Pos['r']
             timelag_diff_r = np.zeros(len(L1_r))
 
             # define time lag from satellite to Earth
@@ -659,12 +680,13 @@ class SatData():
 
             ## ADD BOTH time shifts to the stbh_t
             self.data[0] = self.data[0] + timelag_L1 + timelag_diff_r
-        logger.info("shift_time_to_L1: Shifted time to L1 according to solar rotation")
+            logger.info("shift_time_to_L1: Shifting time by {:.1f}-{:.1f} hours".format(
+                (timelag_L1+timelag_diff_r)[0]*24., (timelag_L1+timelag_diff_r)[-1]*24.))
 
         return self
 
 
-    def shift_wind_to_L1(self, l1pos):
+    def shift_wind_to_L1(self):
         """Corrects for differences in B and density values due to solar wind
         expansion at different radii.
         
@@ -672,18 +694,17 @@ class SatData():
 
         Parameters
         ==========
-        l1pos : predstorm.PositionData
-            Contains L1 position data with same time stamps as self.
+        None
 
         Returns
         =======
         self
         """
 
-        if l1pos.h['Units'] == self.pos.h['Units']:
-            logger.error("shift_wind_to_L1: mismatched position units! {} / {}".format(l1pos.h['Units'], self.pos.h['Units']))
+        dttime = [num2date(t).replace(tzinfo=None) for t in self['time']]
+        L1Pos = get_l1_position(dttime, units=self.pos.h['Units'], refframe=self.pos.h['ReferenceFrame'])
 
-        corr_factor = (l1pos['r']/self.pos['r'])**-2
+        corr_factor = (L1Pos['r']/self.pos['r'])**-2
         shift_var_list = ['btot', 'br', 'bt', 'bn', 'bx', 'by', 'bz', 'density']
         shift_vars = [v for v in shift_var_list if v in self.vars]
         for var in shift_vars:
@@ -1382,7 +1403,7 @@ def get_dscovr_data_real_old():
     return data_minutes, data_hourly
 
 
-def get_dscovr_data_real():
+def get_dscovr_realtime_data():
     """
     Downloads and returns DSCOVR data 
     data from http://services.swpc.noaa.gov/products/solar-wind/
@@ -1696,6 +1717,36 @@ def get_dscovr_data_all(P_filepath='data/dscovrarchive/*', M_filepath='data/dsco
     return dscovr_data
 
 
+def get_l1_position(times, units='AU', refframe='HEEQ', observer='SUN'):
+    """Uses Heliosat to return a position object for L1 with the provided times.
+
+    Parameters
+    ==========
+    times : datetime (list/single)
+        Array of times to return position data for.
+    refframe : str (default=='HEEQ')
+        observer reference frame
+    observer : str (default='SUN')
+        observer body name
+    units : str (default='AU')
+        output units - m / km / AU
+
+    Returns
+    =======
+    L1Pos : PositionData object
+        Object containing arrays of time and dst values.
+    """
+
+    Earth = heliosat.SpiceObject(None, "EARTH")
+    Earth_traj = Earth.trajectory(times, reference_frame=refframe, units=units, observer=observer)
+    earth_r, elon, elat = Earth_traj[:,0], Earth_traj[:,1], Earth_traj[:,2]
+    l1_r = earth_r - dist_to_L1/AU
+    L1Pos = PositionData([l1_r, elon, elat], 'rlonlat')
+    L1Pos.h['Units'] = units
+
+    return L1Pos
+
+
 def get_noaa_dst():
     """Loads real-time Dst data from NOAA webpage:
     http://services.swpc.noaa.gov/products/kyoto-dst.json
@@ -1932,131 +1983,6 @@ def get_omni_data(filepath='', download=False, dldir='data'):
     return omni_data
 
 
-def get_omni_data_old():
-    """FORMAT(2I4,I3,I5,2I3,2I4,14F6.1,F9.0,F6.1,F6.0,2F6.1,F6.3,F6.2, F9.0,F6.1,F6.0,2F6.1,F6.3,2F7.2,F6.1,I3,I4,I6,I5,F10.2,5F9.2,I3,I4,2F6.1,2I6,F5.1)
-    1963   1  0 1771 99 99 999 999 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 9999999. 999.9 9999. 999.9 999.9 9.999 99.99 9999999. 999.9 9999. 999.9 999.9 9.999 999.99 999.99 999.9  7  23    -6  119 999999.99 99999.99 99999.99 99999.99 99999.99 99999.99  0   3 999.9 999.9 99999 99999 99.9
-
-    define variables from OMNI2 dataset
-    see http://omniweb.gsfc.nasa.gov/html/ow_data.html
-
-    omni2_url='ftp://nssdcftp.gsfc.nasa.gov/pub/data/omni/low_res_omni/omni2_all_years.dat'
-    """
-
-    #check how many rows exist in this file
-    f=open('data/omni2_all_years.dat')
-    dataset= len(f.readlines())
-    #print(dataset)
-    #global Variables
-    spot=np.zeros(dataset) 
-    btot=np.zeros(dataset) #floating points
-    bx=np.zeros(dataset) #floating points
-    by=np.zeros(dataset) #floating points
-    bz=np.zeros(dataset) #floating points
-    bzgsm=np.zeros(dataset) #floating points
-    bygsm=np.zeros(dataset) #floating points
-
-    speed=np.zeros(dataset) #floating points
-    speedx=np.zeros(dataset) #floating points
-    speed_phi=np.zeros(dataset) #floating points
-    speed_theta=np.zeros(dataset) #floating points
-
-    dst=np.zeros(dataset) #float
-    kp=np.zeros(dataset) #float
-
-    den=np.zeros(dataset) #float
-    pdyn=np.zeros(dataset) #float
-    year=np.zeros(dataset)
-    day=np.zeros(dataset)
-    hour=np.zeros(dataset)
-    t=np.zeros(dataset) #index time
-    
-    
-    j=0
-    print('Read OMNI2 data ...')
-    with open('data/omni2_all_years.dat') as f:
-        for line in f:
-            line = line.split() # to deal with blank 
-            #print line #41 is Dst index, in nT
-            dst[j]=line[40]
-            kp[j]=line[38]
-            
-            if dst[j] == 99999: dst[j]=np.NaN
-            #40 is sunspot number
-            spot[j]=line[39]
-            #if spot[j] == 999: spot[j]=NaN
-
-            #25 is bulkspeed F6.0, in km/s
-            speed[j]=line[24]
-            if speed[j] == 9999: speed[j]=np.NaN
-          
-            #get speed angles F6.1
-            speed_phi[j]=line[25]
-            if speed_phi[j] == 999.9: speed_phi[j]=np.NaN
-
-            speed_theta[j]=line[26]
-            if speed_theta[j] == 999.9: speed_theta[j]=np.NaN
-            #convert speed to GSE x see OMNI website footnote
-            speedx[j] = - speed[j] * np.cos(np.radians(speed_theta[j])) * np.cos(np.radians(speed_phi[j]))
-
-
-
-            #9 is total B  F6.1 also fill ist 999.9, in nT
-            btot[j]=line[9]
-            if btot[j] == 999.9: btot[j]=np.NaN
-
-            #GSE components from 13 to 15, so 12 to 14 index, in nT
-            bx[j]=line[12]
-            if bx[j] == 999.9: bx[j]=np.NaN
-            by[j]=line[13]
-            if by[j] == 999.9: by[j]=np.NaN
-            bz[j]=line[14]
-            if bz[j] == 999.9: bz[j]=np.NaN
-          
-            #GSM
-            bygsm[j]=line[15]
-            if bygsm[j] == 999.9: bygsm[j]=np.NaN
-          
-            bzgsm[j]=line[16]
-            if bzgsm[j] == 999.9: bzgsm[j]=np.NaN    
-          
-          
-            #24 in file, index 23 proton density /ccm
-            den[j]=line[23]
-            if den[j] == 999.9: den[j]=np.NaN
-          
-            #29 in file, index 28 Pdyn, F6.2, fill values sind 99.99, in nPa
-            pdyn[j]=line[28]
-            if pdyn[j] == 99.99: pdyn[j]=np.NaN      
-          
-            year[j]=line[0]
-            day[j]=line[1]
-            hour[j]=line[2]
-            j=j+1     
-      
-
-    #convert time to matplotlib format
-    #http://matplotlib.org/examples/pylab_examples/date_demo2.html
-
-    times1=np.zeros(len(year)) #datetime time
-    print('convert time start')
-    for index in range(0,len(year)):
-        #first to datetimeobject 
-        timedum=datetime(int(year[index]), 1, 1) + timedelta(day[index] - 1) +timedelta(hours=hour[index])
-        #then to matlibplot dateformat:
-        times1[index] = date2num(timedum)
-    print('convert time done')   #for time conversion
-
-    print('all done.')
-    print(j, ' datapoints')   #for reading data from OMNI file
-    
-    #make structured array of data
-    omni_data=np.rec.array([times1,btot,bx,by,bz,bygsm,bzgsm,speed,speedx,den,pdyn,dst,kp], \
-    dtype=[('time','f8'),('btot','f8'),('bx','f8'),('by','f8'),('bz','f8'),\
-    ('bygsm','f8'),('bzgsm','f8'),('speed','f8'),('speedx','f8'),('den','f8'),('pdyn','f8'),('dst','f8'),('kp','f8')])
-    
-    return omni_data
-
-
 def get_predstorm_data_realtime(resolution='hour'):
     """Reads data from PREDSTORM real-time output.
 
@@ -2090,117 +2016,71 @@ def get_predstorm_data_realtime(resolution='hour'):
     pred_data.h['ReferenceFrame'] = 'GSM'
 
     return pred_data
-
-
-def download_stereoa_data_beacon(filedir="data/sta_beacon", starttime=None, endtime=None, ndays=14):
-    """
-    Downloads STEREO-A beacon data files to folder. If starttime/endtime are not
-    defined, the data from the last two weeks is downloaded automatically.
-
-    D STEREO SCIENCE CENTER these are the cdf files for the beacon data, daily
-    browse data, ~ 200kb
-    https://stereo-ssc.nascom.nasa.gov/data/beacon/ahead/plastic/2018/05/STA_LB_PLA_BROWSE_20180502_V12.cdf       
-    original data, ~1 MB
-    https://stereo-ssc.nascom.nasa.gov/data/beacon/ahead/plastic/2018/05/STA_LB_PLA_20180502_V12.cdf
     
-    Last 2 hours are available here at NOAA:
-    http://legacy-www.swpc.noaa.gov/ftpdir/lists/stereo/
-    http://legacy-www.swpc.noaa.gov/stereo/STEREO_data.html
-    
+
+def get_sdo_realtime_image():
+    """Downloads latest SDO image."""
+
+    logger = logging.getLogger(__name__)
+
+    sdo_latest='https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_0193.jpg'
+    #PFSS
+    #sdo_latest='https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_0193pfss.jpg'
+    try: urllib.request.urlretrieve(sdo_latest,'latest_1024_0193.jpg')
+    except urllib.error.URLError as e:
+        logger.error('Failed downloading ', sdo.latest,' ',e.reason)
+    #convert to png
+    #check if ffmpeg is available locally in the folder or systemwide
+    if os.path.isfile('ffmpeg'):
+        os.system('./ffmpeg -i latest_1024_0193.jpg latest_1024_0193.png -loglevel quiet -y')
+        ffmpeg_avail=True
+        logger.info('downloaded SDO latest_1024_0193.jpg converted to png')
+        os.system('rm latest_1024_0193.jpg')
+    else:
+        os.system('ffmpeg -i latest_1024_0193.jpg latest_1024_0193.png -loglevel quiet -y')
+        os.system('rm latest_1024_0193.jpg')
+
+
+def get_stereo_beacon_data(starttime, endtime, which_stereo='ahead', resolution='min', skip_files=True):
+    """Downloads and reads STEREO-A beacon data from CDF files. Files handling
+    is done using heliosat, so files are downloaded to HELIOSAT_DATAPATH.
+
+    Notes: 
+        - HGRTN != RTN: http://www.srl.caltech.edu/STEREO/docs/coordinate_systems.html
+        - Data before 2009-09-14 is in HGRTN, RTN after that.
+
     Parameters
     ==========
-    filedir : str
-        Path to directory where files should be saved.
     starttime : datetime.datetime
         Datetime object with the required starttime of the input data.
     endtime : datetime.datetime
         Datetime object with the required endtime of the input data.
-    ndays : int
-        Number of days of data to read (before starttime). Invalid if both
-        starttime and endtime are provided.
+    which_stereo : str ('ahead'/'a' or 'behind'/'b')
+        Which stereo satellite should be used.
+    resolution : str, (optional, 'min' (default) or 'hour')
+        Determines which resolution data should be returned in.
+    skip_files : bool (default=True)
+        Heliosat get_data_raw var. Skips missing files in download folder.
 
     Returns
     =======
-    None
+    sta : predstorm.SatData
+        Object containing satellite data.
     """
- 
-    logger.info('download_stereoa_data_beacon: Starting download of STEREO-A beacon data from STEREO SCIENCE CENTER...')
-
-    # If folder is not here, create
-    if os.path.isdir(filedir) == False: os.mkdir(filedir)
-
-    plastic_location='https://stereo-ssc.nascom.nasa.gov/data/beacon/ahead/plastic'
-    impact_location='https://stereo-ssc.nascom.nasa.gov/data/beacon/ahead/impact'
-
-    if starttime == None and endtime == None:       # Read most recent data
-        starttime = datetime.utcnow() - timedelta(days=ndays-1)
-        endtime = datetime.utcnow()
-    elif starttime != None and endtime == None:     # Read past data
-        endtime = starttime + timedelta(days=ndays)
-    elif starttime == None and endtime != None:
-        starttime = endtime - timedelta(days=ndays)
-    else:
-        ndays = (endtime-starttime).days
-
-    dates = [starttime+timedelta(days=n) for n in range(0, ndays)]
-    logger.info("Following dates listed to be downloaded: {}".format(dates))
-
-    for date in dates:
-        stayear = datetime.strftime(date, "%Y")
-        stamonth = datetime.strftime(date, "%m")
-        staday = datetime.strftime(date, "%d")
-        daynowstr = stayear+stamonth+staday
-
-        # Plastic
-        sta_pla_file_str = 'STA_LB_PLASTIC_'+daynowstr+'_V12.cdf'
-        # Impact
-        sta_mag_file_str = 'STA_LB_IMPACT_'+daynowstr+'_V02.cdf'
-        
-        # Check if file is already there, otherwise download
-        if not os.path.exists(os.path.join(filedir, sta_pla_file_str)):
-            # Download files if they are not already downloaded
-            http_sta_pla_file_str = os.path.join(plastic_location, stayear, stamonth, sta_pla_file_str)
-            # Check if url exists
-            try: 
-                urllib.request.urlretrieve(http_sta_pla_file_str, os.path.join(filedir, sta_pla_file_str))
-                logger.info(sta_pla_file_str+" downloaded")
-            except urllib.error.URLError as e:
-                logger.error("download_stereoa_data_beacon: Could not download {} for reason:".format(http_sta_pla_file_str, e.reason))
-                http_sta_pla_file_str = os.path.join(plastic_location, stayear, stamonth, sta_pla_file_str.replace("V12", "V11"))
-                logger.info("Trying file version V11...")
-                try: 
-                    urllib.request.urlretrieve(http_sta_pla_file_str, os.path.join(filedir, sta_pla_file_str))
-                    logger.info(sta_pla_file_str+" downloaded")
-                except:
-                    logger.error("download_stereoa_data_beacon: Could not download {} for reason:".format(http_sta_pla_file_str, e.reason))
-
-        
-        if not os.path.exists(os.path.join(filedir, sta_mag_file_str)):
-            http_sta_mag_file_str = os.path.join(impact_location, stayear, stamonth, sta_mag_file_str)
-            try: 
-                urllib.request.urlretrieve(http_sta_mag_file_str, os.path.join(filedir, sta_mag_file_str))
-                logger.info(sta_mag_file_str+" downloaded")
-            except urllib.error.URLError as e:
-                logger.error("download_stereoa_data_beacon: Could not download {} for reason:".format(http_sta_mag_file_str, e.reason))
-
-    logger.info('download_stereoa_data_beacon: STEREO-A beacon data download complete.')
-
-    return
-    
-
-def get_stereoa_beacon_data(starttime, endtime, resolution='min', skip_files=True):
-    """Read STEREO-B data into SatData object.
-
-    Notes: 
-        - HGRTN != RTN: http://www.srl.caltech.edu/STEREO/docs/coordinate_systems.html"""
 
     logger = logging.getLogger(__name__)
-    logger.info("Reading STEREO-A beacon data")
 
-    STA_ = heliosat.STA()
+    if which_stereo.lower() in ['a', 'ahead']:
+        STEREO_ = heliosat.STA()
+    elif which_stereo.lower() in ['b', 'behind']:
+        STEREO_ = heliosat.STB()
+    else:
+        logger.error("{} is not a valid STEREO type! Use either 'ahead' or 'behind'.".format(which_stereo))
+
+    logger.info("Reading STEREO-{} beacon data".format(which_stereo.upper()))
 
     # Magnetometer data
-    magt, magdata = STA_.get_data_raw(starttime, endtime, 'mag_beacon', skip_files=skip_files)
+    magt, magdata = STEREO_.get_data_raw(starttime, endtime, 'mag_beacon', skip_files=skip_files)
     magt = [datetime.fromtimestamp(t) for t in magt]
     magdata[magdata < -1e20] = np.nan
     br, bt, bn = magdata[:,0], magdata[:,1], magdata[:,2]
@@ -2208,19 +2088,18 @@ def get_stereoa_beacon_data(starttime, endtime, resolution='min', skip_files=Tru
 
     # Particle data
     if starttime <= datetime(2009, 9, 13):
-        STA_._fc_cdf_keys = ["Epoch1", "Density", "Velocity_HGRTN", "Temperature_Inst"]
         if endtime > datetime(2009, 9, 13):
-            pt_s, pdata_s = STA_.get_data_raw(starttime, datetime(2009, 9, 13, 23, 59, 00), 'proton_beacon',
+            pt_s, pdata_s = STEREO_.get_data_raw(starttime, datetime(2009, 9, 13, 23, 59, 00), 'proton_beacon',
                                               extra_data=["Velocity_HGRTN:4"], skip_files=skip_files)
-            pt_e, pdata_e = STA_.get_data_raw(datetime(2009, 9, 14), endtime, 'proton_beacon',
+            pt_e, pdata_e = STEREO_.get_data_raw(datetime(2009, 9, 14), endtime, 'proton_beacon',
                                               extra_data=["Velocity_RTN:4"], skip_files=skip_files)
             pt = np.vstack((pt_s, pt_e))
             pdata = np.vstack((pdata_s, pdata_e))
         else:
-            pt_s, pdata_s = STA_.get_data_raw(starttime, endtime, 'proton_beacon',
+            pt_s, pdata_s = STEREO_.get_data_raw(starttime, endtime, 'proton_beacon',
                                               extra_data=["Velocity_HGRTN:4"], skip_files=skip_files)
     else:
-        pt, pdata = STA_.get_data_raw(starttime, endtime, 'proton_beacon', extra_data=["Velocity_RTN:4"], skip_files=skip_files)
+        pt, pdata = STEREO_.get_data_raw(starttime, endtime, 'proton_beacon', extra_data=["Velocity_RTN:4"], skip_files=skip_files)
 
     pt = [datetime.fromtimestamp(t) for t in pt]
     pdata[pdata < -1e29] = np.nan
@@ -2248,157 +2127,17 @@ def get_stereoa_beacon_data(starttime, endtime, resolution='min', skip_files=Tru
     temp_int = np.interp(tarray, date2num(pt), temperature)
 
     # Pack into object:
-    sta = SatData({'time': tarray,
+    stereo = SatData({'time': tarray,
                    'btot': btot_int, 'br': br_int, 'bt': bt_int, 'bn': bn_int,
                    'speed': vtot_int, 'speedx': vx_int, 'density': density_int, 'temp': temp_int},
                    source='STEREO-A')
-    sta.h['DataSource'] = "STEREO-A Beacon"
-    sta.h['SamplingRate'] = tarray[1] - tarray[0]
-    sta.h['ReferenceFrame'] = STA_.get_ref_frame('mag_beacon')
-    sta.h['HeliosatObject'] = STA_
+    stereo.h['DataSource'] = "STEREO-A Beacon"
+    stereo.h['SamplingRate'] = tarray[1] - tarray[0]
+    stereo.h['ReferenceFrame'] = STEREO_.get_ref_frame('mag_beacon')
+    stereo.h['HeliosatObject'] = STEREO_
+    stereo.h['Instruments'] = ['PLASTIC', 'IMPACT']
 
-    return sta
-
-
-def get_stereoa_data_beacon_old(filedir="data/sta_beacon", starttime=None, endtime=None, ndays=14):
-    """
-    Reads STEREO-A beacon data from CDF files. Files should be stored under filedir
-    with the naming format STA_LB_PLA_20180502_V12.cdf. Use the function
-    download_stereoa_data_beacon to get these files.
-    
-    Parameters
-    ==========
-    filedir : str
-        Path to directory where files should be saved.
-    starttime : datetime.datetime
-        Datetime object with the required starttime of the input data.
-    endtime : datetime.datetime
-        Datetime object with the required endtime of the input data.
-
-    Returns
-    =======
-    (data_minutes, data_hourly)
-    data_minutes : np.rec.array
-         Array of interpolated minute data with format:
-         dtype=[('time','f8'),('btot','f8'),('br','f8'),('bt','f8'),('bn','f8'),\
-            ('speedr','f8'),('den','f8')]
-    data_hourly : np.rec.array
-         Array of interpolated hourly data with format:
-         dtype=[('time','f8'),('btot','f8'),('br','f8'),('bt','f8'),('bn','f8'),\
-            ('speedr','f8'),('den','f8')]
-    """
-
-    # Define stereo-a variables with open size
-    sta_ptime=np.zeros(0)  
-    sta_vr=np.zeros(0)  
-    sta_den=np.zeros(0)  
-    sta_temp=np.zeros(0)  
-
-    sta_btime=np.zeros(0)  
-    sta_br=np.zeros(0)  
-    sta_bt=np.zeros(0)  
-    sta_bn=np.zeros(0)
-
-    if starttime == None and endtime == None:       # Read most recent data
-        starttime = datetime.utcnow() - timedelta(days=ndays-1)
-        endtime = datetime.utcnow()
-    elif starttime != None and endtime == None:     # Read past data
-        endtime = starttime + timedelta(days=ndays)
-    elif starttime == None and endtime != None:
-        starttime = endtime - timedelta(days=ndays)
-    else:
-        ndays = (endtime-starttime).days
-
-    readdates = [datetime.strftime(starttime+timedelta(days=n), "%Y%m%d") for n in range(0, ndays)]
-
-    logger.info("get_stereoa_data_beacon: Starting data read for {} days from {} till {}".format(ndays, readdates[0], readdates[-1]))
-
-    for date in readdates:
-    
-        # PLASMA
-        # ------
-        pla_version = 'V12'
-        sta_pla_file = os.path.join(filedir, 'STA_LB_PLASTIC_'+date+'_'+pla_version+'.cdf')
-        if os.path.exists(sta_pla_file):
-            sta_file =  cdflib.CDF(sta_pla_file)
-        else:
-            logger.warning("get_stereoa_data_beacon: File {} doesn't exist! Downloading...".format(sta_pla_file))
-            stime = datetime.strptime(date, "%Y%m%d")
-            download_stereoa_data_beacon(filedir=filedir, starttime=stime, endtime=stime+timedelta(days=1))
-            sta_file =  cdflib.CDF(sta_pla_file)
-            
-        # Variables Epoch_MAG: Epoch1: CDF_EPOCH [1875]
-        sta_time=epoch_to_num(sta_file.varget('Epoch1'))
-        sta_dvr=sta_file.varget('Velocity_RTN')[:,0]
-        sta_dden=sta_file.varget('Density')
-
-        # Replace missing data with nans:
-        mis=np.where(sta_time < -1e30)
-        sta_time[mis]=np.nan
-        mis=np.where(sta_dvr < -1e30)
-        sta_dvr[mis]=np.nan
-        mis=np.where(sta_dden < -1e30)
-        sta_dden[mis]=np.nan
-        
-        sta_ptime=np.append(sta_ptime, sta_time)
-        sta_vr=np.append(sta_vr,sta_dvr)
-        sta_den=np.append(sta_den,sta_dden)
-        
-        # MAGNETIC FIELD
-        # --------------
-        mag_version = 'V02'
-        sta_mag_file = os.path.join(filedir, 'STA_LB_IMPACT_'+date+'_'+mag_version+'.cdf' )
-        if os.path.exists(sta_mag_file):
-            sta_filem =  cdflib.CDF(sta_mag_file)
-        else:
-            logger.error("get_stereoa_data_beacon: File {} for reading doesn't exist!".format(sta_mag_file))
-
-        #variables Epoch_MAG: CDF_EPOCH [8640]
-        #MAGBField: CDF_REAL4 [8640, 3]
-        #pdb.set_trace()
-        sta_time=epoch_to_num(sta_filem.varget('Epoch_MAG'))
-        #d stands for dummy
-        sta_dbr=sta_filem.varget('MAGBField')[:,0]
-        sta_dbt=sta_filem.varget('MAGBField')[:,1]
-        sta_dbn=sta_filem.varget('MAGBField')[:,2]
-
-        sta_btime=np.append(sta_btime, sta_time)
-        sta_br=np.append(sta_br,sta_dbr)
-        sta_bt=np.append(sta_bt,sta_dbt)
-        sta_bn=np.append(sta_bn,sta_dbn)
-  
-    #make total field variable
-    sta_btot=np.sqrt(sta_br**2+sta_bt**2+sta_bn**2)
-    
-    # Interpolate to minutes:
-    sta_time_m=np.arange(np.ceil(sta_btime)[0],sta_btime[-1],1.0000/(24*60))
-    sta_btot_m=np.interp(sta_time_m,sta_btime,sta_btot)
-    sta_br_m=np.interp(sta_time_m,sta_btime,sta_br)
-    sta_bt_m=np.interp(sta_time_m,sta_btime,sta_bt)
-    sta_bn_m=np.interp(sta_time_m,sta_btime,sta_bn)
-    sta_vr_m=np.interp(sta_time_m,sta_ptime,sta_vr)
-    sta_den_m=np.interp(sta_time_m,sta_ptime,sta_den)
-    
-    # Pack into arrays:
-    # --------------------
-    empty = np.zeros(len(sta_time_m))
-    stereo_data = SatData({'time': sta_time_m,
-                           'btot': sta_btot_m, 'br': sta_br_m, 'bt': sta_bt_m, 'bn': sta_bn_m,
-                           # Create empty keys for future coordinate conversion:
-                           # (Not the most elegant solution but it'll do for now)
-                           'bx': empty, 'by': empty, 'bz': empty,
-                           'speed': sta_vr_m, 'density': sta_den_m},
-                           source='STEREO-A')
-    stereo_data.h['DataSource'] = "STEREO-A (beacon)"
-    stereo_data.h['SamplingRate'] = 1./24./60.
-    stereo_data.h['ReferenceFrame'] = 'RTN'
-    stereo_data.h['Instruments'] = ['PLASTIC', 'IMPACT']
-    stereo_data.h['FileVersion'] = {'PLASTIC': pla_version, 'IMPACT': mag_version}
-    stereo_data = stereo_data.cut(starttime=starttime, endtime=endtime)
-
-    logger.info('STEREO-A (RTN) beacon data interpolated to hour/minute resolution.')
-    
-    return stereo_data
+    return stereo
 
 
 def get_position_data(filepath, times, rlonlat=False, l1_corr=False):
