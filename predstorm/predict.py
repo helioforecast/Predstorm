@@ -25,7 +25,7 @@ from datetime import datetime
 import numpy as np
 from matplotlib.dates import num2date, date2num
 from numba import njit, jit
-import astropy.time
+import scipy
 
 # Machine learning specific:
 from sklearn.base import BaseEstimator, TransformerMixin
@@ -577,6 +577,62 @@ def calc_ring_current_term(deltat, bz, speed, m1=-4.4, m2=2.4, e1=9.74, e2=4.69)
         lrc = rc[i+1]
 
     return rc
+
+
+def get_scores(dst_real, dst_pred, tarray, source='L1', printtext=True):
+    """Returns some scoring values for the real values and forecast, that's all.
+
+    Parameters
+    ==========
+    dst_pred : np.array
+        Predicted Dst values.
+    dst_real : np.array
+        Real (or preliminary) Dst values.
+    tarray : np.array
+        Array of time values (matplotlib date2num) for dst.
+    source : str (default='L1')
+        Location of data source. Only used with printtext.
+    printtext : bool (default=True)
+
+    Returns
+    =======
+    stat_dict : dict
+        Dictionary containing values under the keys ['diff_mean', 'diff_std',
+        'xcorr_offset', 'xcorr_max', 'ppmc', 'mae']
+        """
+
+    dst_diff = dst_real - dst_pred
+    dst_diff_mean = np.nanmean(dst_diff)
+    dst_diff_std = np.nanstd(dst_diff)
+    t = np.linspace(0.0, tarray[-1] - tarray[0], len(dst_real), endpoint=False)
+    dt = np.linspace(-t[-1], t[-1], 2*len(dst_real)-1)
+    xcorr = scipy.signal.correlate(dst_real, dst_pred)
+    ppmc = np.corrcoef(dst_real, dst_pred)[0][1]
+    mae = np.sum(np.abs(dst_diff)) / len(dst_diff)
+    if printtext:
+        print("DATA FROM {}".format(source))
+        print("----------"+'-'*len(source))
+        print('Dst diff mean +/- std: {:.1f} +/- {:.1f}'.format(dst_diff_mean, dst_diff_std))
+        print("")
+        print('Dst obs  mean +/- std: {:.1f} +/- {:.1f}'.format(np.nanmean(dst_real), np.nanstd(dst_real)))
+        print('Dst pred mean +/- std: {:.1f} +/- {:.1f}'.format(np.nanmean(dst_pred), np.nanstd(dst_pred)))
+        print('Dst obs  min / max: {:.1f} / {:.1f}'.format(np.nanmin(dst_real), np.nanmax(dst_real)))
+        print('Dst pred min / max: {:.1f} / {:.1f}'.format(np.nanmin(dst_pred), np.nanmax(dst_pred)))
+        print()
+        print("Pearson correlation: {:.2f} ".format(ppmc))
+        print("Cross-correlation:   {:.1f} hours".format(24.*dt[xcorr.argmax()]))
+        print("Mean absolute error: {:.2f} nT".format(mae))
+        print()
+
+    stat_dict = {}
+    stat_dict['diff_mean'] = dst_diff_mean
+    stat_dict['diff_std'] = dst_diff_std
+    stat_dict['xcorr_offset'] = 24.*dt[xcorr.argmax()]
+    stat_dict['xcorr_max'] = np.nanmax(xcorr)
+    stat_dict['ppmc'] = ppmc
+    stat_dict['mae'] = mae
+
+    return stat_dict
 
  
 def make_kp_from_wind(btot_in, by_in, bz_in, v_in, density_in):

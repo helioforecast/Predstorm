@@ -72,7 +72,6 @@ except:
     pass
 
 # Local
-from . import spice
 from .predict import make_kp_from_wind, make_dst_from_wind, calc_ring_current_term
 from .predict import make_aurora_power_from_wind, calc_newell_coupling
 from .predict import calc_dst_burton, calc_dst_obrien, calc_dst_temerin_li
@@ -447,7 +446,7 @@ class SatData():
     def get_position(self, timestamp):
         """Returns position of satellite at given timestamp. Coordinates
         are provided in (r,lon,lat) format. Change rlonlat to False to get
-        (x,y,z) coordinates. Uses function predstorm.spice.get_satellite_position.
+        (x,y,z) coordinates.
 
         Parameters
         ==========
@@ -468,8 +467,8 @@ class SatData():
 
 
     def load_positions(self, refframe='HEEQ', units='AU', observer='SUN', rlonlat=True, l1_corr=False):
-        """Loads data on satellite position into data object. Data is loaded from a
-        pickled heliopy.spice.Trajectory object.oaded into local heliopy file.
+        """Loads data on satellite position into data object. Data is loaded using a
+        heliosat.SpiceObject.
 
         Parameters
         ==========
@@ -515,6 +514,55 @@ class SatData():
         self.pos = Positions
 
         return self
+
+
+    def return_position_details(self, timestamp, sun_syn=26.24):
+        """Returns a string describing STEREO-A's current whereabouts.
+
+        Parameters
+        ==========
+        positions : ???
+            Array containing spacecraft positions at given time.
+        DSCOVR_lasttime : float
+            Date of last DSCOVR measurements in number form.
+
+        Returns
+        =======
+        stereostr : str
+            Nicely formatted string with info on STEREO-A's location with
+            with respect to Earth and L5/L1.
+        """
+
+        if self.pos == None:
+            logger.warning("Loading position data (SatData.load_positions()) for return_position_details()!")
+            self.load_positions()
+        L1Pos = get_l1_position(timestamp, units=self.pos.h['Units'], refframe=self.pos.h['ReferenceFrame'])
+
+        # Find index of current position:
+        ts_ind = np.where(self['time'] < date2num(timestamp))[0][0]
+        r = self.pos['r'][ts_ind]
+
+        # Get longitude and latitude
+        long_heeq = self.pos['lon'][ts_ind]*180./np.pi
+        lat_heeq = self.pos['lat'][ts_ind]*180./np.pi
+
+        # Define time lag from STEREO-A to Earth
+        timelag_l1 = abs(long_heeq)/(360./sun_syn)
+        arrival_time_l1 = date2num(timestamp) + timelag_l1
+        arrival_time_l1_str = str(num2date(arrival_time_l1))
+
+        satstr = ''
+        satstr += '{} HEEQ longitude wrt Earth is {:.1f} degrees.\n'.format(self.source, long_heeq)
+        satstr += 'This is {:.2f} times the location of L5.\n'.format(abs(long_heeq)/60.)
+        satstr += '{} HEEQ latitude is {:.1f} degrees.\n'.format(self.source, lat_heeq)
+        satstr += 'Earth L1 HEEQ latitude is {:.1f} degrees.\n'.format(L1Pos['lat']*180./np.pi,1)
+        satstr += 'Difference HEEQ latitude is {:.1f} degrees.\n'.format(abs(lat_heeq-L1Pos['lat']*180./np.pi))
+        satstr += '{} heliocentric distance is {:.3f} AU.\n'.format(self.source, r)
+        satstr += 'The solar rotation period with respect to Earth is chosen as {:.2f} days.\n'.format(sun_syn)
+        satstr += 'This is a time lag of {:.2f} days.\n'.format(timelag_l1)
+        satstr += 'Arrival time of {} wind at L1: {}\n'.format(self.source, arrival_time_l1_str[0:16])
+
+        return satstr
 
     # -----------------------------------------------------------------------------------
     # Object data handling
@@ -634,7 +682,7 @@ class SatData():
         """Shifts the time variable to roughly correspond to solar wind at L1 using a
         correction for timing for the Parker spiral.
         See Simunac et al. 2009 Ann. Geophys. equation 1 and Thomas et al. 2018 Space Weather,
-        difference in heliocentric distance STEREO-A to Earth. The value is ctually different 
+        difference in heliocentric distance STEREO-A to Earth. The value is actually different 
         for every point but can take average of solar wind speed (method='old').
         Omega is 360 deg/sun_syn in days, convert to seconds; sta_r in AU to m to km;
         convert to degrees
@@ -664,7 +712,8 @@ class SatData():
 
         elif method == 'new':
             if self.pos == None:
-                raise Exception("Load position data (SatData.load_positions()) before calling shift_time_to_L1()!")
+                logger.warning("Loading position data (SatData.load_positions()) for shift_time_to_L1()!")
+                self.load_positions()
             dttime = [num2date(t).replace(tzinfo=None) for t in self['time']]
             L1Pos = get_l1_position(dttime, units=self.pos.h['Units'], refframe=self.pos.h['ReferenceFrame'])
             L1_r = L1Pos['r']
@@ -857,7 +906,7 @@ class SatData():
             logger.info("Calculating Dst using Burton model")
             dst_pred = calc_dst_burton(self['time'], self['bz'], self['speed'], self['density'])
 
-        dstData = SatData({'time': self['time'], 'dst': dst_pred})
+        dstData = SatData({'time': copy.deepcopy(self['time']), 'dst': dst_pred})
         dstData.h['DataSource'] = "Dst prediction from {} data using {} method".format(self.source, method)
         dstData.h['SamplingRate'] = 1./24.
 
@@ -1722,7 +1771,7 @@ def get_l1_position(times, units='AU', refframe='HEEQ', observer='SUN'):
 
     Parameters
     ==========
-    times : datetime (list/single)
+    times : datetime (list/value)
         Array of times to return position data for.
     refframe : str (default=='HEEQ')
         observer reference frame
@@ -1739,7 +1788,10 @@ def get_l1_position(times, units='AU', refframe='HEEQ', observer='SUN'):
 
     Earth = heliosat.SpiceObject(None, "EARTH")
     Earth_traj = Earth.trajectory(times, reference_frame=refframe, units=units, observer=observer)
-    earth_r, elon, elat = Earth_traj[:,0], Earth_traj[:,1], Earth_traj[:,2]
+    if type(times) == list:
+        earth_r, elon, elat = Earth_traj[:,0], Earth_traj[:,1], Earth_traj[:,2]
+    else:
+        earth_r, elon, elat = Earth_traj[0], Earth_traj[1], Earth_traj[2]
     l1_r = earth_r - dist_to_L1/AU
     L1Pos = PositionData([l1_r, elon, elat], 'rlonlat')
     L1Pos.h['Units'] = units
@@ -2144,8 +2196,6 @@ def get_position_data(filepath, times, rlonlat=False, l1_corr=False):
     """Reads position data from pickled heliopy.spice.Trajectory into
     PositionData object.
     Note: Interpolates position data, which is faster but not as exact.
-    Use ps.spice.get_satellite_position_heliopy() for more precise orbit
-    calculations.
 
     Parameters
     ==========
@@ -2258,10 +2308,15 @@ def merge_Data(satdata1, satdata2, keys=None):
             raise Exception("Dataset1 contains key ({}) not available in Dataset2!".format(k))
 
     # Find num of points for addition:
-    timestep = satdata1.h['SamplingRate']
-    n_new_time = len(np.arange(satdata1['time'][-1] + timestep, satdata2['time'][-1], timestep))  
+    if (satdata1.h['SamplingRate'] - 1./24.) < 0.0001:
+        timestep = 1./24.
+    elif (satdata1.h['SamplingRate'] - 1./24./60.) < 0.0001:
+        timestep = 1./24./60.
+    else:
+        timestep = satdata1.h['SamplingRate']
+    n_timesteps = len(np.arange(satdata1['time'][-1] + timestep, satdata2['time'][-1], timestep))  
     # Make time array with matching steps
-    new_time = satdata1['time'][-1] + timestep + np.arange(0, n_new_time) * timestep
+    new_time = np.array(satdata1['time'][-1] + np.arange(1, n_timesteps) * timestep)
 
     datadict = {}
     datadict['time'] = np.concatenate((satdata1['time'], new_time))

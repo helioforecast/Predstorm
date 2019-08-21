@@ -11,4 +11,3 @@ from .data import SatData, PositionData
 
 from . import plot
 from . import predict
-from . import spice

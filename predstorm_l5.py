@@ -118,57 +118,7 @@ from predstorm.data import getpositions, time_to_num_cat
 from predstorm_l5_input import *
 
 #========================================================================================
-#--------------------------------- FUNCTIONS --------------------------------------------
-#========================================================================================
-
-def return_stereoa_details(positions, timenow):
-    """Returns a string describing STEREO-A's current whereabouts.
-
-    Parameters
-    ==========
-    positions : ???
-        Array containing spacecraft positions at given time.
-    DSCOVR_lasttime : float
-        Date of last DSCOVR measurements in number form.
-
-    Returns
-    =======
-    stereostr : str
-        Nicely formatted string with info on STEREO-A's location with
-        with respect to Earth and L5/L1.
-    """
-
-    # Find index of current position:
-    pos_time_num = time_to_num_cat(positions.time)
-    pos_time_now_ind = np.where(timenow < pos_time_num)[0][0]
-    sta_r=positions.sta[0][pos_time_now_ind]
-
-    # Get longitude and latitude
-    sta_long_heeq = positions.sta[1][pos_time_now_ind]*180./np.pi
-    sta_lat_heeq = positions.sta[2][pos_time_now_ind]*180./np.pi
-
-    # Define time lag from STEREO-A to Earth
-    timelag_sta_l1 = abs(sta_long_heeq)/(360./sun_syn)
-    arrival_time_l1_sta = timenow + timelag_sta_l1
-    arrival_time_l1_sta_str = str(num2date(arrival_time_l1_sta))
-
-    stereostr = ''
-    stereostr += 'STEREO-A HEEQ longitude wrt Earth is {:.1f} degrees.\n'.format(sta_long_heeq)
-    stereostr += 'This is {:.2f} times the location of L5.\n'.format(abs(sta_long_heeq)/60.)
-    stereostr += 'STEREO-A HEEQ latitude is {:.1f} degrees.\n'.format(sta_lat_heeq)
-    stereostr += 'Earth L1 HEEQ latitude is {:.1f} degrees.\n'.format(positions.earth_l1[2][pos_time_now_ind]*180./np.pi,1)
-    stereostr += 'Difference HEEQ latitude is {:.1f} degrees.\n'.format(abs(
-                sta_lat_heeq-positions.earth_l1[2][pos_time_now_ind]*180./np.pi))
-    stereostr += 'STEREO-A heliocentric distance is {:.3f} AU.\n'.format(sta_r)
-    stereostr += 'The solar rotation period with respect to Earth is chosen as {:.2f} days.\n'.format(sun_syn)
-    stereostr += 'This is a time lag of {:.2f} days.\n'.format(timelag_sta_l1)
-    stereostr += 'Arrival time of now STEREO-A wind at L1: {}\n'.format(arrival_time_l1_sta_str[0:16])
-
-    return stereostr
-
-
-#========================================================================================
-#--------------------------------- MAIN PROGRAM -----------------------------------------
+#--------------------------------- MAIN SCRIPT ------------------------------------------
 #========================================================================================
 
 def main():
@@ -259,6 +209,7 @@ def main():
     # Prepare data:
     stam.interp_nans()
     stam.load_positions()
+    sta_details = stam.return_position_details(timestamp)
 
     #------------------------- (1c) Load NOAA Dst for comparison ----------------------------
 
@@ -278,7 +229,7 @@ def main():
 
     #========================== (2) PREDICTION CALCULATIONS ==================================
 
-    logger.info("\n-------------------------\nL5-to-L1 CORRECTIONS\n-------------------------")
+    logger.info("\n-------------------------\nL5-to-L1 MAPPING\n-------------------------")
 
     #------------------------ (2a) Corrections to time-shifted STEREO-A data ----------------
 
@@ -286,23 +237,20 @@ def main():
 
     logger.info("(1) Shift time at STEREO-A according to solar wind rotation")
     stam.shift_time_to_L1()
-    sta = stam.make_hourly_data()
     logger.info("STA-to-L1 adjusted time of last datapoint in STEREO-A:")
     logger.info("\t{}".format(num2date(stam['time'][-1])))
 
     logger.info("(2) Make correction for difference in heliocentric distance")
-    sta.shift_wind_to_L1()
+    stam.shift_wind_to_L1()
 
     logger.info("(3) Conversion from RTN to GSM as if STEREO was on Sun-Earth line")
-    sta['bx'], sta['by'], sta['bz'] = sta['br'], -sta['bt'], sta['bn']
     stam['bx'], stam['by'], stam['bz'] = stam['br'], -stam['bt'], stam['bn']
     # sta.convert_RTN_to_GSE().convert_GSE_to_GSM()
     # stam.convert_RTN_to_GSE().convert_GSE_to_GSM()
 
-    resultslog.write('\t3: coordinate conversion of magnetic field components RTN > HEEQ > GSE > GSM.\n')
-
     #------------------- (2b) COMBINE DSCOVR and time-shifted STEREO-A data -----------------
 
+    sta = stam.make_hourly_data()
     dis_sta = ps.merge_Data(dis, sta)
     dism_stam = ps.merge_Data(dism, stam)
 
@@ -377,192 +325,94 @@ def main():
                     aurora=aurora_power.interp_to_time(dism_stam['time']), 
                     ec=newell_coupling.interp_to_time(dism_stam['time']))
 
-    ################################# VERIFICATION MODE BRANCH ###############################
-    #######**********************
-    if verification_mode:       # TODO: Use/adjust/remove this
-      print('Verification results for interval:')
-
-
-      #rdst_time rdst includes the observed Dst of the event
-      verify_ind_obs=np.where(np.logical_and(rdst_time > verify_int_start,rdst_time < verify_int_end))
-      #lcom_time ldst_burton ldst_obrien are the forecasted indices
-      verify_ind_for=np.where(np.logical_and(lcom_time > verify_int_start,lcom_time < verify_int_end-1/24))
-
-      print('Scores:')
-      print()
-      print('How well was the magnitude?')
-
-
-      #******check this is not totally correct because some Dst > 0 and some <0 - first verification on May 4 is wrong!!
-      #print('Mean absolute difference real Dst to Dst forecast Burton:', int(round(np.mean(abs(ldst_burton[verify_ind_for])-abs(rdst[verify_ind_obs])))), ' +/- ', int(round(np.std(abs(ldst_burton[verify_ind_for])-abs(rdst[verify_ind_obs])))), ' nT' )
-      #print('Mean absolute difference real Dst to Dst forecast OBrien:', int(round(np.mean(abs(ldst_obrien[verify_ind_for])-abs(rdst[verify_ind_obs])))), ' +/- ', int(round(np.std(abs(ldst_obrien[verify_ind_for])-abs(rdst[verify_ind_obs])))), ' nT' )
-
-      print('Mean absolute difference real Dst to Dst forecast Burton:', int(round(np.mean(abs(ldst_burton[verify_ind_for]-rdst[verify_ind_obs])))), ' +/- ', int(round(np.std(abs(ldst_burton[verify_ind_for]-rdst[verify_ind_obs])))), ' nT' )
-      print('Mean absolute difference real Dst to Dst forecast OBrien:', int(round(np.mean(abs(ldst_obrien[verify_ind_for]-rdst[verify_ind_obs])))), ' +/- ', int(round(np.std(abs(ldst_obrien[verify_ind_for]-rdst[verify_ind_obs])))), ' nT' )
-      print('Mean absolute difference real Dst to Dst forecast TemerinLi:', int(round(np.mean(abs(ldst_temerin_li[verify_ind_for]-rdst[verify_ind_obs])))), ' +/- ', int(round(np.std(abs(ldst_temerin_li[verify_ind_for]-rdst[verify_ind_obs])))), ' nT' )
-
-
-      print('minimum in real Dst and Burton / OBrien: ')
-      print('real: ', int(round(np.min(rdst[verify_ind_obs]))) ,' forecast: ', int(round(np.min(ldst_burton[verify_ind_for]))), ' ',int(round(np.min(ldst_obrien[verify_ind_for]))) )
-      print()
-      print('How well was the timing?')
-
-      print('Time of Dst minimum observed:', str(num2date(rdst_time[verify_ind_obs][np.argmin(rdst[verify_ind_obs])]))[0:16] )
-      print('Time of Dst minimum Burton:', str(num2date(lcom_time[verify_ind_for][np.argmin(ldst_burton[verify_ind_for])]+1/3600))[0:16] )
-      print('Time of Dst minimum OBrien:', str(num2date(lcom_time[verify_ind_for][np.argmin(ldst_obrien[verify_ind_for])]+1/3600))[0:16] )
-
-      print('Time difference of Dst minimum Burton:', int( (lcom_time[verify_ind_for][np.argmin(ldst_burton[verify_ind_for])]-rdst_time[verify_ind_obs][np.argmin(rdst[verify_ind_obs])])*24), ' hours' )
-      print('Time difference of Dst minimum OBrien:', int( (lcom_time[verify_ind_for][np.argmin(ldst_obrien[verify_ind_for])]-rdst_time[verify_ind_obs][np.argmin(rdst[verify_ind_obs])])*24), ' hours' )
-
-
-      print('')
-      print('Best correlation time-shift, at max +/- 24 hours are allowed:')
-
-      timecorr=np.zeros(48)
-      for k in np.arange(0,48):
-        r=rdst[verify_ind_obs]
-        p=ldst_burton[verify_ind_for]
-
-        #shift by up to 12 hours and cut ends off
-        r=np.roll(r,k-24)[24:-24]
-        p=np.roll(p,k-24)[24:-24]
-        timecorr[k]=np.corrcoef(r,p)[0,1]
-        #print(k,timecorr[k])
-
-      print('correlation of forecast in time:',round(timecorr[24],2))
-      print('best correlation of forecast in time:',round(np.max(timecorr),2))
-      print('correlation difference:',round(np.max(timecorr)-timecorr[24],2))
-      print('best correlation time difference:',np.argmax(timecorr)-24, ' hours')
-
-
-      print()
-      print('----------------------------')
-
-
-      sys.exit()
+    logger.info("PREDSTORM_L5 run complete!")
 
     #----------------------------- (4b) CALCULATE FORECAST RESULTS --------------------------
 
-    # WRITE PREDICTION RESULTS TO LOGFILE
-    resultslog.write('-------------------------------------------------')
-    resultslog.write('\n')
+    logger.info("\n\nSATELLITE POSITION DETAILS\n--------------------------\n"+sta_details)
 
-    #check future times in combined Dst with respect to the end of DSCOVR data
-    future_times=np.where(dis_sta['time'] > timenow)
-    #past times in combined dst
-    past_times=np.where(dis_sta['time'] < timenow)
+    future_times = np.where(dis_sta['time'] > date2num(timestamp))
+    past_times = np.where(dis_sta['time'] < date2num(timestamp))
 
-    resultslog.write('PREDSTORM L5 (STEREO-A) prediction results:')
-    resultslog.write('\n')
-    resultslog.write('Current time: '+ timeutcstr+ ' UT')
+    min_cut = np.max((dst['time'][0], dis_sta['time'][0]))
+    max_cut = np.min((dst['time'][-1], dis_sta['time'][-1]))
+    dst_cut = dst['dst'][np.logical_and(dst['time'] > min_cut, dst['time'] < max_cut)]
+    dst_pred_cut = dst_pred['dst'][np.logical_and(dst_pred['time'] > min_cut, dst_pred['time'] < max_cut)]
 
-    mindst_time=dis_sta['time'][past_times[0][0]+np.nanargmin(dst_pred['dst'][past_times])]
-    #added 1 minute manually because of rounding errors in time 19:59:9999 etc.
-    resultslog.write('\n')
-    resultslog.write('Minimum of Dst (past times):\n')
-    resultslog.write(str(int(round(float(np.nanmin(dst_pred['dst'][past_times]))))) + ' nT \n')
-    resultslog.write('at time: '+str(num2date(mindst_time+1/(24*60)))[0:16])
-    resultslog.write('\n')
+    #----------------------------- (4c) GOODNESS METRICS --------------------------
+    scores = ps.predict.get_scores(dst_cut, dst_pred_cut, dst['time'][np.logical_and(dst['time'] > min_cut, dst['time'] < max_cut)])
+    score_str = ''
+    score_str += 'SCORING\n-------\n'
+    score_str += 'MAE of real Dst to Dst forecast:\t{:.2f} nT\n'.format(scores['mae'])
+    score_str += 'Diff of real Dst to Dst forecast:\t{:.2f} +/- {:.2f} nT\n'.format(scores['diff_mean'], scores['diff_std'])
+    score_str += 'Correlation of forecast in time:\t{:.2f}\n'.format(scores['ppmc'])
+    score_str += 'Best correlation of forecast in time:\t{}\n'.format(scores['xcorr_max'])
+    score_str += 'Best correlation time difference:\t{} hours\n'.format(scores['xcorr_offset'])
+    score_str += '\n'
 
-    mindst_time=dis_sta['time'][future_times[0][0]+np.nanargmin(dst_pred['dst'][future_times])]
-    #added 1 minute manually because of rounding errors in time 19:59:9999 etc.
+    #----------------------------- (4d) RESULTS OF DST PREDICTION  --------------------------
+    results_str = ''
+    results_str += 'PREDSTORM L5 (STEREO-A) DST PREDICTION RESULTS\n----------------------------------------------\n'
 
-    resultslog.write('\n')
-    resultslog.write('Predicted minimum of Dst (future times):\n')
-    resultslog.write(str(int(round(float(np.nanmin(dst_pred['dst'][future_times]))))) + ' nT \n')
-    resultslog.write('at time: '+str(num2date(mindst_time+1/(24*60)))[0:16])
-    resultslog.write('\n')
+    mindst_time = dst['time'][np.nanargmin(dst['dst'])]
+    mindst_predp_time = dst_pred['time'][np.nanargmin(dst_pred['dst'][past_times])]
+    results_str += 'Dst minimum:\n'
+    results_str += "\tReal:    \t{:.1f} nT\t  at {}\n".format(np.nanmin(dst['dst']), str(num2date(mindst_time))[0:16])
+    results_str += "\tForecast:\t{:.1f} nT\t  at {}\n".format(np.nanmin(dst_pred['dst'][past_times]), str(num2date(mindst_predp_time))[0:16])
+    results_str += '\n'
 
-    resultslog.write('\n')
-    resultslog.write('Predicted times of moderate storm levels (-50 to -100 nT):\n')
-    storm_times_ind=np.where(np.logical_and(dst_pred['dst'][future_times] < -50, dst_pred['dst'][future_times] > -100))[0]
-    #when there are storm times above this level, indicate:
-    if len(storm_times_ind) >0:
-     for i in np.arange(0,len(storm_times_ind),1):
-      resultslog.write(str(num2date(dis_sta['time'][future_times][storm_times_ind][i]+1/(24*60)))[0:16]+'\n')
-    else:
-      resultslog.write('None')
-    resultslog.write('\n')
+    mindst_predf_time = dst_pred['time'][np.nanargmin(dst_pred['dst'][future_times])]
+    results_str += 'Predicted Dst minimum:\n'
+    results_str += "\tForecast:\t{:.1f} nT\tat {}\n".format(np.nanmin(dst_pred['dst'][future_times]), str(num2date(mindst_predf_time))[0:16])
+    results_str += '\n'
 
-    resultslog.write('\n')
-    resultslog.write('Predicted times of intense storm levels (-100 to -200 nT):\n')
-    storm_times_ind=np.where(np.logical_and(dst_pred['dst'][future_times] < -100, dst_pred['dst'][future_times] > -200))[0]
-    #when there are storm times above this level, indicate:
-    if len(storm_times_ind) >0:
-      for i in np.arange(0,len(storm_times_ind),1):
-       resultslog.write(str(num2date(dis_sta['time'][future_times][storm_times_ind][i]+1/(24*60)))[0:16]+'\n')
-    else:
-      resultslog.write('None')
-    resultslog.write('\n')
+    for dstlims in [[-50,-100], [-100,-200], [-200,-2000]]:
+        results_str += 'Predicted times of moderate storm levels (-50 to -100 nT):\n'
+        storm_times_ind = np.where(np.logical_and(dst_pred['dst'][future_times] < dstlims[0], dst_pred['dst'][future_times] > dstlims[1]))[0]
+        if len(storm_times_ind) > 0:
+            for i in np.arange(0,len(storm_times_ind),1):
+                results_str += '\t{}\n'.format(str(num2date(dis_sta['time'][future_times][storm_times_ind][i]))[0:16])
+        else:
+            results_str += '\tNone\n'
+        results_str += '\n'
 
-    resultslog.write('\n')
-    resultslog.write('Predicted times of super storm levels (< -200 nT):\n')
-    storm_times_ind=np.where(dst_pred['dst'][future_times] < -200)[0]
-    #when there are storm times above this level, indicate:
-    if len(storm_times_ind) >0:
-      for i in np.arange(0,len(storm_times_ind),1):
-       resultslog.write(str(num2date(dis_sta['time'][future_times][storm_times_ind][i]+1/(24*60)))[0:16]+'\n')
-    else:
-      resultslog.write('None')
+    #----------------------------- (4e) DATA ON SOLAR WIND VALUES --------------------------
+    results_str += 'SOLAR WIND PARAMETERS\n---------------------\n'
 
-    resultslog.write('\n')
+    for var, unit in zip(['speed', 'btot'], ['km/s', 'nT    ']):
+        maxvar_time = dis_sta['time'][past_times[0][0]+np.nanargmax(dis_sta[var][past_times])]
+        results_str += 'Maximum {}:\n'.format(var)
+        results_str += "\tPast:    \t{:.1f} {} \t   at {}\n".format(np.nanmax(dis_sta[var][past_times]), unit, str(num2date(maxvar_time+1/(24*60)))[0:16])
+        maxvar_time = dis_sta['time'][future_times[0][0]+np.nanargmax(dis_sta[var][future_times])]
+        results_str += "\tForecast:\t{:.1f} {} \t   at {}\n".format(np.nanmax(dis_sta[var][future_times]), unit, str(num2date(maxvar_time+1/(24*60)))[0:16])
+        results_str += '\n'
 
-    resultslog.write('\n')
-    resultslog.write('------ Other parameters')
-    resultslog.write('\n \n')
+    var = 'bz'
+    minvar_time = dis_sta['time'][past_times[0][0]+np.nanargmin(dis_sta[var][past_times])]
+    results_str += 'Minimum {}:\n'.format(var)
+    results_str += "\tPast:    \t{:.1f} {} \t   at {}\n".format(np.nanmin(dis_sta[var][past_times]), unit, str(num2date(minvar_time+1/(24*60)))[0:16])
+    minvar_time = dis_sta['time'][future_times[0][0]+np.nanargmin(dis_sta[var][future_times])]
+    results_str += "\tForecast:\t{:.1f} {} \t   at {}\n".format(np.nanmin(dis_sta[var][future_times]), unit, str(num2date(minvar_time+1/(24*60)))[0:16])
+    results_str += '\n'
 
+    logger.info("Final results:\n\n"+score_str+results_str)
 
-    ### speed
-    maxvr_time=dis_sta['time'][past_times[0][0]+np.nanargmax(dis_sta['speed'][past_times])]
-    resultslog.write('Maximum speed (past times):\n')
-    resultslog.write(str(int(round(float(np.nanmax(dis_sta['speed'][past_times])))))+ ' km/s at '+ \
-          str(num2date(maxvr_time+1/(24*60)))[0:16])
-    resultslog.write('\n \n')
+    #-------------------------------------- (4f) A PLOT -------------------------------------
+    fig, (axes) = plt.subplots(1,3, figsize=(15, 5))
+    # Plot of correlation between values
+    axes[0].plot(dst_pred_cut, dst_cut, 'bx')
+    axes[0].set_title("Real vs. forecast Dst")
+    axes[0].set_xlabel("Forecast Dst [nT]")
+    axes[0].set_ylabel("Kyoto Dst [nT]")
 
-    maxvr_time=dis_sta['time'][future_times[0][0]+np.nanargmax(dis_sta['speed'][future_times])]
-    resultslog.write('Maximum speed (future times):\n')
-    resultslog.write(str(int(round(float(np.nanmax(dis_sta['speed'][future_times])))))+ ' km/s at '+ \
-          str(num2date(maxvr_time+1/(24*60)))[0:16])
-    resultslog.write('\n \n')
+    # Histogram of forecast
+    n, bins, patches = axes[1].hist(dst_pred['dst'], 20)
+    axes[1].set_title("Histogram of forecast Dst")
+    axes[1].set_xlim([30, -200])
+    axes[1].set_xlabel("Forecast Dst [nT]")
 
+    plt.savefig('predstorm_stats.png')
 
-    ### btot
-    maxb_time=dis_sta['time'][past_times[0][0]+np.nanargmax(dis_sta['btot'][past_times])]
-    resultslog.write('Maximum Btot (past times):\n')
-    resultslog.write(str(round(float(np.nanmax(dis_sta['btot'][past_times])),1))+ ' nT at '+ \
-          str(num2date(maxb_time+1/(24*60)))[0:16])
-    resultslog.write('\n \n')
-
-    maxb_time=dis_sta['time'][future_times[0][0]+np.nanargmax(dis_sta['btot'][future_times])]
-    resultslog.write('Maximum Btot (future times):\n')
-    resultslog.write(str(round(float(np.nanmax(dis_sta['btot'][future_times])),1))+ ' nT at '+ \
-          str(num2date(maxb_time+1/(24*60)))[0:16])
-    resultslog.write('\n \n')
-
-
-    ### bz
-    minbz_time=dis_sta['time'][past_times[0][0]+np.nanargmin(dis_sta['bz'][past_times])]
-    resultslog.write('Minimum Bz (past times):\n')
-    resultslog.write(str(round(float(np.nanmin(dis_sta['bz'][past_times])),1))+ ' nT at '+ \
-          str(num2date(minbz_time+1/(24*60)))[0:16])
-    resultslog.write('\n \n')
-
-    minbz_time=dis_sta['time'][future_times[0][0]+np.nanargmin(dis_sta['bz'][future_times])]
-    resultslog.write('Minimum Bz (future times):\n')
-    resultslog.write(str(round(float(np.nanmin(dis_sta['bz'][future_times])),1))+ ' nT at '+ \
-          str(num2date(minbz_time+1/(24*60)))[0:16])
-    resultslog.write('\n \n')
-
-    resultslog.close()
-
-    logger.info("PREDSTORM_L5 run complete!")
-
-    # Print results for overview of run:
-    if verbose:
-        print("")
-        print("-----------------------------")
-        f = open(logfile,'r')
-        print(*f.readlines())
 
 #========================================================================================
 #--------------------------------- RUN SCRIPT -------------------------------------------
@@ -622,10 +472,6 @@ if __name__ == '__main__':
     if os.path.isdir('data/sta_beacon') == False: 
         logger.info("Creating folder data/stereoarchive for data downloads...")
         os.mkdir('data/sta_beacon')
-    # Files listing satellite positions:
-    if not os.path.exists('data/positions/STEREOA-pred_20070101-20250101_HEEQ_6h.p'):
-        logger.warning("Need position files to run script! Generating files under data/positions...")
-        ps.spice.generate_all_position_files()
 
     # Closes all plots
     plt.close('all')
