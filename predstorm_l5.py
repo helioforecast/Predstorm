@@ -25,7 +25,6 @@ into the sta_beacon directory 14 days prior to current time
 tested for correctly handling missing PLASTIC files
 
 things to add:
-- add verification mode
 - add error bars for the Temerin/Li Dst model with 1 and 2 sigma
 - fill data gaps from STEREO-A beacon data with reasonable Bz fluctuations etc.
   based on a assessment of errors with the ... stereob_errors program
@@ -34,7 +33,6 @@ things to add:
   taken from correlations of ovation prime, SuomiNPP data in NASA worldview and Dst
 - check coordinate conversions again, GSE to GSM is ok
 - deal with CMEs at STEREO, because systematically degrades prediction results
-- add metrics ROC for verification etc.
 - proper status/debugging logging system
 
 future larger steps:
@@ -159,37 +157,26 @@ def main():
         timestamp = historic_date
         if (datetime.utcnow() - historic_date).days < (7.-plot_past_days):
             logger.info("Using historic mode with current DSCOVR data and {} timestamp".format(timestamp))
-            dism = ps.get_dscovr_data_real()
+            dism = ps.get_dscovr_realtime_data()
             dism = dism.cut(endtime=timestamp)
             dis = dism.make_hourly_data()
         else:
             logger.info("Using historic mode with archive DSCOVR data")
-            dism = ps.get_dscovr_data_all(P_filepath="data/dscovrarchive/*",
-                                       M_filepath="data/dscovrarchive/*",
-                                       starttime=timestamp-timedelta(days=plot_past_days+1),
-                                       endtime=timestamp)
+            dism = ps.get_dscovr_data(starttime=timestamp-timedelta(days=plot_past_days+1),
+                                      endtime=timestamp)
         timeutc = date2num(timestamp)
         timenow = timeutc
-    elif run_mode == 'verification':
-        print("Verification mode coming soon.")
     dism.interp_nans()
     dis = dism.make_hourly_data()
 
     timeutcstr = datetime.strftime(timestamp, tstr_format)
     timenowstr = datetime.strftime(num2date(timenow), tstr_format)
 
-    # Open file for logging results:        # TODO use logging module
-    logfile=outputdirectory+'/predstorm_v1_realtime_stereo_a_results_'+timeutcstr[0:10]+'-' \
-             +timeutcstr[11:13]+'_'+timeutcstr[14:16]+'.txt'
-    logger.info('Logfile for results is: '+logfile)
-
     logger.info('Current time UTC')
     logger.info('\t{}'.format(timestamp))
     logger.info('UTC Time of last datapoint in real time DSCOVR data')
     logger.info('\t{}'.format(num2date(dism['time'][-1])))
     logger.info('Time lag in minutes: {}'.format(int(round((timeutc-dism['time'][-1])*24*60))))
-
-    resultslog = open(logfile,'wt')
 
     #------------------------ (1b) Get real-time STEREO-A beacon data -----------------------
 
@@ -199,8 +186,8 @@ def main():
     elif run_mode == 'historic':
         lag_L1, lag_r = ps.get_time_lag_wrt_earth(timestamp=timestamp, satname='STEREO-A')
         est_timelag = lag_L1 + lag_r
-        stam = ps.get_stereo_beacon_data(starttime=num2date(timenow)-timedelta(days=plot_future_days+est_timelag),
-                                           endtime=num2date(timenow)+timedelta(days=2))
+        stam = ps.get_stereo_beacon_data(starttime=timestamp-timedelta(days=plot_future_days+est_timelag),
+                                         endtime=timestamp+timedelta(days=2))
 
     logger.info('UTC time of last datapoint in STEREO-A beacon data:')
     logger.info('\t{}'.format(num2date(stam['time'][-1])))
@@ -273,7 +260,7 @@ def main():
         dst_pred['dst'] = dst_pred['dst'] + dst_offset
     elif dst_method == 'temerin_li_2006':
         dst_pred = dis_sta.make_dst_prediction(method='temerin_li_2006')
-        dst_label = 'Dst Temerin & Li 2002'
+        dst_label = 'Dst Temerin & Li 2006'
         dst_pred['dst'] = dst_pred['dst'] + dst_offset
     elif dst_method == 'obrien':
         dst_pred = dis_sta.make_dst_prediction(method='obrien')
@@ -431,6 +418,7 @@ if __name__ == '__main__':
         elif opt == '--historic':
             run_mode = 'historic'
             historic_date = datetime.strptime(arg, "%Y-%m-%dT%H:%M")
+            historic_date = historic_date.replace(tzinfo=None)
             print("Using historic mode for date: {}".format(historic_date))
         elif opt == '-h' or opt == '--help':
             print("")
@@ -443,8 +431,7 @@ if __name__ == '__main__':
             print("RUN OPTIONS:")
             print("--server      : Run script in server mode.")
             print("                python predstorm_l5.py --server")
-            print("--historic    : Run script with a historic data set. Must have")
-            print("                archived data available.")
+            print("--historic    : Run script with a historic data set.")
             print("                python predstorm_l5.py --historic='2017-09-07T23:00'")
             print("GENERAL OPTIONS:")
             print("-h/--help     : print this help data")
@@ -469,9 +456,9 @@ if __name__ == '__main__':
     if os.path.isdir(outputdirectory+'/savefiles') == False:
         os.mkdir(outputdirectory+'/savefiles')
     # Check if directory for beacon data exists:
-    if os.path.isdir('data/sta_beacon') == False: 
-        logger.info("Creating folder data/stereoarchive for data downloads...")
-        os.mkdir('data/sta_beacon')
+    if os.path.isdir('data') == False: 
+        logger.info("Creating folder data for data downloads...")
+        os.mkdir('data')
 
     # Closes all plots
     plt.close('all')

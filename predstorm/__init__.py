@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from .data import get_dscovr_realtime_data, get_dscovr_data_all, download_dscovr_data_noaa
+from .data import get_dscovr_realtime_data, get_dscovr_data
 from .data import get_stereo_beacon_data
 from .data import get_noaa_dst, get_past_dst, get_omni_data
 from .data import get_predstorm_data_realtime, get_position_data

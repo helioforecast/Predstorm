@@ -35,9 +35,6 @@ from glob import iglob
 import json
 import urllib
 
-from .data import get_stereo_beacon_data
-from .data import get_dscovr_data_all, get_past_dst
-from .data import get_time_lag_wrt_earth, getpositions, time_to_num_cat
 from .config import plotting as pltcfg
 
 logger = logging.getLogger(__name__)
@@ -631,9 +628,9 @@ def plot_indices(dism, timestamp=None, look_back=20, outfile=None, **kwargs):
     # Read DSCOVR data:
     dis = dism.make_hourly_data()
     dis.interp_nans()
-    dst = get_past_dst(filepath="data/dstarchive/WWW_dstae00016185.dat",
-                       starttime=timestamp-timedelta(days=look_back),
-                       endtime=timestamp)
+    dst = ps.get_past_dst(filepath="data/dstarchive/WWW_dstae00016185.dat",
+                          starttime=timestamp-timedelta(days=look_back),
+                          endtime=timestamp)
 
     # Calculate Dst from prediction:
     dst_dis = dis.make_dst_prediction()
@@ -835,11 +832,11 @@ def plot_all(timestamp=None, plotdir="plots", download=True):
     logger.info("Plotting all plots...")
 
     # STEREO DATA
-    stam = ps.get_stereoa_data_beacon(starttime=timestamp-timedelta(days=look_back+est_timelag+0.5), 
+    stam = ps.get_stereoa_beacon_data(starttime=timestamp-timedelta(days=look_back+est_timelag+0.5), 
                                       endtime=timestamp)
     stam.load_positions('data/positions/STEREOA-pred_20070101-20250101_HEEQ_6h.p')
     # DSCOVR DATA
-    dism = ps.get_dscovr_data_all(P_filepath="data/dscovrarchive/*",
+    dism = ps.get_dscovr_data(P_filepath="data/dscovrarchive/*",
                                   M_filepath="data/dscovrarchive/*",
                                   starttime=timestamp-timedelta(days=look_back),
                                   endtime=timestamp, download=download)

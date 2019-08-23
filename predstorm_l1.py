@@ -7,7 +7,7 @@ for similar algorithms see Riley et al. 2017, Owens et al. 2017
 Author: C. Moestl, IWF Graz, Austria
 twitter @chrisoutofspace, https://github.com/IWF-helio
 
-started April 2018, last update April 2019
+started April 2018, last update August 2019
 
 python 3.7 with sunpy
 
@@ -63,15 +63,6 @@ import os
 import sys
 import getopt
 
-#load all constants from predstorm_L1_input.py
-from predstorm_l1_input import *
-
-#IMPORT
-import scipy
-from scipy import stats
-import sys
-import datetime
-
 # READ INPUT OPTIONS FROM COMMAND LINE
 argv = sys.argv[1:]
 opts, args = getopt.getopt(argv,"h",["server", "help"])
@@ -87,6 +78,7 @@ if server:
 else:
     matplotlib.use('Qt5Agg') # figures are shown on mac
 
+from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import numpy as np
@@ -97,20 +89,285 @@ import pdb
 import urllib
 import json
 import seaborn as sns
+import scipy
+from scipy import stats
 import sunpy.time
 
 import predstorm as ps
+from predstorm_l1_input import *
 # Old imports (remove later)
-from predstorm.data import make_dst_from_wind, get_dscovr_data_real_old, get_omni_data_old
 from predstorm.predict import make_dst_from_wind
 
 #========================================================================================
 #--------------------------------- FUNCTIONS --------------------------------------------
 #========================================================================================
 
+def get_dscovr_data_real_old():
+    """
+    Downloads and returns DSCOVR data 
+    data from http://services.swpc.noaa.gov/products/solar-wind/
+    if needed replace with ACE
+    http://legacy-www.swpc.noaa.gov/ftpdir/lists/ace/
+    get 3 or 7 day data
+    url_plasma='http://services.swpc.noaa.gov/products/solar-wind/plasma-3-day.json'
+    url_mag='http://services.swpc.noaa.gov/products/solar-wind/mag-3-day.json'
+    
+    Parameters
+    ==========
+    None
+    Returns
+    =======
+    (data_minutes, data_hourly)
+    data_minutes : np.rec.array
+         Array of interpolated minute data with format:
+         dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
+            ('speed','f8'),('den','f8'),('temp','f8')]
+    data_hourly : np.rec.array
+         Array of interpolated hourly data with format:
+         dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
+            ('speed','f8'),('den','f8'),('temp','f8')]
+    """
+    
+    url_plasma='http://services.swpc.noaa.gov/products/solar-wind/plasma-7-day.json'
+    url_mag='http://services.swpc.noaa.gov/products/solar-wind/mag-7-day.json'
 
-#none so far
+    #download, see URLLIB https://docs.python.org/3/howto/urllib2.html
+    with urllib.request.urlopen(url_plasma) as url:
+        pr = json.loads (url.read().decode())
+    with urllib.request.urlopen(url_mag) as url:
+        mr = json.loads(url.read().decode())
+    logger.info('get_dscovr_data_real: DSCOVR plasma data available')
+    logger.info(str(pr[0]))
+    logger.info('get_dscovr_data_real: DSCOVR MAG data available')
+    logger.info(str(mr[0]))
+    #kill first row which stems from the description part
+    pr=pr[1:]
+    mr=mr[1:]
 
+    #define variables 
+    #plasma
+    rptime_str=['']*len(pr)
+    rptime_num=np.zeros(len(pr))
+    rpv=np.zeros(len(pr))
+    rpn=np.zeros(len(pr))
+    rpt=np.zeros(len(pr))
+
+    #mag
+    rbtime_str=['']*len(mr)
+    rbtime_num=np.zeros(len(mr))
+    rbtot=np.zeros(len(mr))
+    rbzgsm=np.zeros(len(mr))
+    rbygsm=np.zeros(len(mr))
+    rbxgsm=np.zeros(len(mr))
+
+    #convert variables to numpy arrays
+    #mag
+    for k in np.arange(0,len(mr),1):
+
+        #handle missing data, they show up as None from the JSON data file
+        if mr[k][6] is None: mr[k][6]=np.nan
+        if mr[k][3] is None: mr[k][3]=np.nan
+        if mr[k][2] is None: mr[k][2]=np.nan
+        if mr[k][1] is None: mr[k][1]=np.nan
+
+        rbtot[k]=float(mr[k][6])
+        rbzgsm[k]=float(mr[k][3])
+        rbygsm[k]=float(mr[k][2])
+        rbxgsm[k]=float(mr[k][1])
+
+        #convert time from string to datenumber
+        rbtime_str[k]=mr[k][0][0:16]
+        rbtime_num[k]=mdates.date2num(datetime.strptime(rbtime_str[k], "%Y-%m-%d %H:%M"))
+    
+    #plasma
+    for k in np.arange(0,len(pr),1):
+        if pr[k][2] is None: pr[k][2]=np.nan
+        rpv[k]=float(pr[k][2]) #speed
+        rptime_str[k]=pr[k][0][0:16]
+        rptime_num[k]=mdates.date2num(datetime.strptime(rbtime_str[k], "%Y-%m-%d %H:%M"))
+        if pr[k][1] is None: pr[k][1]=np.nan
+        rpn[k]=float(pr[k][1]) #density
+        if pr[k][3] is None: pr[k][3]=np.nan
+        rpt[k]=float(pr[k][3]) #temperature
+
+
+    #interpolate to minutes 
+    #rtimes_m=np.arange(rbtime_num[0],rbtime_num[-1],1.0000/(24*60))
+    rtimes_m= round_to_hour(mdates.num2date(rbtime_num[0])) + np.arange(0,len(rbtime_num)) * timedelta(minutes=1) 
+    #convert back to matplotlib time
+    rtimes_m=mdates.date2num(rtimes_m)
+
+    rbtot_m=np.interp(rtimes_m,rbtime_num,rbtot)
+    rbzgsm_m=np.interp(rtimes_m,rbtime_num,rbzgsm)
+    rbygsm_m=np.interp(rtimes_m,rbtime_num,rbygsm)
+    rbxgsm_m=np.interp(rtimes_m,rbtime_num,rbxgsm)
+    rpv_m=np.interp(rtimes_m,rptime_num,rpv)
+    rpn_m=np.interp(rtimes_m,rptime_num,rpn)
+    rpt_m=np.interp(rtimes_m,rptime_num,rpt)
+    
+    #interpolate to hours 
+    #rtimes_h=np.arange(np.ceil(rbtime_num)[0],rbtime_num[-1],1.0000/24.0000)
+    rtimes_h= round_to_hour(mdates.num2date(rbtime_num[0])) + np.arange(0,len(rbtime_num)/(60)) * timedelta(hours=1) 
+    rtimes_h=mdates.date2num(rtimes_h)
+
+    
+    rbtot_h=np.interp(rtimes_h,rbtime_num,rbtot)
+    rbzgsm_h=np.interp(rtimes_h,rbtime_num,rbzgsm)
+    rbygsm_h=np.interp(rtimes_h,rbtime_num,rbygsm)
+    rbxgsm_h=np.interp(rtimes_h,rbtime_num,rbxgsm)
+    rpv_h=np.interp(rtimes_h,rptime_num,rpv)
+    rpn_h=np.interp(rtimes_h,rptime_num,rpn)
+    rpt_h=np.interp(rtimes_h,rptime_num,rpt)
+
+    #make recarrays
+    data_hourly=np.rec.array([rtimes_h,rbtot_h,rbxgsm_h,rbygsm_h,rbzgsm_h,rpv_h,rpn_h,rpt_h], \
+    dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
+            ('speed','f8'),('den','f8'),('temp','f8')])
+    
+    data_minutes=np.rec.array([rtimes_m,rbtot_m,rbxgsm_m,rbygsm_m,rbzgsm_m,rpv_m,rpn_m,rpt_m], \
+    dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
+            ('speed','f8'),('den','f8'),('temp','f8')])
+        
+    return data_minutes, data_hourly
+
+
+def get_omni_data_old():
+    """FORMAT(2I4,I3,I5,2I3,2I4,14F6.1,F9.0,F6.1,F6.0,2F6.1,F6.3,F6.2, F9.0,F6.1,F6.0,2F6.1,F6.3,2F7.2,F6.1,I3,I4,I6,I5,F10.2,5F9.2,I3,I4,2F6.1,2I6,F5.1)
+    1963   1  0 1771 99 99 999 999 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 999.9 9999999. 999.9 9999. 999.9 999.9 9.999 99.99 9999999. 999.9 9999. 999.9 999.9 9.999 999.99 999.99 999.9  7  23    -6  119 999999.99 99999.99 99999.99 99999.99 99999.99 99999.99  0   3 999.9 999.9 99999 99999 99.9
+    define variables from OMNI2 dataset
+    see http://omniweb.gsfc.nasa.gov/html/ow_data.html
+    omni2_url='ftp://nssdcftp.gsfc.nasa.gov/pub/data/omni/low_res_omni/omni2_all_years.dat'
+    """
+
+    #check how many rows exist in this file
+    f=open('data/omni2_all_years.dat')
+    dataset= len(f.readlines())
+    #print(dataset)
+    #global Variables
+    spot=np.zeros(dataset) 
+    btot=np.zeros(dataset) #floating points
+    bx=np.zeros(dataset) #floating points
+    by=np.zeros(dataset) #floating points
+    bz=np.zeros(dataset) #floating points
+    bzgsm=np.zeros(dataset) #floating points
+    bygsm=np.zeros(dataset) #floating points
+
+    speed=np.zeros(dataset) #floating points
+    speedx=np.zeros(dataset) #floating points
+    speed_phi=np.zeros(dataset) #floating points
+    speed_theta=np.zeros(dataset) #floating points
+
+    dst=np.zeros(dataset) #float
+    kp=np.zeros(dataset) #float
+
+    den=np.zeros(dataset) #float
+    pdyn=np.zeros(dataset) #float
+    year=np.zeros(dataset)
+    day=np.zeros(dataset)
+    hour=np.zeros(dataset)
+    t=np.zeros(dataset) #index time
+    
+    
+    j=0
+    print('Read OMNI2 data ...')
+    with open('data/omni2_all_years.dat') as f:
+        for line in f:
+            line = line.split() # to deal with blank 
+            #print line #41 is Dst index, in nT
+            dst[j]=line[40]
+            kp[j]=line[38]
+            
+            if dst[j] == 99999: dst[j]=np.NaN
+            #40 is sunspot number
+            spot[j]=line[39]
+            #if spot[j] == 999: spot[j]=NaN
+
+            #25 is bulkspeed F6.0, in km/s
+            speed[j]=line[24]
+            if speed[j] == 9999: speed[j]=np.NaN
+          
+            #get speed angles F6.1
+            speed_phi[j]=line[25]
+            if speed_phi[j] == 999.9: speed_phi[j]=np.NaN
+
+            speed_theta[j]=line[26]
+            if speed_theta[j] == 999.9: speed_theta[j]=np.NaN
+            #convert speed to GSE x see OMNI website footnote
+            speedx[j] = - speed[j] * np.cos(np.radians(speed_theta[j])) * np.cos(np.radians(speed_phi[j]))
+
+
+
+            #9 is total B  F6.1 also fill ist 999.9, in nT
+            btot[j]=line[9]
+            if btot[j] == 999.9: btot[j]=np.NaN
+
+            #GSE components from 13 to 15, so 12 to 14 index, in nT
+            bx[j]=line[12]
+            if bx[j] == 999.9: bx[j]=np.NaN
+            by[j]=line[13]
+            if by[j] == 999.9: by[j]=np.NaN
+            bz[j]=line[14]
+            if bz[j] == 999.9: bz[j]=np.NaN
+          
+            #GSM
+            bygsm[j]=line[15]
+            if bygsm[j] == 999.9: bygsm[j]=np.NaN
+          
+            bzgsm[j]=line[16]
+            if bzgsm[j] == 999.9: bzgsm[j]=np.NaN    
+          
+          
+            #24 in file, index 23 proton density /ccm
+            den[j]=line[23]
+            if den[j] == 999.9: den[j]=np.NaN
+          
+            #29 in file, index 28 Pdyn, F6.2, fill values sind 99.99, in nPa
+            pdyn[j]=line[28]
+            if pdyn[j] == 99.99: pdyn[j]=np.NaN      
+          
+            year[j]=line[0]
+            day[j]=line[1]
+            hour[j]=line[2]
+            j=j+1     
+      
+
+    #convert time to matplotlib format
+    #http://matplotlib.org/examples/pylab_examples/date_demo2.html
+
+    times1=np.zeros(len(year)) #datetime time
+    print('convert time start')
+    for index in range(0,len(year)):
+        #first to datetimeobject 
+        timedum=datetime(int(year[index]), 1, 1) + timedelta(day[index] - 1) +timedelta(hours=hour[index])
+        #then to matlibplot dateformat:
+        times1[index] = mdates.date2num(timedum)
+    print('convert time done')   #for time conversion
+
+    print('all done.')
+    print(j, ' datapoints')   #for reading data from OMNI file
+    
+    #make structured array of data
+    omni_data=np.rec.array([times1,btot,bx,by,bz,bygsm,bzgsm,speed,speedx,den,pdyn,dst,kp], \
+    dtype=[('time','f8'),('btot','f8'),('bx','f8'),('by','f8'),('bz','f8'),\
+    ('bygsm','f8'),('bzgsm','f8'),('speed','f8'),('speedx','f8'),('den','f8'),('pdyn','f8'),('dst','f8'),('kp','f8')])
+    
+    return omni_data
+
+
+def round_to_hour(dt):
+    '''
+    round datetime objects to nearest hour
+    '''
+    dt_start_of_hour = dt.replace(minute=0, second=0, microsecond=0)
+    dt_half_hour = dt.replace(minute=30, second=0, microsecond=0)
+
+    if dt >= dt_half_hour:
+        # round up
+        dt = dt_start_of_hour + timedelta(hours=1)
+    else:
+        # round down
+        dt = dt_start_of_hour
+    return dt
 
 #========================================================================================
 #--------------------------------- MAIN PROGRAM -----------------------------------------
@@ -125,7 +382,7 @@ print()
 print('------------------------------------------------------------------------')
 print()
 print('PREDSTORM L1 v1 method for geomagnetic storm and aurora forecasting. ')
-print('Christian Moestl, IWF Graz, last update April 2019.')
+print('Christian Moestl, IWF Graz, last update August 2019.')
 print()
 print('Based on results by Riley et al. 2017 Space Weather, and')
 print('Owens, Riley and Horbury 2017 Solar Physics. ')
@@ -137,6 +394,7 @@ print('This is the real time version by Christian Moestl, IWF Graz, Austria. Las
 print()
 print('-------------------------------------------------')
 
+logger = ps.init_logging()
 
 #================================== (1) GET DATA ========================================
 
@@ -152,8 +410,8 @@ timenow=dism.time[-1]
 timenowstr=str(mdates.num2date(timenow))[0:16]
 
 #get UTC time now
-timeutc=mdates.date2num(datetime.datetime.utcnow())
-timeutcstr=str(datetime.datetime.utcnow())[0:16]
+timeutc=mdates.date2num(datetime.utcnow())
+timeutcstr=str(datetime.utcnow())[0:16]
 
 print()
 print()
@@ -212,7 +470,9 @@ print('Loaded Kyoto Dst from NOAA for last 7 days.')
 
 #make Dst index from solar wind data
 #make_dst_from_wind(btot_in,bx_in, by_in,bz_in,v_in,vx_in,density_in,time_in):#
-[rdst_burton, rdst_obrien, rdst_temerin_li]=make_dst_from_wind(btot7,bxgsm7,bygsm7,bzgsm7,rpv7,rpv7,rpn7,rtimes7)
+rdst_temerin_li=ps.predict.calc_dst_temerin_li(rtimes7,btot7,bxgsm7,bygsm7,bzgsm7,rpv7,rpv7,rpn7)
+rdst_obrien = ps.predict.calc_dst_obrien(rtimes7, bzgsm7, rpv7, rpn7)
+rdst_burton = ps.predict.calc_dst_burton(rtimes7, bzgsm7, rpv7, rpn7)
 
 
 
@@ -380,8 +640,8 @@ print('OMNI2 1 hour training data, number of points available: ', np.size(o.spee
 print('start date:',str(mdates.num2date(np.min(o.time))))
 print('end date:',str(mdates.num2date(np.max(o.time))))
 
-trainstartnum=mdates.date2num(sunpy.time.parse_time(trainstart))-deltat/24
-trainendnum=mdates.date2num(sunpy.time.parse_time(trainend))-deltat/24
+trainstartnum=mdates.date2num(datetime.strptime(trainstart, "%Y-%m-%d %H:%M"))-deltat/24
+trainendnum=mdates.date2num(datetime.strptime(trainend, "%Y-%m-%d %H:%M"))-deltat/24
 
 print('Training data start and end interval: ', trainstart, '  ', trainend)
 
@@ -863,8 +1123,9 @@ dendst[25:49]=denp[1:]
 
 #[dst_burton]=make_predstorm_dst(btoti, bygsmi, bzgsmi, speedi, deni, timesi)
 #old [pdst_burton, pdst_obrien]=make_predstorm_dst(btotdst,bzdst, speeddst, dendst, timesdst)
-[pdst_burton, pdst_obrien, pdst_temerin_li]=make_dst_from_wind(btotdst,bxdst,bydst,bzdst,speeddst,speeddst,dendst,timesdst)
-
+pdst_temerin_li=ps.predict.calc_dst_temerin_li(timesdst,btotdst,bxdst,bydst,bzdst,speeddst,speeddst,dendst)
+pdst_obrien = ps.predict.calc_dst_obrien(timesdst, bzdst, speeddst, dendst)
+pdst_burton = ps.predict.calc_dst_burton(timesdst, bzdst, speeddst, dendst)
 
 
 ax8 = fig.add_subplot(414)

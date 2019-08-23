@@ -14,13 +14,6 @@ plot_past_days = 3.5
 # If True, save older data for plotting Burton/OBrien Dst for verification
 verification_mode = False
 
-# File to save data to for later verification
-verify_filename = 'real/savefiles/predstorm_realtime_stereo_l1_save_v1_2018-09-10-10_02.p'
-
-# Intervals for verification
-verify_int_start = '2018-09-09 12:00:00'
-verify_int_end =   '2018-09-12 23:00:00'
-
 # Dst method to be plotted (options = 'ml', 'temerin_li', 'temerin_li_2006', 'burton', 'obrien')
 dst_method = 'temerin_li_2006'
 

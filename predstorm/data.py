@@ -42,7 +42,7 @@ OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 import os
 import sys
 import copy
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dateutil.relativedelta import relativedelta
 from dateutil import tz
 import gzip
@@ -1320,136 +1320,98 @@ def sphere2cart(r, phi, theta):
 # B. Data reading and writing:
 # ***************************************************************************************
 
-def get_dscovr_data_real_old():
-    """
-    Downloads and returns DSCOVR data 
-    data from http://services.swpc.noaa.gov/products/solar-wind/
-    if needed replace with ACE
-    http://legacy-www.swpc.noaa.gov/ftpdir/lists/ace/
-    get 3 or 7 day data
-    url_plasma='http://services.swpc.noaa.gov/products/solar-wind/plasma-3-day.json'
-    url_mag='http://services.swpc.noaa.gov/products/solar-wind/mag-3-day.json'
-    
+
+def get_dscovr_data(starttime, endtime, resolution='min', skip_files=True):
+
+    if (datetime.utcnow() - starttime).days < 7.:
+        dscovr_data = ps.get_dscovr_realtime_data()
+        dscovr_data = dscovr_data.cut(starttime=starttime, endtime=endtime)
+        return dscovr_data
+    else:
+        dscovr_data = get_dscovr_archive_data(starttime, endtime, 
+                            resolution=resolution, skip_files=skip_files)
+        return dscovr_data
+
+
+def get_dscovr_archive_data(starttime, endtime, resolution='min', skip_files=True):
+    """Downloads and reads STEREO-A beacon data from CDF files. Files handling
+    is done using heliosat, so files are downloaded to HELIOSAT_DATAPATH.
+    Data sourced from: 
+    https://www.ngdc.noaa.gov/dscovr/portal/index.html#/download/1542848400000;1554163200000/f1m;m1m
+
     Parameters
     ==========
-    None
+    starttime : datetime.datetime
+        Datetime object with the required starttime of the input data.
+    endtime : datetime.datetime
+        Datetime object with the required endtime of the input data.
+    resolution : str, (optional, 'min' (default) or 'hour')
+        Determines which resolution data should be returned in.
+    skip_files : bool (default=True)
+        Heliosat get_data_raw var. Skips missing files in download folder.
 
     Returns
     =======
-    (data_minutes, data_hourly)
-    data_minutes : np.rec.array
-         Array of interpolated minute data with format:
-         dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
-            ('speed','f8'),('den','f8'),('temp','f8')]
-    data_hourly : np.rec.array
-         Array of interpolated hourly data with format:
-         dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
-            ('speed','f8'),('den','f8'),('temp','f8')]
+    dscovr : predstorm.SatData
+        Object containing satellite data under keys.
+
     """
-    
-    url_plasma='http://services.swpc.noaa.gov/products/solar-wind/plasma-7-day.json'
-    url_mag='http://services.swpc.noaa.gov/products/solar-wind/mag-7-day.json'
 
-    #download, see URLLIB https://docs.python.org/3/howto/urllib2.html
-    with urllib.request.urlopen(url_plasma) as url:
-        pr = json.loads (url.read().decode())
-    with urllib.request.urlopen(url_mag) as url:
-        mr = json.loads(url.read().decode())
-    logger.info('get_dscovr_data_real: DSCOVR plasma data available')
-    logger.info(str(pr[0]))
-    logger.info('get_dscovr_data_real: DSCOVR MAG data available')
-    logger.info(str(mr[0]))
-    #kill first row which stems from the description part
-    pr=pr[1:]
-    mr=mr[1:]
+    logger = logging.getLogger(__name__)
 
-    #define variables 
-    #plasma
-    rptime_str=['']*len(pr)
-    rptime_num=np.zeros(len(pr))
-    rpv=np.zeros(len(pr))
-    rpn=np.zeros(len(pr))
-    rpt=np.zeros(len(pr))
+    DSCOVR_ = heliosat.DSCOVR()
 
-    #mag
-    rbtime_str=['']*len(mr)
-    rbtime_num=np.zeros(len(mr))
-    rbtot=np.zeros(len(mr))
-    rbzgsm=np.zeros(len(mr))
-    rbygsm=np.zeros(len(mr))
-    rbxgsm=np.zeros(len(mr))
+    logger.info("Reading archived DSCOVR data")
 
-    #convert variables to numpy arrays
-    #mag
-    for k in np.arange(0,len(mr),1):
+    # Magnetometer data
+    magt, magdata = DSCOVR_.get_data_raw(starttime, endtime, 'mag', skip_files=skip_files)
+    magt = [datetime.utcfromtimestamp(t) for t in magt]
+    import IPython
+    IPython.embed()
+    bx, by, bz = magdata[:,0], magdata[:,1], magdata[:,2]
+    missing_value = -99999.
+    bx[bx==missing_value] = np.NaN
+    by[by==missing_value] = np.NaN
+    bz[bz==missing_value] = np.NaN
+    btot = np.sqrt(bx**2. + by**2. + bz**2.)
 
-        #handle missing data, they show up as None from the JSON data file
-        if mr[k][6] is None: mr[k][6]=np.nan
-        if mr[k][3] is None: mr[k][3]=np.nan
-        if mr[k][2] is None: mr[k][2]=np.nan
-        if mr[k][1] is None: mr[k][1]=np.nan
+    # Particle data
+    pt, pdata = DSCOVR_.get_data_raw(starttime, endtime, 'proton', skip_files=skip_files)
+    pt = [datetime.utcfromtimestamp(t) for t in pt]
+    density, vtot, temperature = pdata[:,0], pdata[:,1], pdata[:,2]
+    density[density==missing_value] = np.NaN
+    vtot[vtot==missing_value] = np.NaN
+    temperature[temperature==missing_value] = np.NaN
 
-        rbtot[k]=float(mr[k][6])
-        rbzgsm[k]=float(mr[k][3])
-        rbygsm[k]=float(mr[k][2])
-        rbxgsm[k]=float(mr[k][1])
+    if resolution == 'hour':
+        stime = date2num(starttime) - date2num(starttime)%(1./24.)
+        nhours = (endtime.replace(tzinfo=None) - num2date(stime).replace(tzinfo=None)).total_seconds()/60./60.
+        tarray = np.array(stime + np.arange(0, nhours)*(1./24.))
+    elif resolution == 'min':
+        stime = date2num(starttime) - date2num(starttime)%(1./24./60.)
+        nmins = (endtime.replace(tzinfo=None) - num2date(stime).replace(tzinfo=None)).total_seconds()/60.
+        tarray = np.array(stime + np.arange(0, nmins)*(1./24./60.))
 
-        #convert time from string to datenumber
-        rbtime_str[k]=mr[k][0][0:16]
-        rbtime_num[k]=date2num(sunpy.time.parse_time(rbtime_str[k]))
-    
-    #plasma
-    for k in np.arange(0,len(pr),1):
-        if pr[k][2] is None: pr[k][2]=np.nan
-        rpv[k]=float(pr[k][2]) #speed
-        rptime_str[k]=pr[k][0][0:16]
-        rptime_num[k]=date2num(sunpy.time.parse_time(rptime_str[k]))
-        if pr[k][1] is None: pr[k][1]=np.nan
-        rpn[k]=float(pr[k][1]) #density
-        if pr[k][3] is None: pr[k][3]=np.nan
-        rpt[k]=float(pr[k][3]) #temperature
+    # Interpolate variables to time:
+    bx_int = np.interp(tarray, date2num(magt), bx)
+    by_int = np.interp(tarray, date2num(magt), by)
+    bz_int = np.interp(tarray, date2num(magt), bz)
+    btot_int = np.interp(tarray, date2num(magt), btot)
+    density_int = np.interp(tarray, date2num(pt), density)
+    vtot_int = np.interp(tarray, date2num(pt), vtot)
+    temp_int = np.interp(tarray, date2num(pt), temperature)
 
+    # Pack into object:
+    dscovr = SatData({'time': tarray,
+                      'btot': btot_int, 'bx': bx_int, 'by': by_int, 'bz': bz_int,
+                      'speed': vtot_int, 'density': density_int, 'temp': temp_int},
+                      source='DSCOVR')
+    dscovr.h['DataSource'] = "DSCOVR Level 1 (NOAA)"
+    dscovr.h['SamplingRate'] = tarray[1] - tarray[0]
+    dscovr.h['ReferenceFrame'] = DSCOVR_.get_ref_frame('mag')
+    dscovr.h['HeliosatObject'] = DSCOVR_
 
-    #interpolate to minutes 
-    #rtimes_m=np.arange(rbtime_num[0],rbtime_num[-1],1.0000/(24*60))
-    rtimes_m= round_to_hour(num2date(rbtime_num[0])) + np.arange(0,len(rbtime_num)) * timedelta(minutes=1) 
-    #convert back to matplotlib time
-    rtimes_m=date2num(rtimes_m)
-
-    rbtot_m=np.interp(rtimes_m,rbtime_num,rbtot)
-    rbzgsm_m=np.interp(rtimes_m,rbtime_num,rbzgsm)
-    rbygsm_m=np.interp(rtimes_m,rbtime_num,rbygsm)
-    rbxgsm_m=np.interp(rtimes_m,rbtime_num,rbxgsm)
-    rpv_m=np.interp(rtimes_m,rptime_num,rpv)
-    rpn_m=np.interp(rtimes_m,rptime_num,rpn)
-    rpt_m=np.interp(rtimes_m,rptime_num,rpt)
-    
-    #interpolate to hours 
-    #rtimes_h=np.arange(np.ceil(rbtime_num)[0],rbtime_num[-1],1.0000/24.0000)
-    rtimes_h= round_to_hour(num2date(rbtime_num[0])) + np.arange(0,len(rbtime_num)/(60)) * timedelta(hours=1) 
-    rtimes_h=date2num(rtimes_h)
-
-    
-    rbtot_h=np.interp(rtimes_h,rbtime_num,rbtot)
-    rbzgsm_h=np.interp(rtimes_h,rbtime_num,rbzgsm)
-    rbygsm_h=np.interp(rtimes_h,rbtime_num,rbygsm)
-    rbxgsm_h=np.interp(rtimes_h,rbtime_num,rbxgsm)
-    rpv_h=np.interp(rtimes_h,rptime_num,rpv)
-    rpn_h=np.interp(rtimes_h,rptime_num,rpn)
-    rpt_h=np.interp(rtimes_h,rptime_num,rpt)
-
-    #make recarrays
-    data_hourly=np.rec.array([rtimes_h,rbtot_h,rbxgsm_h,rbygsm_h,rbzgsm_h,rpv_h,rpn_h,rpt_h], \
-    dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
-            ('speed','f8'),('den','f8'),('temp','f8')])
-    
-    data_minutes=np.rec.array([rtimes_m,rbtot_m,rbxgsm_m,rbygsm_m,rbzgsm_m,rpv_m,rpn_m,rpt_m], \
-    dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
-            ('speed','f8'),('den','f8'),('temp','f8')])
-    
-    logger.info('get_dscovr_data_real: DSCOVR data read and interpolated to hour/minute resolution.')
-    
-    return data_minutes, data_hourly
+    return dscovr
 
 
 def get_dscovr_realtime_data():
@@ -1517,252 +1479,6 @@ def get_dscovr_realtime_data():
     
     logger.info('get_dscovr_data_real: DSCOVR data read completed.')
     
-    return dscovr_data
-
-
-def download_dscovr_data_noaa(starttime, endtime, filepath='data/dscovrarchive'):
-    """ Reads .nc format DSCOVR data from NOAA archive and returns np recarrays with
-    variables under the JSON file format names.
-    Data sourced from: 
-    https://www.ngdc.noaa.gov/dscovr/portal/index.html#/download/1542848400000;1554163200000/f1m;m1m
-
-    - DSCOVR data archive:
-    https://www.ngdc.noaa.gov/dscovr/portal/index.html#/download/1543017600000;1543363199999
-    https://www.ngdc.noaa.gov/dscovr/portal/index.html#/
-    https://www.ngdc.noaa.gov/next-web/docs/guide/catalog.html#dscovrCatalog
-    ftp://spdf.gsfc.nasa.gov/pub/data/dscovr/h0/mag/2018
-    or get data via heliopy and ftp:
-    https://docs.heliopy.org/en/stable/api/heliopy.data.dscovr.mag_h0.html#heliopy.data.dscovr.mag_h0
-
-    BEST WAY TO GET UPDATED DSCOVR DATA:
-    monthly folders, e.g.
-    https://www.ngdc.noaa.gov/dscovr/data/2018/11/
-
-    then 
-    curl -O https://www.ngdc.noaa.gov/dscovr/data/2018/12/oe_f1m_dscovr_s20181207000000_e20181207235959_p20181208031650_pub.nc.gz
-
-    zum entpacken:
-    gunzip oe_f1m_dscovr_s20181207000000_e20181207235959_p20181208031650_pub.nc.gz
-    netcdf files
-
-    filenames are f1m for faraday and m1m for magnetometer, 1 minute averages
-
-    Parameters
-    ==========
-    starttime : datetime.datetime
-        Datetime object with the required starttime of the input data.
-    endtime : datetime.datetime
-        Datetime object with the required endtime of the input data.
-    filepath : str
-        Path to directory for downloaded files.
-
-    Returns
-    =======
-    True if download successful
-    """
-
-    url = "https://www.ngdc.noaa.gov/dscovr/data/"
-    nmonths = (relativedelta(endtime, starttime)).months + 1
-    if endtime.day < starttime.day:
-        nmonths += 1
-    ndays = (endtime - starttime).days + 1
-    yearmonths = [datetime.strftime(starttime + relativedelta(months=n), "%Y/%m/") for n in range(0, nmonths)]
-    days = [datetime.strftime(starttime + timedelta(days=n), "%Y%m%d000000") for n in range(0, ndays)]
-
-    # Get file list
-    logger.info("download_dscovr_data_noaa: Downloading {} DSCOVR files from months {}".format(len(days), yearmonths))
-    P_dlfiles, M_dlfiles = [], []
-    for m in yearmonths:
-        filelist = urllib.request.urlopen(url+m).read().decode('utf-8')
-        for s in re.finditer('<a href="oe_f1m_dscovr_(.+?)">', filelist):
-            filedate = s.group(1).split('_')[0]
-            if filedate.replace('s','') in days:
-                P_dlfiles.append(url+m+re.search('<a href="(.+?)">', s.group(0)).group(1))
-        for s in re.finditer('<a href="oe_m1m_dscovr_(.+?)">', filelist):
-            filedate = s.group(1).split('_')[0]
-            if filedate.replace('s','') in days:
-                M_dlfiles.append(url+m+re.search('<a href="(.+?)">', s.group(0)).group(1))
-
-    # Download files
-    P_files, M_files = [], []
-    for pf in P_dlfiles:
-        try: 
-            filename = os.path.basename(pf)
-            filedest = os.path.join(filepath, filename)
-            urllib.request.urlretrieve(pf, filedest)
-            logger.info(filename+" downloaded")
-            P_files.append(filedest)
-        except urllib.error.URLError as e:
-            logger.error("download_dscovr_data_noaa: Could not download {} for reason: ".format(filename, e.reason))
-    for mf in M_dlfiles:
-        try: 
-            filename = os.path.basename(mf)
-            filedest = os.path.join(filepath, filename)
-            urllib.request.urlretrieve(mf, filedest)
-            logger.info(filename+" downloaded")
-            M_files.append(filedest)
-        except urllib.error.URLError as e:
-            logger.error("download_dscovr_data_noaa: Could not download {} for reason: ".format(filename, e.reason))
-
-    # Unzip files
-    logger.info("download_dscovr_data_noaa: Unzipping files...")
-    for pf in P_files:
-        with gzip.open(pf, 'rb') as f_in:
-            with open(pf.replace('.gz',''), 'wb') as f_out:
-                shutil.copyfileobj(f_in, f_out)
-        os.remove(pf)
-    for mf in M_files:
-        with gzip.open(mf, 'rb') as f_in:
-            with open(mf.replace('.gz',''), 'wb') as f_out:
-                shutil.copyfileobj(f_in, f_out)
-        os.remove(mf)
-    logger.info("download_dscovr_data_noaa: Download complete.")
-
-    return True
-
-
-def get_dscovr_data_all(P_filepath='data/dscovrarchive/*', M_filepath='data/dscovrarchive/*', starttime=None, endtime=None, download=False):
-    """ Reads .nc format DSCOVR data from NOAA archive and returns np recarrays with
-    variables under the JSON file format names.
-    Data sourced from: 
-    https://www.ngdc.noaa.gov/dscovr/portal/index.html#/download/1542848400000;1554163200000/f1m;m1m
-
-    Note: if providing a directory as the filepath, use '*' to denote all files,
-    which should be in the NOAA archive file format with similar string:
-    --> oe_m1m_dscovr_s20190409000000_e20190409235959_p20190410031442_pub.nc
-    (This should only be used with starttime/endtime options.)
-
-    Parameters
-    ==========
-    P_filepath : str
-        Directory containing the DSCOVR plasma data.
-    M_filepath : str
-        Directory containing the DSCOVR magnetic field data.
-    starttime : datetime.datetime
-        Datetime object with the required starttime of the input data.
-    endtime : datetime.datetime
-        Datetime object with the required endtime of the input data.
-
-    Returns
-    =======
-    (data_minutes, data_hourly)
-    data_minutes : np.rec.array
-         Array of interpolated minute data with format:
-         dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
-            ('speed','f8'),('den','f8'),('temp','f8')]
-    data_hourly : np.rec.array
-         Array of interpolated hourly data with format:
-         dtype=[('time','f8'),('btot','f8'),('bxgsm','f8'),('bygsm','f8'),('bzgsm','f8'),\
-            ('speed','f8'),('den','f8'),('temp','f8')]
-    """
-
-    if 'netCDF4' not in sys.modules:
-        raise ImportError("get_dscovr_data_all: netCDF4 not imported for DSCOVR data read!")
-
-    ndays = (endtime-starttime).days + 1
-    readdates = [datetime.strftime(starttime+timedelta(days=n), "%Y%m%d000000") for n in range(0, ndays)]
-
-    if download:
-        download_dscovr_data_noaa(starttime, endtime)
-
-    # Pick out files to read:
-    # -----------------------
-    # A wildcard file search makes things much easier because these files have unpredictable names
-    # due to the processing time being added into the file name.
-    P_readfiles = []
-    if P_filepath[-1] == '*':
-        for filename in iglob(P_filepath):
-            if 'f1m' in filename:
-                testdate = [s.strip('s') for s in filename.split('_') if s[0] == 's'][0]
-                if testdate in readdates:
-                    P_readfiles.append(filename)
-    else:
-        P_readfiles = [P_filepath]
-
-    M_readfiles = []
-    if M_filepath[-1] == '*':
-        for filename in iglob(M_filepath):
-            if 'm1m' in filename:
-                testdate = [s.strip('s') for s in filename.split('_') if s[0] == 's'][0]
-                if testdate in readdates:
-                    M_readfiles.append(filename)
-    else:
-        M_readfiles = [M_filepath]
-
-    P_readfiles.sort()
-    M_readfiles.sort()
-
-    logger.info("get_dscovr_data_all: Reading {} DSCOVR archive files for time range {} till {}".format(len(P_readfiles),
-                datetime.strftime(starttime, "%Y-%m-%d"),
-                datetime.strftime(endtime, "%Y-%m-%d")))
-
-    # Particle data:
-    # --------------
-    dp_v_m, dp_p_m, dp_t_m  = np.array([]), np.array([]), np.array([])
-    dp_v_h, dp_p_h, dp_t_h  = np.array([]), np.array([]), np.array([])
-    dp_time_m, dp_time_h = np.array([]), np.array([])
-    for filepath in P_readfiles:
-        ncdata = Dataset(filepath, 'r')
-        time = np.array([date2num(datetime.utcfromtimestamp(x/1000.))
-                         for x in ncdata.variables['time'][...]])
-        dtype = [('time_tag', 'float'), ('density', 'float'), ('speed', 'float')]
-        density = np.array((ncdata.variables['proton_density'])[...])
-        speed = np.array((ncdata.variables['proton_speed'])[...])
-        temp = np.array((ncdata.variables['proton_temperature'])[...])
-
-        # Replace missing data:
-        # Note: original arrays are masked - this only works because they're converted to np.array before
-        density[np.where(density==float(ncdata.variables['proton_density'].missing_value))] = np.NaN
-        speed[np.where(speed==float(ncdata.variables['proton_speed'].missing_value))] = np.NaN
-        temp[np.where(temp==float(ncdata.variables['proton_temperature'].missing_value))] = np.NaN
-
-        # Minute data:
-        dp_v_m = np.hstack((dp_v_m, speed))
-        dp_p_m = np.hstack((dp_p_m, density))
-        dp_t_m = np.hstack((dp_t_m, temp))
-        dp_time_m = np.hstack((dp_time_m, time))
-
-    # Magnetic data:
-    # --------------
-    dm_bx_m, dm_by_m, dm_bz_m, dm_bt_m  = np.array([]), np.array([]), np.array([]), np.array([])
-    dm_bx_h, dm_by_h, dm_bz_h, dm_bt_h  = np.array([]), np.array([]), np.array([]), np.array([])
-    dm_time_m, dm_time_h = np.array([]), np.array([])
-    for filepath in M_readfiles:
-        ncdata = Dataset(filepath, 'r')
-        time = np.array([date2num(datetime.utcfromtimestamp(x/1000.))
-                         for x in ncdata.variables['time'][...]])
-        bx = np.array((ncdata.variables['bx_gse'])[...])
-        by = np.array((ncdata.variables['by_gse'])[...])
-        bz = np.array((ncdata.variables['bz_gse'])[...])
-        bt = np.array((ncdata.variables['bt'])[...])
-
-        # Replace missing data:
-        # Note: original arrays are masked - this only works because they're converted to np.array before
-        bx[np.where(bx==float(ncdata.variables['bx_gse'].missing_value))] = np.NaN
-        by[np.where(by==float(ncdata.variables['by_gse'].missing_value))] = np.NaN
-        bz[np.where(bz==float(ncdata.variables['bz_gse'].missing_value))] = np.NaN
-        bt[np.where(bt==float(ncdata.variables['bt'].missing_value))] = np.NaN
-
-        # Minute data:
-        dm_bx_m = np.hstack((dm_bx_m, bx))
-        dm_by_m = np.hstack((dm_by_m, by))
-        dm_bz_m = np.hstack((dm_bz_m, bz))
-        dm_bt_m = np.hstack((dm_bt_m, bt))
-        dm_time_m = np.hstack((dm_time_m, time))
-
-    # Pack into arrays:
-    # --------------------
-    dscovr_data = SatData({'time': dm_time_m,
-                           'btot': dm_bt_m, 'bx': dm_bx_m, 'by': dm_by_m, 'bz': dm_bz_m,
-                           'speed': dp_v_m, 'density': dp_p_m, 'temp': dp_t_m},
-                           source='DSCOVR')
-    dscovr_data.h['DataSource'] = "DSCOVR (NOAA archives)"
-    dscovr_data.h['SamplingRate'] = 1./24./60.
-    dscovr_data.h['ReferenceFrame'] = 'GSM'
-    dscovr_data = dscovr_data.cut(starttime=starttime, endtime=endtime)
-    
-    logger.info('get_dscovr_data_all: DSCOVR data successfully read.')
-            
     return dscovr_data
 
 
@@ -2414,35 +2130,6 @@ def interp_nans(ar):
     ar[inds] = np.interp(inds.nonzero()[0], (~inds).nonzero()[0], ar[~inds])
     return ar
 
-#def sunriseset(location_name):
-"""
- location = ephem.Observer()
-
- if location_name == 'iceland':
-    location.lat = '64.128' #+(N)
-    location.long = '-21.82'  #+E, so negative is west
-    location.elevation = 22 #meters
-
- if location_name == 'edmonton':
-    location.lat = '53.631611' #+(N)
-    location.long = '-113.3239'  #+E, so negative is west
-    location.elevation = 623 #meters
- 
- if location_name == 'dunedin': 
-    location.lat = '45.87416' #+(N)
-    location.long = '170.50361'  #+E, so negative is west
-    location.elevation = 94 #meters
-
- sun = ephem.Sun()
- #get sun ephemerides for location	
- sun.compute(location)
- nextrise = location.next_rising(sun).datetime()
- nextset = location.next_setting(sun).datetime()
- prevrise=location.previous_rising(sun).datetime()
- prevset=location.previous_setting(sun).datetime()
-
- return (nextrise,nextset,prevrise,prevset)
-"""
 
 def epoch_to_num(epoch):
     """
