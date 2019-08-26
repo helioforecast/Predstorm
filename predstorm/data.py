@@ -72,7 +72,7 @@ except:
     pass
 
 # Local
-from .predict import make_kp_from_wind, make_dst_from_wind, calc_ring_current_term
+from .predict import make_kp_from_wind, calc_ring_current_term
 from .predict import make_aurora_power_from_wind, calc_newell_coupling
 from .predict import calc_dst_burton, calc_dst_obrien, calc_dst_temerin_li
 from .config.constants import AU, dist_to_L1
@@ -1625,7 +1625,7 @@ def get_omni_data(filepath='', download=False, dldir='data'):
         raise Exception("get_omni_data: {} does not exist! Run get_omni_data(download=True) to download file.".format(filepath))
 
     if download:
-        omni2_url='ftp://nssdcftp.gsfc.nasa.gov/pub/data/omni/low_res_omni/omni2_all_years.dat'
+        omni2_url = 'https://spdf.gsfc.nasa.gov/pub/data/omni/low_res_omni/omni2_all_years.dat'
         logger.info("get_omni_data: downloading OMNI2 data from {}".format(omni2_url))
         tofile = os.path.join(dldir, 'omni2_all_years.dat')
         try: 
@@ -1634,7 +1634,6 @@ def get_omni_data(filepath='', download=False, dldir='data'):
             filepath = tofile
         except urllib.error.URLError as e:
             logger.error("get_omni_data: OMNI2 data download failed (reason: {})".format(e.reason))
-        pickle.dump(o, open('data/omni2_all_years_pickle.p', 'wb') )
 
     if filepath == '':
         filepath = 'data/omni2_all_years.dat'

@@ -109,8 +109,6 @@ import predstorm as ps
 from predstorm.config.constants import AU, dist_to_L1
 from predstorm.plot import plot_solarwind_and_dst_prediction
 from predstorm.predict import dst_loss_function
-# Old imports (remove later):
-from predstorm.data import getpositions, time_to_num_cat
 
 # GET INPUT PARAMETERS
 from predstorm_l5_input import *
