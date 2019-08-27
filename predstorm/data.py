@@ -64,7 +64,6 @@ import urllib
 import cdflib
 import heliosat
 from heliosat import transform_ref_frame
-import heliopy.spice as hspice
 import astropy.time
 try:
     from netCDF4 import Dataset
