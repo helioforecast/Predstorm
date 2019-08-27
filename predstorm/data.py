@@ -1750,7 +1750,7 @@ def get_omni_data(filepath='', download=False, dldir='data'):
     return omni_data
 
 
-def get_predstorm_data_realtime(resolution='hour'):
+def get_predstorm_realtime_data(resolution='hour'):
     """Reads data from PREDSTORM real-time output.
 
     Parameters
