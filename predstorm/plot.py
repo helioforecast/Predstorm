@@ -253,7 +253,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
 
     if not verification_mode:
         plt.savefig('predstorm_real.png')
-        print('Real-time plot saved as predstorm_real.png!')
+        logger.info('Real-time plot saved as predstorm_real.png!')
 
     #if not server: # Just plot and exit
     #    plt.show()
@@ -426,7 +426,7 @@ def plot_stereo_dscovr_comparison(stam, dism, dst, timestamp=None, look_back=20,
     return
 
 
-def plot_dst_comparison(stam, dism, dst, timestamp=None, look_back=20, outfile=None, **kwargs):
+def plot_dst_comparison(stam, dism, dst, timestamp=None, look_back=20, dst_method='temerin_li_2006', outfile=None, **kwargs):
     """Plots the last days of STEREO-A and DSCOVR data for comparison alongside
     the predicted and real Dst.
 
@@ -488,8 +488,8 @@ def plot_dst_comparison(stam, dism, dst, timestamp=None, look_back=20, outfile=N
 
     dst_h = dst.interp_to_time(sta['time'])
     dis = dis.interp_to_time(sta['time'])
-    dst_sta = sta.make_dst_prediction()
-    dst_dis = dis.make_dst_prediction()
+    dst_sta = sta.make_dst_prediction(method=dst_method)
+    dst_dis = dis.make_dst_prediction(method=dst_method)
 
     # PLOT:
     # -----
@@ -555,6 +555,175 @@ def plot_dst_comparison(stam, dism, dst, timestamp=None, look_back=20, outfile=N
 
     # Observed Dst Kyoto (past):
     gradient_fill(dis['time'], dst_dis['dst']-dst_sta['dst'], maxval=maxval, ls='-', c='k', label='Dst(DSCOVR-pred) - Dst(STEREO-A-pred)', ms=0, lw=lw)
+
+    # GENERAL FORMATTING
+    # ------------------
+    for ax in axes:
+        ax.set_xlim([plotstart,plotend])
+        ax.tick_params(axis="x", labelsize=fs)
+        ax.tick_params(axis="y", labelsize=fs)
+        ax.legend(loc=2, ncol=5, fontsize=fs_legend)
+
+        # Dates on x-axes:
+        myformat = mdates.DateFormatter(date_fmt)
+        ax.xaxis.set_major_formatter(myformat)
+
+    plt.savefig(outfile)
+    logger.info("Plot saved as {}".format(outfile))
+    plt.close()
+
+    return
+
+
+def plot_dst_vs_persistence_model(stam, dism, dpmm, dst, t_syn=27.27, dst_method='temerin_li_2006', timestamp=None, look_back=20, outfile=None, **kwargs):
+    """Plots the last days of STEREO-A and DSCOVR data for comparison alongside
+    the predicted and real Dst.
+
+    Parameters
+    ==========
+    stam : predstorm.SatData
+        Object containing minute STEREO-A data
+    dism : predstorm.SatData
+        Object containing minute DSCOVR data.
+    dst : predstorm.SatData
+        Object containing hourly Kyoto Dst data.
+    timestamp : datetime obj
+        Time for last datapoint in plot.
+    look_back : float (default=20)
+        Number of days in the past to plot.
+    **kwargs : ...
+        See config.plotting for variables that can be tweaked.
+
+    Returns
+    =======
+    plt.savefig : .png file
+        File saved to XXX
+        """
+
+    if timestamp == None:
+        timestamp = datetime.utcnow()
+
+    if outfile == None:
+        outfile = 'dst_comparison_{}.png'.format(datetime.strftime(timestamp, "%Y-%m-%dT%H:%M"))
+
+    figsize = kwargs.get('figsize', pltcfg.figsize)
+    lw = kwargs.get('lw', pltcfg.lw)
+    fs = kwargs.get('fs', pltcfg.fs)
+    date_fmt = kwargs.get('date_fmt', pltcfg.date_fmt)
+    c_dst = kwargs.get('c_dst', pltcfg.c_dst)
+    c_dis = kwargs.get('c_dis', pltcfg.c_dis)
+    c_dis_dst = kwargs.get('c_dis_dst', pltcfg.c_dis_dst)
+    c_sta_dst = kwargs.get('c_sta_dst', pltcfg.c_sta_dst)
+    c_sta = kwargs.get('c_sta', pltcfg.c_sta)
+    ms_dst = kwargs.get('c_dst', pltcfg.ms_dst)
+    fs_legend = kwargs.get('fs_legend', pltcfg.fs_legend) + 2
+    fs_title = kwargs.get('fs_title', pltcfg.fs_title) + 2
+
+    # PREPARE DATA:
+    # -------------
+    # TODO: It would be faster to read archived hourly data rather than interped minute data...
+    logger.info("plot_dst_comparison: Preparing satellite data")
+    # Correct for STEREO-A position:
+    stam.shift_time_to_L1()
+    stam['bx'], stam['by'], stam['bz'] = stam['br'], -stam['bt'], stam['bn']
+    sta = stam.make_hourly_data()
+    sta = sta.cut(starttime=timestamp-timedelta(days=look_back), endtime=timestamp).interp_nans()
+
+    # DSCOVR
+    #dis = dism.make_hourly_data()
+    dism.interp_nans()
+
+    # Persistence Model
+    #dpm = dpmm.make_hourly_data()
+    dpmm.interp_nans()
+
+    # CALCULATE PREDICTED DST:
+    # ------------------------
+    #sta.convert_RTN_to_GSE().convert_GSE_to_GSM()
+
+    dst_h = dst.interp_to_time(sta['time'])
+    dis = dism.interp_to_time(sta['time'])
+    dpm = dpmm.interp_to_time(sta['time'])
+    dst_sta = sta.make_dst_prediction(method=dst_method)
+    dst_dis = dis.make_dst_prediction(method=dst_method)
+    dst_dpm = dpm.make_dst_prediction(method=dst_method)
+
+    # PLOT:
+    # -----
+    # Set style:
+    sns.set_context(pltcfg.sns_context)
+    sns.set_style(pltcfg.sns_style)
+
+    plotstart = timestamp - timedelta(days=look_back)
+    plotend = timestamp
+
+    # Make figure object:
+    fig = plt.figure(1, figsize=figsize)
+    axes = []
+    score_xpos, score_ypos = 0.80, 0.73
+
+    # SUBPLOT 1: Actual and predicted Dst
+    # -----------------------------------
+    ax1 = fig.add_subplot(411)
+    axes.append(ax1)
+
+    # Observed Dst Kyoto (past):
+    plt.plot_date(dst['time'], dst['dst'], 'o', c=c_dst, label='Observed Dst', ms=ms_dst)
+    plt.plot_date(sta['time'], dst_sta['dst'],'-', c=c_sta_dst, label='Predicted Dst (STEREO-A)', linewidth=lw)
+    plt.plot_date(dis['time'], dst_dis['dst'],'-', c=c_dis_dst, label='Predicted Dst (DSCOVR)', linewidth=lw)
+    plt.plot_date(dis['time'], dst_dpm['dst'],'-', c='r', label='Dst (DSCOVR persistence model)', linewidth=lw)
+    # Add generic error bars of +/-15 nT:
+    error=15
+    plt.fill_between(sta['time'], dst_sta['dst']-error, dst_sta['dst']+error, facecolor=c_sta_dst, alpha=0.2, label='Error')
+    #plt.fill_between(dis['time'], dst_dis['dst']-error, dst_dis['dst']+error, facecolor=c_dis_dst, alpha=0.2, label='Error')
+
+    # Label plot with geomagnetic storm levels
+    pltcfg.plot_dst_activity_lines(xlims=[plotstart, plotend])
+
+    dstplotmin = -10 + np.nanmin(np.nanmin(np.concatenate((dst_sta['dst'], dst_dis['dst'], dst_dpm['dst']))))
+    dstplotmax = 10 + np.nanmax(np.nanmax(np.concatenate((dst_sta['dst'], dst_dis['dst'], dst_dpm['dst']))))
+    plt.ylim([dstplotmin, dstplotmax])
+    plt.title("Dst(real) vs Dst(predicted) for {} - {} days".format(timestamp.strftime("%Y-%m-%d %H:%M"), look_back), fontsize=fs_title)
+
+    # SUBPLOT 2: Actual vs predicted Dst DSCOVR
+    # -----------------------------------------
+    ax2 = fig.add_subplot(412)
+    axes.append(ax2)
+    if np.nanmax((np.abs(dstplotmin), dstplotmax)) > 50:
+        maxval = np.nanmax((np.abs(dstplotmin), dstplotmax))
+    else:
+        maxval = 50.
+
+    # Observed Dst Kyoto (past):
+    gradient_fill(dis['time'], dst_h['dst']-dst_dis['dst'], maxval=maxval, ls='-', c='k', label='Dst(Kyoto) - Dst(DSCOVR-pred)', ms=0, lw=lw)
+    r2 = np.corrcoef(dst_h['dst'], dst_dis['dst'])[0][1]
+    mae = np.sum(np.abs(dst_h['dst']-dst_dis['dst'])) / len(dst_h['dst'])
+    ax2.annotate(r'$R^2 = {:.2f}$'.format(r2)+'\n'+r'$MAE = {:.1f}$ nT'.format(mae), xy=(score_xpos, score_ypos), 
+                 xycoords='axes fraction', size=fs_title-2)
+
+    # SUBPLOT 3: Actual vs predicted Dst STEREO
+    # -----------------------------------------
+    ax3 = fig.add_subplot(413)
+    axes.append(ax3)
+
+    # Observed Dst Kyoto (past):
+    gradient_fill(sta['time'], dst_h['dst']-dst_sta['dst'], maxval=maxval, ls='-', c='k', label='Dst(Kyoto) - Dst(STEREO-A-pred)', ms=0, lw=lw)
+    r2 = np.corrcoef(dst_h['dst'], dst_sta['dst'])[0][1]
+    mae = np.sum(np.abs(dst_h['dst']-dst_sta['dst'])) / len(dst_h['dst'])
+    ax3.annotate(r'$R^2 = {:.2f}$'.format(r2)+'\n'+r'$MAE = {:.1f}$ nT'.format(mae), xy=(score_xpos, score_ypos), 
+                 xycoords='axes fraction', size=fs_title-2)
+
+    # SUBPLOT 3: Actual vs persistence model Dst
+    # ------------------------------------------
+    ax4 = fig.add_subplot(414)
+    axes.append(ax4)
+
+    # Observed Dst Kyoto (past):
+    gradient_fill(dis['time'], dst_h['dst']-dst_dpm['dst'], maxval=maxval, ls='-', c='k', label='Dst(Kyoto) - Dst(DSCOVR pers. model)', ms=0, lw=lw)
+    r2 = np.corrcoef(dst_h['dst'], dst_dpm['dst'])[0][1]
+    mae = np.sum(np.abs(dst_h['dst']-dst_dpm['dst'])) / len(dst_h['dst'])
+    ax4.annotate(r'$R^2 = {:.2f}$'.format(r2)+'\n'+r'$MAE = {:.1f}$ nT'.format(mae), xy=(score_xpos, score_ypos), 
+                 xycoords='axes fraction', size=fs_title-2)
 
     # GENERAL FORMATTING
     # ------------------
@@ -817,34 +986,61 @@ def gradient_fill(x, y, ax=None, maxval=None, **kwargs):
 def plot_all(timestamp=None, plotdir="plots", download=True):
     """Makes plots of a time range ending with timestamp using all functions."""
 
-    import predstorm as ps
-
     if not os.path.isdir(plotdir):
         os.mkdir(plotdir)
 
     if timestamp == None:
         timestamp = datetime.utcnow()
-    look_back = 30
-    lag_L1, lag_r = ps.get_time_lag_wrt_earth(timestamp=timestamp, satname='STEREO-A')
-    est_timelag = lag_L1 + lag_r
+
+    from datetime import datetime, timedelta
+    import predstorm as ps
+    import os
+    import heliosat
 
     logger = ps.init_logging(verbose=True)
+    plotdir="plots"
+
+    timestamp = datetime(2019,8,8) - timedelta(days=26*2) # datetime.utcnow() - timedelta(days=180) # datetime(2019,6,23)
+    look_back = 26
+    lag_L1, lag_r = ps.get_time_lag_wrt_earth(timestamp=timestamp, satname='STEREO-A')
+    est_timelag = lag_L1 + lag_r
     logger.info("Plotting all plots...")
 
     # STEREO DATA
-    stam = ps.get_stereoa_beacon_data(starttime=timestamp-timedelta(days=look_back+est_timelag+0.5), 
+    stam = ps.get_stereo_beacon_data(starttime=timestamp-timedelta(days=look_back+est_timelag+0.5), 
                                       endtime=timestamp)
-    stam.load_positions('data/positions/STEREOA-pred_20070101-20250101_HEEQ_6h.p')
+    stam = stam.interp_nans(keys=['time'])
+    stam.load_positions()
     # DSCOVR DATA
-    dism = ps.get_dscovr_data(P_filepath="data/dscovrarchive/*",
-                                  M_filepath="data/dscovrarchive/*",
-                                  starttime=timestamp-timedelta(days=look_back),
-                                  endtime=timestamp, download=download)
-    dism.load_positions('data/positions/Earth_20000101-20250101_HEEQ_6h.p', l1_corr=True)
+    if timestamp < datetime(2019,6,23):
+        dism = ps.get_dscovr_data(starttime=timestamp-timedelta(days=look_back),
+                                  endtime=timestamp)
+    else:
+        dism = ps.get_omni_data(starttime=timestamp-timedelta(days=look_back),
+                                endtime=timestamp)
+        dism.h['HeliosatObject'] = heliosat.DSCOVR()
+    dism.load_positions(l1_corr=True)
     # KYOTO DST
-    dst = ps.get_past_dst(filepath="data/dstarchive/WWW_dstae00019594.dat",
-                          starttime=timestamp-timedelta(days=look_back),
-                          endtime=timestamp)
+    dst = ps.get_omni_data(starttime=timestamp-timedelta(days=look_back),
+                           endtime=timestamp, download=False)
+    # dst = ps.get_past_dst(filepath="data/dstarchive/WWW_dstae00019594.dat",
+    #                       starttime=timestamp-timedelta(days=look_back),
+    #                       endtime=timestamp)
+
+    # PERSISTENCE MODEL
+    t_syn = 26.27
+    if timestamp < datetime(2019,6,10):
+        dpmm = ps.get_dscovr_data(starttime=timestamp-timedelta(days=t_syn)-timedelta(days=look_back),
+                                  endtime=timestamp-timedelta(days=t_syn))
+    else:
+        dpmm = ps.get_omni_data(starttime=timestamp-timedelta(days=t_syn)-timedelta(days=look_back),
+                                endtime=timestamp-timedelta(days=t_syn))
+        dpmm.h['HeliosatObject'] = heliosat.DSCOVR()
+    dpmm['time'] = dpmm['time'] + t_syn
+
+    outfile = os.path.join(plotdir, "all_dst_{}day_plot.png".format(look_back))
+    ps.plot.plot_dst_vs_persistence_model(stam, dism, dpmm, dst, look_back=look_back, 
+                                          timestamp=timestamp, outfile=outfile)
 
     logger.info("\n-------------------------\nDst comparison\n-------------------------")
     outfile = os.path.join(plotdir, "dst_prediction_{}day_plot.png".format(look_back))

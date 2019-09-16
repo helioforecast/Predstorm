@@ -882,27 +882,27 @@ class SatData():
                 vx = self['speedx']
             else:
                 vx = self['speed']
-            logger.info("Calculating Dst using Temerin-Li model 2002 version (updated parameters)")
+            logger.info("Calculating Dst for {} using Temerin-Li model 2002 version (updated parameters)".format(self.source))
             dst_pred = calc_dst_temerin_li(self['time'], self['btot'], self['bx'], self['by'], self['bz'], self['speed'], vx, self['density'], version='2002n')
         elif method.lower() == 'temerin_li_2002':
             if 'speedx' in self.vars:
                 vx = self['speedx']
             else:
                 vx = self['speed']
-            logger.info("Calculating Dst using Temerin-Li model 2002 version")
+            logger.info("Calculating Dst for {} using Temerin-Li model 2002 version".format(self.source))
             dst_pred = calc_dst_temerin_li(self['time'], self['btot'], self['bx'], self['by'], self['bz'], self['speed'], vx, self['density'], version='2002')
         elif method.lower() == 'temerin_li_2006':
             if 'speedx' in self.vars:
                 vx = self['speedx']
             else:
                 vx = self['speed']
-            logger.info("Calculating Dst using Temerin-Li model 2006 version")
+            logger.info("Calculating Dst for {} using Temerin-Li model 2006 version".format(self.source))
             dst_pred = calc_dst_temerin_li(self['time'], self['btot'], self['bx'], self['by'], self['bz'], self['speed'], vx, self['density'], version='2006')
         elif method.lower() == 'obrien':
-            logger.info("Calculating Dst using OBrien model")
+            logger.info("Calculating Dst for {} using OBrien model".format(self.source))
             dst_pred = calc_dst_obrien(self['time'], self['bz'], self['speed'], self['density'])
         elif method.lower() == 'burton':
-            logger.info("Calculating Dst using Burton model")
+            logger.info("Calculating Dst for {} using Burton model".format(self.source))
             dst_pred = calc_dst_burton(self['time'], self['bz'], self['speed'], self['density'])
 
         dstData = SatData({'time': copy.deepcopy(self['time']), 'dst': dst_pred})
@@ -1261,32 +1261,25 @@ def get_time_lag_wrt_earth(timestamp=None, satname='STEREO-A', v_mean=400., sun_
     heliocentric distances (this is reverse for STEREO-B!)
     """
 
-    AU = 149597870.700 #AU in km
-
     if timestamp == None:
         timestamp = datetime.utcnow()
-    timestamp = date2num(timestamp)
-
-    pos = getpositions('data/positions_2007_2023_HEEQ_6hours.sav')
-    pos_time_num = time_to_num_cat(pos.time)
-    # take position of STEREO-A for time now from position file
-    pos_time_now_ind = np.where(timestamp < pos_time_num)[0][0]
 
     if satname == 'STEREO-A':
-        sat_pos = pos.sta
+        SAT = heliosat.STA()
     elif satname == 'STEREO-B':
-        sat_pos = pos.stb
+        SAT = heliosat.STB()
     else:
         raise Exception("Not a valid satellite name to find position!")
-    sat_r = sat_pos[0][pos_time_now_ind]
-    earth_r = pos.earth_l1[0][pos_time_now_ind]
 
-    # Get longitude and latitude
-    lon_heeq = sat_pos[1][pos_time_now_ind]*180./np.pi
-    lat_heeq = sat_pos[2][pos_time_now_ind]*180./np.pi
+    traj = SAT.trajectory([timestamp], reference_frame='HEEQ', units='AU',
+                          observer='SUN')
+
+    posx, posy, posz = traj[:,0][0], traj[:,1][0], traj[:,2][0]
+    sat_r, lat_heeq, lon_heeq = cart2sphere(posx, posy, posz)
+    earth_r = 1.
 
     # define time lag from satellite to Earth
-    lag_l1 = abs(lon_heeq)/(360./sun_syn)
+    lag_l1 = abs(lon_heeq*180/np.pi)/(360./sun_syn)
 
     # time lag from Parker spiral
     diff_r_deg = -(360./(sun_syn*86400.))*((sat_r-earth_r)*AU)/v_mean
@@ -1365,14 +1358,16 @@ def get_dscovr_archive_data(starttime, endtime, resolution='min', skip_files=Tru
     # Magnetometer data
     magt, magdata = DSCOVR_.get_data_raw(starttime, endtime, 'mag', skip_files=skip_files)
     magt = [datetime.utcfromtimestamp(t) for t in magt]
-    import IPython
-    IPython.embed()
     bx, by, bz = magdata[:,0], magdata[:,1], magdata[:,2]
     missing_value = -99999.
     bx[bx==missing_value] = np.NaN
     by[by==missing_value] = np.NaN
     bz[bz==missing_value] = np.NaN
     btot = np.sqrt(bx**2. + by**2. + bz**2.)
+
+    if len(bx) == 0:
+        logger.error("DSCOVR data is missing or masked in time range! Returning empty data object.")
+        return SatData({'time': []})
 
     # Particle data
     pt, pdata = DSCOVR_.get_data_raw(starttime, endtime, 'proton', skip_files=skip_files)
@@ -1597,7 +1592,7 @@ def get_past_dst(filepath=None, starttime=None, endtime=None):
     return dst_data
 
 
-def get_omni_data(filepath='', download=False, dldir='data'):
+def get_omni_data(starttime=None, endtime=None, filepath='', download=False, dldir='data'):
     """
     Will download and read OMNI2 data file (in .dat format).
     Variable definitions from OMNI2 dataset:
@@ -1745,6 +1740,9 @@ def get_omni_data(filepath='', download=False, dldir='data'):
         omni_data.h['SourceURL'] = omni2_url
     omni_data.h['SamplingRate'] = times1[1] - times1[0]
     omni_data.h['ReferenceFrame'] = 'GSM'
+
+    if starttime != None or endtime != None:
+        omni_data = omni_data.cut(starttime=starttime, endtime=endtime)
     
     return omni_data
 
@@ -2173,5 +2171,19 @@ def init_logging(verbose=False):
     logger.addHandler(sh)
 
     return logger
+
+
+def parse_satellite_name(sat_str):
+    """Parses satellite name from str."""
+
+    sat_str_ = sat_str.replace('-','').replace('_','').replace(' ','')
+
+    if sat_str_.lower() in ['sta', 'stereoa', 'stereoahead']:
+        return 'stereo-ahead'
+    elif sat_str_.lower() in ['stb', 'stereob', 'stereobehind']:
+        return 'stereo-behind'
+
+
+
 
 

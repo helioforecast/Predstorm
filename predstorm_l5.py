@@ -120,21 +120,24 @@ from predstorm_l5_input import *
 def main():
     """The main code."""
 
-    print('------------------------------------------------------------------------')
-    print('')
-    print('PREDSTORM L5 v1 method for geomagnetic storm and aurora forecasting. ')
-    print('IWF-Helio Group, Space Research Institute Graz, last update August 2019.')
-    print('')
-    print('Time shifting magnetic field and plasma data from STEREO-A, ')
-    print('or from an L5 mission or interplanetary CubeSats, to predict')
-    print('the solar wind at Earth and the Dst index for magnetic storm strength.')
-    print('')
-    print('')
-    print('------------------------------------------------------------------------')
-    logger.info("Starting PREDSTORM_L5 script. Running in mode {}".format(run_mode.upper()))
-
     timestamp = datetime.utcnow()
     startread = timestamp - timedelta(days=plot_future_days+7)
+
+    predstorm_header = ''
+    predstorm_header += '\n------------------------------------------------------------------------\n'
+    predstorm_header += '\n'
+    predstorm_header += 'PREDSTORM L5 v1 method for geomagnetic storm and aurora forecasting. \n'
+    predstorm_header += 'IWF-Helio Group, Space Research Institute Graz, last update August 2019.\n'
+    predstorm_header += '\n'
+    predstorm_header += 'Time shifting magnetic field and plasma data from STEREO-A, \n'
+    predstorm_header += 'or from an L5 mission or interplanetary CubeSats, to predict\n'
+    predstorm_header += 'the solar wind at Earth and the Dst index for magnetic storm strength.\n'
+    predstorm_header += '\n'
+    predstorm_header += '\n'
+    predstorm_header += '------------------------------------------------------------------------'
+    logger.info(predstorm_header)
+    logger.info("Starting PREDSTORM_L5 script. Running in mode {} with timestamp".format(run_mode.upper(), 
+        timestamp.strftime("%Y-%m-%d %H:%M")))
 
     #================================== (1) GET DATA ========================================
 
@@ -268,10 +271,13 @@ def main():
         dst_pred = dis_sta.make_dst_prediction(method='burton')
         dst_label = 'Dst Burton et al. 1975'
         dst_pred['dst'] = dst_pred['dst'] + dst_offset
-    elif dst_method == 'ml':
+    elif dst_method.startswith('ml'):
         with open('dst_pred_model_final.pickle', 'rb') as f:
             model = pickle.load(f)
         dst_pred = dis_sta.make_dst_prediction_from_model(model)
+        if dst_method == 'ml_dstdiff':
+            dst_tl = dis_sta.make_dst_prediction(method='temerin_li_2006')
+            dst_pred['dst'] = dst_tl['dst'] + dst_pred['dst']
         dst_label = 'Dst predicted using ML (GBR)'
         #dst_pred['dst'] = dst_pred['dst'] + 10
 
@@ -323,20 +329,23 @@ def main():
     max_cut = np.min((dst['time'][-1], dis_sta['time'][-1]))
     dst_cut = dst['dst'][np.logical_and(dst['time'] > min_cut, dst['time'] < max_cut)]
     dst_pred_cut = dst_pred['dst'][np.logical_and(dst_pred['time'] > min_cut, dst_pred['time'] < max_cut)]
+    results_str = ''
 
-    #----------------------------- (4c) GOODNESS METRICS --------------------------
-    scores = ps.predict.get_scores(dst_cut, dst_pred_cut, dst['time'][np.logical_and(dst['time'] > min_cut, dst['time'] < max_cut)])
-    score_str = ''
-    score_str += 'SCORING\n-------\n'
-    score_str += 'MAE of real Dst to Dst forecast:\t{:.2f} nT\n'.format(scores['mae'])
-    score_str += 'Diff of real Dst to Dst forecast:\t{:.2f} +/- {:.2f} nT\n'.format(scores['diff_mean'], scores['diff_std'])
-    score_str += 'Correlation of forecast in time:\t{:.2f}\n'.format(scores['ppmc'])
-    score_str += 'Best correlation of forecast in time:\t{}\n'.format(scores['xcorr_max'])
-    score_str += 'Best correlation time difference:\t{} hours\n'.format(scores['xcorr_offset'])
-    score_str += '\n'
+    if len(dst_cut) == len(dst_pred_cut):
+        #----------------------------- (4c) GOODNESS METRICS --------------------------
+        scores = ps.predict.get_scores(dst_cut, dst_pred_cut, dst['time'][np.logical_and(dst['time'] > min_cut, dst['time'] < max_cut)],
+                                       printtext=verbose)
+        results_str += 'SCORING\n-------\n'
+        results_str += 'MAE of real Dst to Dst forecast:\t{:.2f} nT\n'.format(scores['mae'])
+        results_str += 'Diff of real Dst to Dst forecast:\t{:.2f} +/- {:.2f} nT\n'.format(scores['diff_mean'], scores['diff_std'])
+        results_str += 'Correlation of forecast in time:\t{:.2f}\n'.format(scores['ppmc'])
+        results_str += 'Best correlation of forecast in time:\t{}\n'.format(scores['xcorr_max'])
+        results_str += 'Best correlation time difference:\t{} hours\n'.format(scores['xcorr_offset'])
+        results_str += '\n'
+    else:   # TODO: handle mismatching Dst sizes
+        logger.warning("Dst (past) sizes are mismatched with {} and {}".format(len(dst_cut), len(dst_pred_cut)))
 
     #----------------------------- (4d) RESULTS OF DST PREDICTION  --------------------------
-    results_str = ''
     results_str += 'PREDSTORM L5 (STEREO-A) DST PREDICTION RESULTS\n----------------------------------------------\n'
 
     mindst_time = dst['time'][np.nanargmin(dst['dst'])]
@@ -380,10 +389,10 @@ def main():
     results_str += "\tForecast:\t{:.1f} {} \t   at {}\n".format(np.nanmin(dis_sta[var][future_times]), unit, str(num2date(minvar_time+1/(24*60)))[0:16])
     results_str += '\n'
 
-    logger.info("Final results:\n\n"+score_str+results_str)
+    logger.info("Final results:\n\n"+results_str)
 
     #-------------------------------------- (4f) A PLOT -------------------------------------
-    fig, (axes) = plt.subplots(1,3, figsize=(15, 5))
+    fig, (axes) = plt.subplots(1, 3, figsize=(15, 5))
     # Plot of correlation between values
     axes[0].plot(dst_pred_cut, dst_cut, 'bx')
     axes[0].set_title("Real vs. forecast Dst")
@@ -417,7 +426,6 @@ if __name__ == '__main__':
             run_mode = 'historic'
             historic_date = datetime.strptime(arg, "%Y-%m-%dT%H:%M")
             historic_date = historic_date.replace(tzinfo=None)
-            print("Using historic mode for date: {}".format(historic_date))
         elif opt == '-h' or opt == '--help':
             print("")
             print("-----------------------------------------------------------------")
