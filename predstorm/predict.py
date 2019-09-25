@@ -22,6 +22,7 @@ Future steps:
 
 import copy
 from datetime import datetime
+from dateutil import tz
 
 import numpy as np
 from matplotlib.dates import num2date, date2num
@@ -54,6 +55,86 @@ class DstFeatureExtraction(BaseEstimator, TransformerMixin):
 
     def transform(self, X, tarray=None):
 
+        def create_dataset(data, look_back=1):
+            shifted = []
+            # Fill up empty values with mean:
+            for i in range(look_back):
+                shifted.append(np.full((look_back), np.nanmean(data)))
+            # Fill rest of array with past values:
+            for i in range(len(data)-look_back):
+                a = data[i:(i+look_back)]
+                shifted.append(a)
+            return np.array(shifted)
+
+        pressure = X[:,3]**self.den_power * X[:,2]**self.v_power
+        sqrtden = np.sqrt(X[:,3])
+        bz = X[:,5]**self.bz_power
+        dbz = np.gradient(X[:,5])
+        dn = np.gradient(sqrtden)
+        b2xn = X[:,4]**2. * X[:,3]
+        #theta = -(np.arccos(-X[:,5]/X[:,4]) - np.pi) / 2. # infinite?
+        #exx = X[:,2] * X[:,4] * np.sin(theta)**7
+        rc = calc_ring_current_term(X[:,-1], X[:,5], X[:,2], m1=self.m1, m2=self.m2, e1=self.e1, e2=self.e2)
+        # Calculate past terms:
+        past_b2xn = create_dataset(b2xn, look_back=self.look_back)
+        past_pressure = create_dataset(pressure, look_back=self.look_back)
+        past_rc = create_dataset(rc, look_back=self.look_back)
+        #features = np.concatenate((X, rc.reshape(-1,1), pressure.reshape(-1,1), sqrtden.reshape(-1,1), bz.reshape(-1,1), dbz.reshape(-1,1)), axis=1)
+        # features = np.concatenate((X, rc.reshape(-1,1), pressure.reshape(-1,1), sqrtden.reshape(-1,1), bz.reshape(-1,1), dbz.reshape(-1,1), b2xn.reshape(-1,1), dn.reshape(-1,1)), axis=1)
+        features = np.concatenate((X, rc.reshape(-1,1), pressure.reshape(-1,1), sqrtden.reshape(-1,1), bz.reshape(-1,1), 
+                                   dbz.reshape(-1,1), b2xn.reshape(-1,1), dn.reshape(-1,1),
+                                   past_b2xn, past_pressure, past_rc), axis=1)
+
+        return features
+
+
+class DstFeatureExtraction_v2(BaseEstimator, TransformerMixin):
+    """
+    https://scikit-learn.org/dev/developers/contributing.html#rolling-your-own-estimator
+    """
+    def __init__(self, keys=[], v_power=1, den_power=1, bz_power=1, m1=-4.4, m2=2.4, e1=9.74, e2=4.69, look_back=5):
+        self.v_power = v_power
+        self.den_power = den_power
+        self.bz_power = bz_power
+        self.m1 = m1
+        self.m2 = m2
+        self.e1 = e1
+        self.e2 = e2
+        self.look_back = look_back
+        self.keys = keys
+
+
+    def fit(self, X, y = None):
+        return self
+
+
+    def transform(self, X):
+        # bx and by give no improvement, neither does np.gradient(da['density'], nor V**2)
+
+        time = X[:,0]
+        bx, by, bz = X[:,self.keys.index('bx')], X[:,self.keys.index('by')], X[:,self.keys.index('bz')]
+        btot = X[:,self.keys.index('btot')]
+        speed, density, temp = X[:,self.keys.index('speed')], X[:,self.keys.index('density')], X[:,self.keys.index('temp')]
+
+        # Time arrays:
+        sin_DOY, cos_DOY, sin_LT, cos_LT = extract_local_time_variables(time)
+        deltat = np.asarray([(time[i+1] - time[i])*24. for i in range(len(time)-1)] + [0.])
+        deltat[-1] = deltat[-2]
+
+        # Sinphi from Temerin-Li model:
+        # Including this term improves overall accuracy but reduces accuracy of large negative values:
+        tt, ttt = 2.*np.pi*(time-2449718.5)/365.24, 2.*np.pi*(time-2449718.5)
+        cosphi = np.sin(tt+0.078) * np.sin(ttt-tt-1.22) * (9.58589e-2) + np.cos(tt+0.078) * (0.39+0.104528*np.cos(ttt-tt-1.22))
+        sinphi = (1. - cosphi*cosphi)**0.5
+
+        # Other variables:
+        dbz = np.gradient(bz)
+        ec = calc_newell_coupling(by, bz, speed)
+
+        # Combine all:
+        X = np.vstack((sin_DOY, cos_DOY, speed, density, btot, bz, ec, dbz, deltat)).T
+
+        # 
         def create_dataset(data, look_back=1):
             shifted = []
             # Fill up empty values with mean:
@@ -579,6 +660,38 @@ def calc_ring_current_term(deltat, bz, speed, m1=-4.4, m2=2.4, e1=9.74, e2=4.69)
         lrc = rc[i+1]
 
     return rc
+
+
+def extract_local_time_variables(time):
+    """Takes the UTC time in numpy date format and 
+    returns local time and day of year variables, cos/sin.
+
+    Parameters:
+    -----------
+    time : np.array
+        Contains timestamps in numpy format.
+
+    Returns:
+    --------
+    sin_DOY, cos_DOY, sin_LT, cos_LT : np.arrays
+        Sine and cosine of day-of-yeat and local-time.
+    """
+
+    dtime = num2date(time)
+    utczone = tz.gettz('UTC')
+    cetzone = tz.gettz('CET')
+    # Original data is in UTC:
+    dtimeUTC = [dt.replace(tzinfo=utczone) for dt in dtime]
+    # Correct to local time zone (CET) for local time:
+    dtimeCET = [dt.astimezone(cetzone) for dt in dtime]
+    dtlocaltime = np.array([(dt.hour + dt.minute/60. + dt.second/3600.) for dt in dtimeCET])
+    dtdayofyear = np.array([dt.timetuple().tm_yday for dt in dtimeCET])
+    dtdayofyear = np.array([dt.timetuple().tm_yday for dt in dtimeCET]) + dtlocaltime
+    
+    sin_DOY, cos_DOY = np.sin(2.*np.pi*dtdayofyear/365.), np.sin(2.*np.pi*dtdayofyear/365.)
+    sin_LT, cos_LT = np.sin(2.*np.pi*dtlocaltime/24.), np.sin(2.*np.pi*dtlocaltime/24.)
+
+    return sin_DOY, cos_DOY, sin_LT, cos_LT
 
 
 def get_scores(dst_real, dst_pred, tarray, source='L1', printtext=True):

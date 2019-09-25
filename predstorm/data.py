@@ -63,7 +63,7 @@ import urllib
 # External
 import cdflib
 import heliosat
-from heliosat import transform_ref_frame
+from heliosat.spice import transform_frame
 import astropy.time
 try:
     from netCDF4 import Dataset
@@ -106,6 +106,8 @@ class SatData():
         Array containing position data for satellite.
     .h : dict
         Dict of metadata as defined by input header.
+    .state : np.array (dtype=object)
+        Array of None, str if defining state of data (e.g. 'quiet', 'cme').
     .vars : list
         List of variables stored in SatData.data.
     .source : str
@@ -170,10 +172,11 @@ class SatData():
         dt = [x for x in SatData.default_keys if x in input_dict.keys()]
         if len(input_dict['time']) == 0:
             logger.warning("SatData.__init__: Inititating empty array! Is the data missing?")
-        #data = [input_dict[x[0]] for x in dt]
+        # Create data array attribute
         data = [input_dict[x] if x in dt else np.zeros(len(input_dict['time'])) for x in SatData.default_keys]
-        # Cast this to be our class type
         self.data = np.asarray(data)
+        # Create array for state classifiers (currently empty)
+        self.state = np.array([None]*len(self.data[0]), dtype='object')
         # Add new attributes to the created instance
         self.source = source
         if header == None:               # Inititalise empty header
@@ -244,7 +247,7 @@ class SatData():
         
         barray = np.stack((self['bx'], self['by'], self['bz']), axis=1)
         tarray = [num2date(t).replace(tzinfo=None) for t in self['time']]
-        b_transformed = transform_ref_frame(tarray, barray, self.h['ReferenceFrame'], refframe)
+        b_transformed = transform_frame(tarray, barray, self.h['ReferenceFrame'], refframe)
         self['bx'], self['by'], self['bz'] = b_transformed[:,0], b_transformed[:,1], b_transformed[:,2]
         self.h['ReferenceFrame'] = refframe
 
@@ -489,7 +492,7 @@ class SatData():
 
         logger.info("load_positions: Loading position data into {} data".format(self.source))
         t_traj = [num2date(i).replace(tzinfo=None) for i in self['time']]
-        traj = self.h['HeliosatObject'].trajectory(t_traj, reference_frame=refframe, units=units,
+        traj = self.h['HeliosatObject'].trajectory(t_traj, frame=refframe, units=units,
                                                    observer=observer)
         posx, posy, posz = traj[:,0], traj[:,1], traj[:,2]
 
@@ -960,6 +963,15 @@ class SatData():
 
         return kpData
 
+
+    # -----------------------------------------------------------------------------------
+    # Definition of state
+    # -----------------------------------------------------------------------------------
+
+    def get_state(self):
+        """Finds state of wind and fills self.state attribute."""
+
+        print("Coming soon.")
 
     # -----------------------------------------------------------------------------------
     # Data archiving
@@ -1496,8 +1508,8 @@ def get_l1_position(times, units='AU', refframe='HEEQ', observer='SUN'):
         Object containing arrays of time and dst values.
     """
 
-    Earth = heliosat.SpiceObject(None, "EARTH")
-    Earth_traj = Earth.trajectory(times, reference_frame=refframe, units=units, observer=observer)
+    Earth = heliosat._SpiceObject(None, "EARTH")
+    Earth_traj = Earth.trajectory(times, frame=refframe, units=units, observer=observer)
     if type(times) == list:
         earth_r, elon, elat = Earth_traj[:,0], Earth_traj[:,1], Earth_traj[:,2]
     else:
@@ -1854,16 +1866,16 @@ def get_stereo_beacon_data(starttime, endtime, which_stereo='ahead', resolution=
     if starttime <= datetime(2009, 9, 13):
         if endtime > datetime(2009, 9, 13):
             pt_s, pdata_s = STEREO_.get_data_raw(starttime, datetime(2009, 9, 13, 23, 59, 00), 'proton_beacon',
-                                              extra_data=["Velocity_HGRTN:4"], skip_files=skip_files)
+                                              extra_columns=["Velocity_HGRTN:4"], skip_files=skip_files)
             pt_e, pdata_e = STEREO_.get_data_raw(datetime(2009, 9, 14), endtime, 'proton_beacon',
-                                              extra_data=["Velocity_RTN:4"], skip_files=skip_files)
+                                              extra_columns=["Velocity_RTN:4"], skip_files=skip_files)
             pt = np.vstack((pt_s, pt_e))
             pdata = np.vstack((pdata_s, pdata_e))
         else:
             pt_s, pdata_s = STEREO_.get_data_raw(starttime, endtime, 'proton_beacon',
-                                              extra_data=["Velocity_HGRTN:4"], skip_files=skip_files)
+                                              extra_columns=["Velocity_HGRTN:4"], skip_files=skip_files)
     else:
-        pt, pdata = STEREO_.get_data_raw(starttime, endtime, 'proton_beacon', extra_data=["Velocity_RTN:4"], skip_files=skip_files)
+        pt, pdata = STEREO_.get_data_raw(starttime, endtime, 'proton_beacon', extra_columns=["Velocity_RTN:4"], skip_files=skip_files)
 
     pt = [datetime.fromtimestamp(t) for t in pt]
     pdata[pdata < -1e29] = np.nan
@@ -1897,7 +1909,7 @@ def get_stereo_beacon_data(starttime, endtime, which_stereo='ahead', resolution=
                    source='STEREO-A')
     stereo.h['DataSource'] = "STEREO-A Beacon"
     stereo.h['SamplingRate'] = tarray[1] - tarray[0]
-    stereo.h['ReferenceFrame'] = STEREO_.get_ref_frame('mag_beacon')
+    stereo.h['ReferenceFrame'] = STEREO_.spacecraft["data"]['mag_beacon'].get("frame")#STEREO_.get_ref_frame('mag_beacon')
     stereo.h['HeliosatObject'] = STEREO_
     stereo.h['Instruments'] = ['PLASTIC', 'IMPACT']
 
