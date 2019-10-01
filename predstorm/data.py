@@ -769,29 +769,6 @@ class SatData():
     # Index calculations and predictions
     # -----------------------------------------------------------------------------------
 
-    def extract_data_for_ml_model(self):
-        """Extracts data required for machine learning model and returns X array.
-        """
-
-        ec = self.get_newell_coupling()['ec']
-
-        # bx and by give no improvement, neither does np.gradient(da['density'], nor V**2)
-        # Time arrays:
-        sin_DOY, cos_DOY, sin_LT, cos_LT = self.extract_local_time_variables()
-        deltat = np.asarray([(self['time'][i+1] - self['time'][i])*24. for i in range(len(self['time'])-1)] + [0.])
-        deltat[-1] = deltat[-2]
-
-        tt, ttt = 2.*np.pi*(self['time']-2449718.5)/365.24, 2.*np.pi*(self['time']-2449718.5)
-        cosphi = np.sin(tt+0.078) * np.sin(ttt-tt-1.22) * (9.58589e-2) + np.cos(tt+0.078) * (0.39+0.104528*np.cos(ttt-tt-1.22))
-        # Including this term improves overall accuracy but reduces accuracy of large negative values:
-        sinphi = (1. - cosphi*cosphi)**0.5
-
-        # Combine all:
-        X = np.vstack((sin_DOY, cos_DOY, self['speed'], self['density'], self['btot'], self['bz'], ec, np.gradient(self['bz']), deltat)).T
-
-        return X
-
-
     def extract_local_time_variables(self):
         """Takes the UTC time in numpy date format and 
         returns local time and day of year variables, cos/sin.
@@ -866,13 +843,16 @@ class SatData():
         return auroraData
 
 
-    def make_dst_prediction(self, method='temerin_li'):
+    def make_dst_prediction(self, method='temerin_li', t_correction=False):
         """Makes prediction with data in array.
 
         Parameters
         ==========
         method : str
-            Options = ['burton', 'obrien', 'temerin_li']
+            Options = ['burton', 'obrien', 'temerin_li', 'temerin_li_2006']
+        t_correction : bool
+            For TL-2006 method only. Add a time-dependent linear correction to
+            Dst values (required for anything beyond 2002).
 
         Returns
         =======
@@ -900,7 +880,8 @@ class SatData():
             else:
                 vx = self['speed']
             logger.info("Calculating Dst for {} using Temerin-Li model 2006 version".format(self.source))
-            dst_pred = calc_dst_temerin_li(self['time'], self['btot'], self['bx'], self['by'], self['bz'], self['speed'], vx, self['density'], version='2006')
+            dst_pred = calc_dst_temerin_li(self['time'], self['btot'], self['bx'], self['by'], self['bz'], self['speed'], vx, self['density'], 
+                                           version='2006', linear_t_correction=t_correction)
         elif method.lower() == 'obrien':
             logger.info("Calculating Dst for {} using OBrien model".format(self.source))
             dst_pred = calc_dst_obrien(self['time'], self['bz'], self['speed'], self['density'])
@@ -931,8 +912,7 @@ class SatData():
         """
 
         logger.info("Making Dst prediction using machine learning model")
-        X = self.extract_data_for_ml_model()
-        dst_pred = model.predict(X)
+        dst_pred = model.predict(self.data.T)
 
         dstData = SatData({'time': self['time'], 'dst': dst_pred})
         dstData.h['DataSource'] = "Dst prediction from {} data using ML model".format(self.source)

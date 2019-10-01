@@ -14,8 +14,8 @@ plot_past_days = 3.5
 # If True, save older data for plotting Burton/OBrien Dst for verification
 verification_mode = False
 
-# Dst method to be plotted (options = 'ml', 'mldstdiff', 'temerin_li', 'temerin_li_2006', 'burton', 'obrien')
-dst_method = 'ml'
+# Dst method to be plotted (options = 'ml', 'ml_dstdiff', 'temerin_li', 'temerin_li_2006', 'burton', 'obrien')
+dst_method = 'ml_dstdiff'
 
 # Offset for Dst in plot
 dst_offset = 0

@@ -36,9 +36,53 @@ from sklearn.base import BaseEstimator, TransformerMixin
 
 class DstFeatureExtraction(BaseEstimator, TransformerMixin):
     """
+    Takes an array in columns defined by input_keys variable and returns 
+    Based off of example from:
     https://scikit-learn.org/dev/developers/contributing.html#rolling-your-own-estimator
+
+    Init Parameters
+    ===============
+    --> SatData(input_dict, source=None, header=None)
+    input_dict : dict(key: dataarray)
+        Dict containing the input data in the form of key: data (in array or list)
+        Example: {'time': timearray, 'bx': bxarray}. The available keys for data input
+        can be accessed in SatData.default_keys.
+    header : dict(headerkey: value)
+        Dict containing metadata on the data array provided. Useful data headers are
+        provided in SatData.empty_header but this can be expanded as needed.
+    source : str
+        Provide quick-access name of satellite/data type for source.
+
+    Attributes
+    ==========
+    .look_back
+        Number of hours in past to provide in output features.
+    .input_keys
+        List of keys of array provided to transform() method.
+    .feature_keys (only after calling transform())
+        List of keys of output features.
+    .reduced_features
+        Default=True, use reduced features.
+    .v_power/.den_power
+        Exponents in pressure term.
+    .bz_power
+        Power of Bz in output feature.
+    .m1/.m2/.e1/.e2
+        Parameters for OBrien's ring-current term (see calc_ring_current_term())
+
+    Methods
+    =======
+    .fit()
+        Filler function. Returns self.
+    .transform(X)
+        Transforms input matrix X (SatData.data.T) into ML features.
+
+    Examples
     """
-    def __init__(self, v_power=1, den_power=1, bz_power=1, m1=-4.4, m2=2.4, e1=9.74, e2=4.69, look_back=5):
+    def __init__(self, input_keys=[], v_power=1, den_power=1, bz_power=1, m1=-4.4, m2=2.4, e1=9.74, e2=4.69, look_back=5, reduced_features=True):
+        self.look_back = look_back
+        self.input_keys = input_keys
+        self.reduced_features = reduced_features
         self.v_power = v_power
         self.den_power = den_power
         self.bz_power = bz_power
@@ -46,62 +90,6 @@ class DstFeatureExtraction(BaseEstimator, TransformerMixin):
         self.m2 = m2
         self.e1 = e1
         self.e2 = e2
-        self.look_back = look_back
-
-
-    def fit(self, X, y = None):
-        return self
-
-
-    def transform(self, X, tarray=None):
-
-        def create_dataset(data, look_back=1):
-            shifted = []
-            # Fill up empty values with mean:
-            for i in range(look_back):
-                shifted.append(np.full((look_back), np.nanmean(data)))
-            # Fill rest of array with past values:
-            for i in range(len(data)-look_back):
-                a = data[i:(i+look_back)]
-                shifted.append(a)
-            return np.array(shifted)
-
-        pressure = X[:,3]**self.den_power * X[:,2]**self.v_power
-        sqrtden = np.sqrt(X[:,3])
-        bz = X[:,5]**self.bz_power
-        dbz = np.gradient(X[:,5])
-        dn = np.gradient(sqrtden)
-        b2xn = X[:,4]**2. * X[:,3]
-        #theta = -(np.arccos(-X[:,5]/X[:,4]) - np.pi) / 2. # infinite?
-        #exx = X[:,2] * X[:,4] * np.sin(theta)**7
-        rc = calc_ring_current_term(X[:,-1], X[:,5], X[:,2], m1=self.m1, m2=self.m2, e1=self.e1, e2=self.e2)
-        # Calculate past terms:
-        past_b2xn = create_dataset(b2xn, look_back=self.look_back)
-        past_pressure = create_dataset(pressure, look_back=self.look_back)
-        past_rc = create_dataset(rc, look_back=self.look_back)
-        #features = np.concatenate((X, rc.reshape(-1,1), pressure.reshape(-1,1), sqrtden.reshape(-1,1), bz.reshape(-1,1), dbz.reshape(-1,1)), axis=1)
-        # features = np.concatenate((X, rc.reshape(-1,1), pressure.reshape(-1,1), sqrtden.reshape(-1,1), bz.reshape(-1,1), dbz.reshape(-1,1), b2xn.reshape(-1,1), dn.reshape(-1,1)), axis=1)
-        features = np.concatenate((X, rc.reshape(-1,1), pressure.reshape(-1,1), sqrtden.reshape(-1,1), bz.reshape(-1,1), 
-                                   dbz.reshape(-1,1), b2xn.reshape(-1,1), dn.reshape(-1,1),
-                                   past_b2xn, past_pressure, past_rc), axis=1)
-
-        return features
-
-
-class DstFeatureExtraction_v2(BaseEstimator, TransformerMixin):
-    """
-    https://scikit-learn.org/dev/developers/contributing.html#rolling-your-own-estimator
-    """
-    def __init__(self, keys=[], v_power=1, den_power=1, bz_power=1, m1=-4.4, m2=2.4, e1=9.74, e2=4.69, look_back=5):
-        self.v_power = v_power
-        self.den_power = den_power
-        self.bz_power = bz_power
-        self.m1 = m1
-        self.m2 = m2
-        self.e1 = e1
-        self.e2 = e2
-        self.look_back = look_back
-        self.keys = keys
 
 
     def fit(self, X, y = None):
@@ -111,31 +99,43 @@ class DstFeatureExtraction_v2(BaseEstimator, TransformerMixin):
     def transform(self, X):
         # bx and by give no improvement, neither does np.gradient(da['density'], nor V**2)
 
+        # TIME AND SOLAR WIND VARIABLES
+        # -----------------------------
         time = X[:,0]
-        bx, by, bz = X[:,self.keys.index('bx')], X[:,self.keys.index('by')], X[:,self.keys.index('bz')]
-        btot = X[:,self.keys.index('btot')]
-        speed, density, temp = X[:,self.keys.index('speed')], X[:,self.keys.index('density')], X[:,self.keys.index('temp')]
-
-        # Time arrays:
+        bx, by, bz = X[:,self.input_keys.index('bx')], X[:,self.input_keys.index('by')], X[:,self.input_keys.index('bz')]
+        btot = X[:,self.input_keys.index('btot')]
+        speed, density, temp = X[:,self.input_keys.index('speed')], X[:,self.input_keys.index('density')], X[:,self.input_keys.index('temp')]
         sin_DOY, cos_DOY, sin_LT, cos_LT = extract_local_time_variables(time)
+
+        # Combine all:
+        if self.reduced_features:
+            X = np.vstack((sin_DOY, cos_DOY, time, bx, by, bz)).T
+        else:
+            X = np.vstack((sin_DOY, cos_DOY, time, speed, density, btot, bx, by, bz)).T
+
+        # OTHER VARIABLES
+        # ---------------
+        # Pressure term
+        pressure = X[:,3]**self.den_power * X[:,2]**self.v_power
+        # Gradient in Bz
+        dbz = np.gradient(bz)
+        # Newell coupling
+        ec = calc_newell_coupling(by, bz, speed)
+        # Bz to a certain power
+        bz_exp = bz**self.bz_power
+        # OBrien's ring current term
         deltat = np.asarray([(time[i+1] - time[i])*24. for i in range(len(time)-1)] + [0.])
         deltat[-1] = deltat[-2]
-
+        rc = calc_ring_current_term(deltat, bz, speed, m1=self.m1, m2=self.m2, e1=self.e1, e2=self.e2)
         # Sinphi from Temerin-Li model:
         # Including this term improves overall accuracy but reduces accuracy of large negative values:
         tt, ttt = 2.*np.pi*(time-2449718.5)/365.24, 2.*np.pi*(time-2449718.5)
         cosphi = np.sin(tt+0.078) * np.sin(ttt-tt-1.22) * (9.58589e-2) + np.cos(tt+0.078) * (0.39+0.104528*np.cos(ttt-tt-1.22))
         sinphi = (1. - cosphi*cosphi)**0.5
 
-        # Other variables:
-        dbz = np.gradient(bz)
-        ec = calc_newell_coupling(by, bz, speed)
-
-        # Combine all:
-        X = np.vstack((sin_DOY, cos_DOY, speed, density, btot, bz, ec, dbz, deltat)).T
-
-        # 
-        def create_dataset(data, look_back=1):
+        # PAST TERMS
+        # ----------
+        def create_past_dataset(data, look_back=1):
             shifted = []
             # Fill up empty values with mean:
             for i in range(look_back):
@@ -146,24 +146,39 @@ class DstFeatureExtraction_v2(BaseEstimator, TransformerMixin):
                 shifted.append(a)
             return np.array(shifted)
 
-        pressure = X[:,3]**self.den_power * X[:,2]**self.v_power
-        sqrtden = np.sqrt(X[:,3])
-        bz = X[:,5]**self.bz_power
-        dbz = np.gradient(X[:,5])
-        dn = np.gradient(sqrtden)
-        b2xn = X[:,4]**2. * X[:,3]
         #theta = -(np.arccos(-X[:,5]/X[:,4]) - np.pi) / 2. # infinite?
         #exx = X[:,2] * X[:,4] * np.sin(theta)**7
-        rc = calc_ring_current_term(X[:,-1], X[:,5], X[:,2], m1=self.m1, m2=self.m2, e1=self.e1, e2=self.e2)
         # Calculate past terms:
-        past_b2xn = create_dataset(b2xn, look_back=self.look_back)
-        past_pressure = create_dataset(pressure, look_back=self.look_back)
-        past_rc = create_dataset(rc, look_back=self.look_back)
-        #features = np.concatenate((X, rc.reshape(-1,1), pressure.reshape(-1,1), sqrtden.reshape(-1,1), bz.reshape(-1,1), dbz.reshape(-1,1)), axis=1)
-        # features = np.concatenate((X, rc.reshape(-1,1), pressure.reshape(-1,1), sqrtden.reshape(-1,1), bz.reshape(-1,1), dbz.reshape(-1,1), b2xn.reshape(-1,1), dn.reshape(-1,1)), axis=1)
-        features = np.concatenate((X, rc.reshape(-1,1), pressure.reshape(-1,1), sqrtden.reshape(-1,1), bz.reshape(-1,1), 
-                                   dbz.reshape(-1,1), b2xn.reshape(-1,1), dn.reshape(-1,1),
-                                   past_b2xn, past_pressure, past_rc), axis=1)
+        past_pressure = create_past_dataset(pressure, look_back=self.look_back)
+        past_rc = create_past_dataset(rc, look_back=self.look_back)
+        past_speed = create_past_dataset(speed, look_back=self.look_back)
+        past_bz = create_past_dataset(bz, look_back=self.look_back)
+        past_dbz = create_past_dataset(dbz, look_back=self.look_back)
+        past_sinphi = create_past_dataset(sinphi, look_back=self.look_back)
+
+        if self.reduced_features:
+            past_bz_24h = create_past_dataset(bz, look_back=24)
+            past_rc_24h = create_past_dataset(rc, look_back=24)
+            features = np.concatenate((X, rc.reshape(-1,1), ec.reshape(-1,1), pressure.reshape(-1,1), 
+                                       sinphi.reshape(-1,1), dbz.reshape(-1,1), 
+                                       past_bz_24h, past_rc_24h), axis=1)
+            self.feature_keys = ['sin_DOY', 'cos_DOY', 'time', 'bx', 'by', 'bz'] + \
+                                ['rc', 'ec', 'pressure', 'sinphi', 'dbz'] + \
+                                ['bz(t-{})'.format(i) for i in range(1,24+1)] + \
+                                ['rc(t-{})'.format(i) for i in range(1,24+1)]
+        else:
+            features = np.concatenate((X, rc.reshape(-1,1), ec.reshape(-1,1), pressure.reshape(-1,1), 
+                                       bz_exp.reshape(-1,1), sinphi.reshape(-1,1), dbz.reshape(-1,1),
+                                       past_pressure, past_rc, past_speed, past_bz, past_dbz, past_sinphi), axis=1)
+            self.feature_keys = ['sin_DOY', 'cos_DOY', 'time', 'speed', 'density', 'btot', 'bx', 'by', 'bz'] + \
+                                ['rc', 'ec', 'pressure', 'bzpower', 'sinphi', 'dbz'] + \
+                                ['pressure(t-{})'.format(i) for i in range(1,self.look_back+1)] + \
+                                ['rc(t-{})'.format(i) for i in range(1,self.look_back+1)] + \
+                                ['speed(t-{})'.format(i) for i in range(1,self.look_back+1)] + \
+                                ['bz(t-{})'.format(i) for i in range(1,self.look_back+1)] + \
+                                ['dbz(t-{})'.format(i) for i in range(1,self.look_back+1)] + \
+                                ['sinphi(t-{})'.format(i) for i in range(1,self.look_back+1)]
+
 
         return features
 
@@ -269,7 +284,7 @@ def calc_dst_obrien(time, bz, speed, density):
     return dst_obrien
 
 
-def calc_dst_temerin_li(time, btot, bx, by, bz, speed, speedx, density, version='2002n'):
+def calc_dst_temerin_li(time, btot, bx, by, bz, speed, speedx, density, version='2002n', linear_t_correction=False):
     """Calculates Dst from solar wind input according to Temerin and Li 2002 method.
     Credits to Xinlin Li LASP Colorado and Mike Temerin.
     Calls _jit_calc_dst_temerin_li. All constants are defined in there.
@@ -326,7 +341,13 @@ def calc_dst_temerin_li(time, btot, bx, by, bz, speed, speedx, density, version=
         dst1[0:10], dst2[0:10], dst3[0:10] = -10, -5, -10
         ds1995 = time - date2num(datetime(1995,1,1))
         ds2000 = time - date2num(datetime(2000,1,1))
-        return _jit_calc_dst_temerin_li_2006(ds1995, ds2000, btot, bx, by, bz, speed, speedx, density, dst1, dst2, dst3)
+
+        # YEARLY DRIFT CORRECTION TERM (NOT IN PAPER)
+        if linear_t_correction:
+            drift_corr = -0.014435865642103548 * ds2000 + 9.57670996872173
+        else:
+            drift_corr = 0.
+        return _jit_calc_dst_temerin_li_2006(ds1995, ds2000, btot, bx, by, bz, speed, speedx, density, dst1, dst2, dst3) + drift_corr
 
 @njit
 def _jit_calc_dst_temerin_li_2002(time, btot, bx, by, bz, speed, speedx, density, dst1, dst2, dst3, dst_tl, julian_days, newparams=True):
@@ -572,11 +593,6 @@ def _jit_calc_dst_temerin_li_2006(t1, t2, btot, bx, by, bz, speed, speedx, densi
     # FINAL DST
     # ---------
     dst_tl = dst1_ + dst2_ + dst3_ + pressureterm_ + directbzterm_ + offsetterm
-
-    # YEARLY DRIFT CORRECTION TERM (NOT IN PAPER)
-    # -------------------------------------------
-    drift_corr = -0.014435865642103548 * t2 + 9.57670996872173
-    dst_tl += drift_corr
 
     return dst_tl
 

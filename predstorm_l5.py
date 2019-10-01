@@ -276,7 +276,7 @@ def main():
             model = pickle.load(f)
         dst_pred = dis_sta.make_dst_prediction_from_model(model)
         if dst_method == 'ml_dstdiff':
-            dst_tl = dis_sta.make_dst_prediction(method='temerin_li_2006')
+            dst_tl = dis_sta.make_dst_prediction(method='temerin_li_2006', t_correction=True)
             dst_pred['dst'] = dst_tl['dst'] + dst_pred['dst']
         dst_label = 'Dst predicted using ML (GBR)'
         #dst_pred['dst'] = dst_pred['dst'] + 10
