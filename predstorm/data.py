@@ -65,6 +65,7 @@ import cdflib
 import heliosat
 from heliosat.spice import transform_frame
 import astropy.time
+import spiceypy
 try:
     from netCDF4 import Dataset
 except:
@@ -247,8 +248,12 @@ class SatData():
         
         barray = np.stack((self['bx'], self['by'], self['bz']), axis=1)
         tarray = [num2date(t).replace(tzinfo=None) for t in self['time']]
-        b_transformed = transform_frame(tarray, barray, self.h['ReferenceFrame'], refframe)
-        self['bx'], self['by'], self['bz'] = b_transformed[:,0], b_transformed[:,1], b_transformed[:,2]
+        #b_transformed = transform_frame(tarray, barray, self.h['ReferenceFrame'], refframe)
+        for i in range(0, len(tarray)):
+            barray[i] = spiceypy.mxv(spiceypy.pxform(self.h['ReferenceFrame'], refframe,
+                                     spiceypy.datetime2et(tarray[i])),
+                                     barray[i])
+        self['bx'], self['by'], self['bz'] = barray[:,0], barray[:,1], barray[:,2]
         self.h['ReferenceFrame'] = refframe
 
         return self
@@ -316,7 +321,7 @@ class SatData():
         self['bx'] = bxgsm
         self['by'] = bygsm
         self['bz'] = bzgsm
-        self.h['ReferenceFrame'].replace('GSE', 'GSM')
+        self.h['ReferenceFrame'] = 'GSM'
 
         return self
 
@@ -724,9 +729,21 @@ class SatData():
             # define time lag from satellite to Earth
             timelag_L1 = abs(self.pos['lon']*180/np.pi)/(360/sun_syn) #days
 
-            #got through all data points
+            # Go through all data points
             for i in np.arange(0,len(L1_r),1):
-                diff_r_deg = (-360/(sun_syn*86400))*((self.pos['r'][i]-L1_r[i]))/self['speed'][i]
+                if self.pos.h['Units'] == 'AU':
+                    sat_r = self.pos['r'][i]*AU
+                    l1_r = L1_r[i]*AU
+                elif self.pos.h['Units'] == 'm':
+                    sat_r = self.pos['r'][i]/1000.
+                    l1_r = L1_r[i]/1000.
+                else:
+                    sat_r = self.pos['r'][i]
+                    l1_r = L1_r[i]
+                # Thomas et al. (2018): angular speed of rotation of sun * radial diff/speed
+                # note: dimensions in seconds
+                diff_r_deg = (360/(sun_syn*86400))*(l1_r - sat_r)/self['speed'][i]
+                # From lon diff, calculate time by dividing  by rotation speed (in days)
                 timelag_diff_r[i] = np.round(diff_r_deg/(360/sun_syn),3)
 
             ## ADD BOTH time shifts to the stbh_t
@@ -911,7 +928,7 @@ class SatData():
             New object containing predicted Dst data.
         """
 
-        logger.info("Making Dst prediction using machine learning model")
+        logger.info("Making Dst prediction for {} using machine learning model".format(self.source))
         dst_pred = model.predict(self.data.T)
 
         dstData = SatData({'time': self['time'], 'dst': dst_pred})
@@ -1394,7 +1411,7 @@ def get_dscovr_archive_data(starttime, endtime, resolution='min', skip_files=Tru
                       source='DSCOVR')
     dscovr.h['DataSource'] = "DSCOVR Level 1 (NOAA)"
     dscovr.h['SamplingRate'] = tarray[1] - tarray[0]
-    dscovr.h['ReferenceFrame'] = DSCOVR_.get_ref_frame('mag')
+    dscovr.h['ReferenceFrame'] = DSCOVR_.spacecraft["data"]['mag'].get("frame")
     dscovr.h['HeliosatObject'] = DSCOVR_
 
     return dscovr
@@ -1462,6 +1479,8 @@ def get_dscovr_realtime_data():
     dscovr_data.h['DataSource'] = "DSCOVR (NOAA)"
     dscovr_data.h['SamplingRate'] = 1./24./60.
     dscovr_data.h['ReferenceFrame'] = 'GSM'
+    DSCOVR_ = heliosat.DSCOVR()
+    dscovr_data.h['HeliosatObject'] = DSCOVR_
     
     logger.info('get_dscovr_data_real: DSCOVR data read completed.')
     
@@ -1732,6 +1751,7 @@ def get_omni_data(starttime=None, endtime=None, filepath='', download=False, dld
         omni_data.h['SourceURL'] = omni2_url
     omni_data.h['SamplingRate'] = times1[1] - times1[0]
     omni_data.h['ReferenceFrame'] = 'GSM'
+    omni_data.h['HeliosatObject'] = heliosat._SpiceObject(None, "EARTH")
 
     if starttime != None or endtime != None:
         omni_data = omni_data.cut(starttime=starttime, endtime=endtime)

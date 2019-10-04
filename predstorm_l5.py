@@ -231,10 +231,9 @@ def main():
     logger.info("(2) Make correction for difference in heliocentric distance")
     stam.shift_wind_to_L1()
 
-    logger.info("(3) Conversion from RTN to GSM as if STEREO was on Sun-Earth line")
-    stam['bx'], stam['by'], stam['bz'] = stam['br'], -stam['bt'], stam['bn']
-    # sta.convert_RTN_to_GSE().convert_GSE_to_GSM()
-    # stam.convert_RTN_to_GSE().convert_GSE_to_GSM()
+    logger.info("(3) Conversion from RTN to GSE and then to GSM as if STEREO was on Sun-Earth line")
+    stam['bx'], stam['by'], stam['bz'] = stam['br'], -stam['bt'], stam['bn']    # RTN to quasi-GSE
+    stam.convert_GSE_to_GSM()
 
     #------------------- (2b) COMBINE DSCOVR and time-shifted STEREO-A data -----------------
 
