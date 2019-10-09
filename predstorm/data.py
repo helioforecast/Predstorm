@@ -1487,6 +1487,65 @@ def get_dscovr_realtime_data():
     return dscovr_data
 
 
+def get_icme_catalogue(spacecraft=None):
+    """Downloads and returns the HELCATS ICME catalogue. 
+    See https://www.helcats-fp7.eu/catalogues/wp4_icmecat.html for info.
+    Details:
+
+    ICME Catalogue
+    This is the HELCATS interplanetary coronal mass ejection catalog, based on 
+    magnetometer and plasma observations in the heliosphere. It is a product of 
+    working package 4 of the EU HELCATS project (2014-2017).
+
+    Number of events in ICMECAT: 668
+    ICME observatories: Wind, STEREO-A, STEREO-B, VEX, MESSENGER, ULYSSES
+    Time range: January 2007 - December 2015.
+
+    This is version: 01 of the catalogue, released 2017-02-28.
+
+    Parameters
+    ==========
+    spacecraft : str (default=None)
+        If given, data for single spacecraft will be returned.
+
+    Returns
+    =======
+    icmes : np.array
+        Array containing all ICME data. See icmes.dtype for keys.
+    """
+
+    url_helcats = "https://www.helcats-fp7.eu/catalogues/data/ICME_WP4_V10.json"
+
+    # Read JSON from website:
+    with urllib.request.urlopen(url_helcats) as url:
+        icme_list = json.loads(url.read().decode())
+
+    # Pack into array for easy handling:
+    icme_array = np.array(icme_list['data'])
+    cols = {}
+    dt = [(s, 'object') if s in ['ICMECAT_ID', 'SC_INSITU'] else (s, 'float') for s in icme_list['columns']]
+    # Convert all data to relevant format:
+    for i, col in enumerate(icme_list['columns']):
+        if col in ['ICMECAT_ID', 'SC_INSITU']:
+            cols[col] = icme_array[:,i]
+        elif 'TIME' in col:
+            cols[col] = [date2num(datetime.strptime(x, "%Y-%m-%dT%H:%MZ")) if x[0] != '9' else None for x in icme_array[:,i]]
+        else:
+            cols[col] = [float(x) for x in icme_array[:,i]]
+    alldata = [cols[x] for x in cols.keys()]
+    # Pack into structure array:
+    icmes = np.array(list(zip(*alldata)), dtype=dt)
+
+    # Return only data for one spacecraft:
+    if spacecraft != None:
+        if spacecraft in set(icmes['SC_INSITU']):
+            icmes = icmes[icmes['SC_INSITU']==spacecraft]
+        else:
+            logger.warning("{} is not a valid spacecraft! Returning all ICME data.")
+
+    return icmes
+
+
 def get_l1_position(times, units='AU', refframe='HEEQ', observer='SUN'):
     """Uses Heliosat to return a position object for L1 with the provided times.
 
