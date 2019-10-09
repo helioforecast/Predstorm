@@ -628,7 +628,7 @@ class SatData():
         # Roundabout way to get time_h ensures timings with full hours:
         nhours = (num2date(self['time'][-1])-num2date(stime)).total_seconds()/60./60.
         # Create new time array
-        time_h = np.array(stime + np.arange(0, nhours)*(1./24.))
+        time_h = np.array(stime + np.arange(1, nhours)*(1./24.))
         Data_h = self.interp_to_time(time_h)
 
         return Data_h
@@ -665,18 +665,18 @@ class SatData():
             Provide list of keys (str) to be interpolated over, otherwise all.
         """
 
-        resolution = tarray[1] - tarray[0]
-        # Round to nearest timestep
-        stime = self['time'][0] - self['time'][0] % resolution
+        if keys == None:
+            keys = self.vars
+
         # Create new time array
         data_dict = {'time': tarray}
-        for k in self.vars:
+        for k in keys:
             na = np.interp(tarray, self['time'], self[k])
             data_dict[k] = na
 
         # Create new data opject:
         newData = SatData(data_dict, header=copy.copy(self.h), source=copy.copy(self.source))
-        newData.h['SamplingRate'] = resolution
+        newData.h['SamplingRate'] = tarray[1] - tarray[0]
         # Interpolate position data:
         if self.pos != None:
             newPos = self.pos.interp_to_time(self['time'], tarray)
