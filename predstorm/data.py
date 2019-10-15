@@ -158,7 +158,8 @@ class SatData():
                     'SamplingRate': None,
                     'ReferenceFrame': '',
                     'FileVersion': {},
-                    'Instruments': []
+                    'Instruments': [],
+                    'RemovedTimes': []
                     }
 
     def __init__(self, input_dict, source=None, header=None):
@@ -181,7 +182,7 @@ class SatData():
         # Add new attributes to the created instance
         self.source = source
         if header == None:               # Inititalise empty header
-            self.h = copy.copy(SatData.empty_header)
+            self.h = copy.deepcopy(SatData.empty_header)
         else:
             self.h = header
         self.pos = None
@@ -675,12 +676,81 @@ class SatData():
             data_dict[k] = na
 
         # Create new data opject:
-        newData = SatData(data_dict, header=copy.copy(self.h), source=copy.copy(self.source))
+        newData = SatData(data_dict, header=copy.deepcopy(self.h), source=copy.deepcopy(self.source))
         newData.h['SamplingRate'] = tarray[1] - tarray[0]
         # Interpolate position data:
         if self.pos != None:
             newPos = self.pos.interp_to_time(self['time'], tarray)
             newData.pos = newPos
+
+        return newData
+
+
+    def remove_icmes(self, spacecraft=None):
+        """Removes ICMES from data object using remove_times.
+        ICMEs are automatically loaded using the HELCATS catalogue in the function
+        get_icme_catalogue().
+
+        NOTE: if you want to remove ICMEs from L1 data, set spacecraft='Wind'.
+
+        Parameters
+        ==========
+        spacecraft : str (default=None)
+            Specify spacecraft for ICMEs removal. If None, self.source is used.
+
+        Returns
+        =======
+        self : obj with ICME periods removed
+        """
+
+        if spacecraft == None:
+            spacecraft = self.source
+        icmes = get_icme_catalogue(spacecraft=spacecraft, starttime=num2date(self['time'][0]), endtime=num2date(self['time'][-1]))
+
+        if len(set(icmes['SC_INSITU'])) > 1:
+            logger.warning("Using entire CME list! Variable 'spacecraft' was not defined correctly. Options={}".format(set(icmes['SC_INSITU'])))
+
+        for i in icmes: 
+            if spacecraft == 'Wind':
+                self = self.remove_times(num2date(i['ICME_START_TIME']), num2date(i['ICME_END_TIME']))
+            else:
+                self = self.remove_times(num2date(i['ICME_START_TIME']), num2date(i['MO_END_TIME']))
+
+        if self['time'][0] < date2num(datetime(2007,1,1)):
+            logger.warning("ICMES have only been removed after 2007-01-01. There may be ICMEs before this date unaccounted for!")
+        if self['time'][-1] > date2num(datetime(2016,1,1)):
+            logger.warning("ICMES have only been removed until 2016-01-01. There may be ICMEs after this date unaccounted for!")
+
+        return self
+
+
+    def remove_times(self, start_remove, end_remove):
+        """Removes data within period given by starttime and endtime.
+
+        Parameters
+        ==========
+        start_remove : datetime.datetime object
+            Start time (>=) of new array.
+        end_remove : datetime.datetime object
+            End time (<) of new array.
+
+        Returns
+        =======
+        newData : new obj with time range removed
+        """
+
+        before = self.data[:, self.data[0] < date2num(start_remove)]
+        after = self.data[:, self.data[0] > date2num(end_remove)]
+
+        new = np.hstack((before, after))
+
+        newData = SatData({'time': [1,2,3], 'bz': [1,2,3]}, header=copy.deepcopy(self.h), source=copy.deepcopy(self.source))
+        newData.data = new
+        newData.pos = copy.deepcopy(self.pos)
+        newData.state = copy.deepcopy(self.state)
+        newData.vars = copy.deepcopy(self.vars)
+        newData.h['RemovedTimes'].append("{}--{}".format(start_remove.strftime("%Y-%m-%dT%H:%M:%S"), 
+                                                         end_remove.strftime("%Y-%m-%dT%H:%M:%S")))
 
         return newData
 
@@ -1028,7 +1098,7 @@ class PositionData():
             raise Exception("PositionData __init__: postype must be either 'xyz' or 'rlonlat'!")
         self.positions = np.asarray(posdata)
         if header == None:               # Inititalise empty header
-            self.h = copy.copy(PositionData.empty_header)
+            self.h = copy.deepcopy(PositionData.empty_header)
         else:
             self.h = header
         self.h['CoordinateSystem'] = postype.lower()
@@ -1081,7 +1151,7 @@ class PositionData():
             na.append(np.interp(t_new, t_orig, self[k]))
 
         # Create new data opject:
-        newData = PositionData(na, copy.copy(self.h['CoordinateSystem']), header=copy.copy(self.h))
+        newData = PositionData(na, copy.deepcopy(self.h['CoordinateSystem']), header=copy.deepcopy(self.h))
 
         return newData
 
@@ -1487,7 +1557,7 @@ def get_dscovr_realtime_data():
     return dscovr_data
 
 
-def get_icme_catalogue(spacecraft=None):
+def get_icme_catalogue(spacecraft=None, starttime=None, endtime=None):
     """Downloads and returns the HELCATS ICME catalogue. 
     See https://www.helcats-fp7.eu/catalogues/wp4_icmecat.html for info.
     Details:
@@ -1507,6 +1577,10 @@ def get_icme_catalogue(spacecraft=None):
     ==========
     spacecraft : str (default=None)
         If given, data for single spacecraft will be returned.
+    starttime : datetime.datetime object
+        Start time (>=) of period with ICMEs.
+    endtime : datetime.datetime object
+        End time (<) of period with ICMEs.
 
     Returns
     =======
@@ -1542,6 +1616,14 @@ def get_icme_catalogue(spacecraft=None):
             icmes = icmes[icmes['SC_INSITU']==spacecraft]
         else:
             logger.warning("{} is not a valid spacecraft! Returning all ICME data.")
+
+    if starttime != None:
+        icmes = icmes[icmes['ICME_START_TIME'] >= date2num(starttime)]
+    if endtime != None:
+        if spacecraft == 'Wind':
+            icmes = icmes[icmes['ICME_END_TIME'] < date2num(endtime)]
+        else:
+            icmes = icmes[icmes['MO_END_TIME'] < date2num(endtime)] 
 
     return icmes
 
