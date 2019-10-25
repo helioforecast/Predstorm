@@ -72,6 +72,7 @@ OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 import os
 import sys
+import copy
 import getopt
 
 # READ INPUT OPTIONS FROM COMMAND LINE
@@ -142,7 +143,7 @@ def main():
     #================================== (1) GET DATA ========================================
 
     logger.info("\n-------------------------\nDATA READS\n-------------------------")
-    #get_sdo_realtime_image()
+    ps.get_sdo_realtime_image()
 
     #------------------------ (1a) Get real-time DSCOVR data --------------------------------
 
@@ -195,7 +196,6 @@ def main():
     logger.info('Time lag in minutes: {}'.format(int(round((timeutc-stam['time'][-1])*24*60))))
 
     # Prepare data:
-    stam.interp_nans()
     stam.load_positions()
     sta_details = stam.return_position_details(timestamp)
 
@@ -230,6 +230,8 @@ def main():
 
     logger.info("(2) Make correction for difference in heliocentric distance")
     stam.shift_wind_to_L1()
+
+    stam.interp_nans()
 
     logger.info("(3) Conversion from RTN to GSE and then to GSM as if STEREO was on Sun-Earth line")
     stam['bx'], stam['by'], stam['bz'] = stam['br'], -stam['bt'], stam['bn']    # RTN to quasi-GSE
