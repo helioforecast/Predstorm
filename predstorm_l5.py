@@ -183,7 +183,7 @@ def main():
 
     logger.info("(2) Getting STEREO-A data...")
     if run_mode == 'normal':
-        stam = ps.get_stereo_beacon_data(starttime=startread, endtime=timestamp)
+        stam = ps.get_stereo_beacon_data(starttime=startread, endtime=timestamp-timedelta(minutes=1))
     elif run_mode == 'historic':
         lag_L1, lag_r = ps.get_time_lag_wrt_earth(timestamp=timestamp, satname='STEREO-A')
         est_timelag = lag_L1 + lag_r

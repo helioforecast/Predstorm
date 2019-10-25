@@ -32,6 +32,7 @@ import scipy
 
 # Machine learning specific:
 from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.metrics import mean_squared_error, make_scorer
 
 
 class DstFeatureExtraction(BaseEstimator, TransformerMixin):

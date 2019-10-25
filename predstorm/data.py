@@ -687,7 +687,7 @@ class SatData():
 
 
     def remove_icmes(self, spacecraft=None):
-        """Removes ICMES from data object using remove_times.
+        """Replaces ICMES in data object with NaNs.
         ICMEs are automatically loaded using the HELCATS catalogue in the function
         get_icme_catalogue().
 
@@ -712,14 +712,37 @@ class SatData():
 
         for i in icmes: 
             if spacecraft == 'Wind':
-                self = self.remove_times(num2date(i['ICME_START_TIME']), num2date(i['ICME_END_TIME']))
+                icme_inds = np.where(np.logical_and(self['time'] > i['ICME_START_TIME'], self['time'] < i['ICME_END_TIME']))
             else:
-                self = self.remove_times(num2date(i['ICME_START_TIME']), num2date(i['MO_END_TIME']))
+                icme_inds = np.where(np.logical_and(self['time'] > i['ICME_START_TIME'], self['time'] < i['MO_END_TIME']))
+            self.data[1:,icme_inds] = np.nan
 
         if self['time'][0] < date2num(datetime(2007,1,1)):
             logger.warning("ICMES have only been removed after 2007-01-01. There may be ICMEs before this date unaccounted for!")
         if self['time'][-1] > date2num(datetime(2016,1,1)):
             logger.warning("ICMES have only been removed until 2016-01-01. There may be ICMEs after this date unaccounted for!")
+
+        return self
+
+
+    def remove_nans(self, key=''):
+        """Removes nans from data object.
+
+        Parameters
+        ==========
+        key : str (optional, default=self.vars[0])
+            Key for variable to be used for picking out NaNs.
+            If multiple variables, call function for each variable.
+
+        Returns
+        =======
+        self : obj with nans removed
+        """
+
+        if key == '':
+            key = self.vars[0]
+        key_ind = self.default_keys.index(key)
+        self.data = self.data[:,~np.isnan(self.data[key_ind])]
 
         return self
 
@@ -1557,7 +1580,7 @@ def get_dscovr_realtime_data():
     return dscovr_data
 
 
-def get_icme_catalogue(spacecraft=None, starttime=None, endtime=None):
+def get_icme_catalogue(filepath=None, spacecraft=None, starttime=None, endtime=None):
     """Downloads and returns the HELCATS ICME catalogue. 
     See https://www.helcats-fp7.eu/catalogues/wp4_icmecat.html for info.
     Details:
@@ -1575,6 +1598,8 @@ def get_icme_catalogue(spacecraft=None, starttime=None, endtime=None):
 
     Parameters
     ==========
+    filepath : str (default=None)
+        If given, will read from ASCII file e.g. HELCATS_ICMECAT_v10_SCEQ.txt
     spacecraft : str (default=None)
         If given, data for single spacecraft will be returned.
     starttime : datetime.datetime object
@@ -1588,18 +1613,55 @@ def get_icme_catalogue(spacecraft=None, starttime=None, endtime=None):
         Array containing all ICME data. See icmes.dtype for keys.
     """
 
-    url_helcats = "https://www.helcats-fp7.eu/catalogues/data/ICME_WP4_V10.json"
+    icme_list_keys = {
+        "ICMECAT_ID": "The unique identifier for the observed ICME. unit: string.",
+        "SC_INSITU": "The name of the in situ observatory. unit: string.",
+        "ICME_START_TIME": "The shock arrival or density enhancement time, can be similar to MO_START_TIME. unit: UTC.",
+        "MO_START_TIME": "The start time of the magnetic obstacle (MO), including flux ropes, flux-rope-like, and ejecta signatures. unit: UTC.",
+        "MO_END_TIME": "The end time of the magnetic obstacle. unit: UTC.",
+        "ICME_END_TIME": "The end time of the ICME, can be similar to MO_END_TIME. unit: UTC.",
+        "MO_BMAX": "The maximum total magnetic field in the magnetic obstacle. unit: nT.",
+        "MO_BMEAN": "The mean total magnetic field of the magnetic obstacle. unit: nT.",
+        "MO_BSTD": "The standard deviation of the total magnetic field of the magnetic obstacle. unit: nT.",
+        "MO_BZMEAN": "The mean magnetic field Bz component in the magnetic obstacle. unit: nT.",
+        "MO_BZMIN": "The minimum magnetic field Bz component of the magnetic obstacle. unit: nT.",
+        "MO_DURATION":"Duration of interval between MO_START_TIME and MO_END_TIME. unit: hours.",
+        "SC_HELIODISTANCE": "Average heliocentric distance of the spacecraft during the MO. unit: AU.",
+        "SC_LONG_HEEQ": "Average heliospheric longitude of the spacecraft during the MO, range [-180,180]. unit: degree (HEEQ).",
+        "SC_LAT_HEEQ": "Average heliospheric latitude of the spacecraft during the MO, range [-90,90]. unit: degree (HEEQ).",
+        "MO_MVA_AXIS_LONG": "Longitude of axis from minimum variance analysis with magnetic field unit vectors (MVA): X=0 deg, Y=90 deg, range [0,360]. unit: degree (SCEQ).",
+        "MO_MVA_AXIS_LAT": "Latitude of axis from MVA, +Z=-90 deg, -Z=-90, range [-90,90]. unit: degree (SCEQ).",
+        "MO_MVA_RATIO": "Eigenvalue 2 over 3 ratio as indicator of reliability of MVA, must be > 2, otherwise NaN. unit: number.",
+        "SHEATH_SPEED": "For STEREO-A/B and Wind, average proton speed from ICME_START_TIME to MO_START_TIME, NaN if these times are similar. unit: km/s.",
+        "SHEATH_SPEED_STD": "For STEREO-A/B and Wind, standard deviation of proton speed from ICME_START_TIME to MO_START_TIME, NaN if these times are similar. unit: km/s.",
+        "MO_SPEED": "For STEREO-A/B and Wind, average proton speed from MO_START_TIME to MO_END_TIME. unit: km/s.",
+        "MO_SPEED_STD": "For STEREO-A/B and Wind, standard deviation of proton speed from MO_START_TIME to MO_END_TIME. unit: km/s.",
+        "SHEATH_DENSITY": "For STEREO-A/B and Wind, average proton density from ICME_START_TIME to MO_START_TIME, NaN if these times are similar. unit: ccm^-3.",
+        "SHEATH_DENSITY_STD": "For STEREO-A/B and Wind, standard deviation of proton density from ICME_START_TIME to MO_START_TIME, NaN if these times are similar. unit: cm^-3.",
+        "MO_DENSITY": "For STEREO-A/B and Wind, average proton density from MO_START_TIME to MO_END_TIME. unit: cm^-3.",
+        "MO_DENSITY_STD": "For STEREO-A/B and Wind, standard deviation of proton density from MO_START_TIME to MO_END_TIME. unit: cm^-3.",
+        "SHEATH_TEMPERATURE": "For STEREO-A/B and Wind, average proton temperature from ICME_START_TIME to MO_START_TIME, NaN if these times are similar. unit: K.",
+        "SHEATH_TEMPERATURE_STD": "For STEREO-A/B and Wind, standard deviation of proton temperature from ICME_START_TIME to MO_START_TIME, NaN if these times are similar. unit: K.",
+        "MO_TEMPERATURE": "For STEREO-A/B and Wind, average proton temperature from MO_START_TIME to MO_END_TIME. unit: K.",
+        "MO_TEMPERATURE_STD": "For STEREO-A/B and Wind, standard deviation of proton temperature from MO_START_TIME to MO_END_TIME. unit: K."
+        }
 
-    # Read JSON from website:
-    with urllib.request.urlopen(url_helcats) as url:
-        icme_list = json.loads(url.read().decode())
+    dt = [(s, 'object') if s in ['ICMECAT_ID', 'SC_INSITU'] else (s, 'float') for s in icme_list_keys.keys()]
 
-    # Pack into array for easy handling:
-    icme_array = np.array(icme_list['data'])
+    if filepath != None:
+        # Read from file:
+        icme_array = np.genfromtxt(filepath, dtype='str')
+    else:
+        url_helcats = "https://www.helcats-fp7.eu/catalogues/data/ICME_WP4_V10.json"
+        # Read JSON from website:
+        with urllib.request.urlopen(url_helcats) as url:
+            icme_list = json.loads(url.read().decode())
+        # Pack into array for easy handling:
+        icme_array = np.array(icme_list['data'])
+
     cols = {}
-    dt = [(s, 'object') if s in ['ICMECAT_ID', 'SC_INSITU'] else (s, 'float') for s in icme_list['columns']]
     # Convert all data to relevant format:
-    for i, col in enumerate(icme_list['columns']):
+    for i, col in enumerate(icme_list_keys.keys()):
         if col in ['ICMECAT_ID', 'SC_INSITU']:
             cols[col] = icme_array[:,i]
         elif 'TIME' in col:

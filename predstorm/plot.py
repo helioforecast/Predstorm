@@ -149,7 +149,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
 
     plt.ylim(bplotmin, bplotmax)
 
-    plt.title('L1 DSCOVR real time solar wind from NOAA SWPC for '+ datetime.strftime(timestamp, "%Y-%m-%d %H:%M")+ ' UT   STEREO-A beacon', fontsize=fs_title)
+    plt.title('L1 real time solar wind from NOAA SWPC for '+ datetime.strftime(timestamp, "%Y-%m-%d %H:%M")+ ' UT   STEREO-A beacon', fontsize=fs_title)
 
     # SUBPLOT 2: Solar wind speed
     # ---------------------------
