@@ -865,7 +865,7 @@ class SatData():
         dttime = [num2date(t).replace(tzinfo=None) for t in self['time']]
         L1Pos = get_l1_position(dttime, units=self.pos.h['Units'], refframe=self.pos.h['ReferenceFrame'])
 
-        corr_factor = (L1Pos['r']/self.pos['r'])**-2
+        corr_factor = (self.pos['r']/L1Pos['r'])**-2
         shift_var_list = ['btot', 'br', 'bt', 'bn', 'bx', 'by', 'bz', 'density']
         shift_vars = [v for v in shift_var_list if v in self.vars]
         for var in shift_vars:

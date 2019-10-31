@@ -231,6 +231,9 @@ def main():
     logger.info("(2) Make correction for difference in heliocentric distance")
     stam.shift_wind_to_L1()
 
+    stam_with_nans = copy.deepcopy(stam)
+    import IPython
+    IPython.embed()
     stam.interp_nans()
 
     logger.info("(3) Conversion from RTN to GSE and then to GSM as if STEREO was on Sun-Earth line")
@@ -287,7 +290,7 @@ def main():
     logger.info("\n-------------------------\nPLOTTING\n-------------------------")
     # ********************************************************************
     logger.info("Creating output plot...")
-    plot_solarwind_and_dst_prediction([dism, dis], [stam, sta], 
+    plot_solarwind_and_dst_prediction([dism, dis], [stam_with_nans, sta], 
                                       dst, dst_pred,
                                       past_days=plot_past_days,
                                       future_days=plot_future_days,
@@ -392,21 +395,24 @@ def main():
 
     logger.info("Final results:\n\n"+results_str)
 
-    #-------------------------------------- (4f) A PLOT -------------------------------------
-    fig, (axes) = plt.subplots(1, 3, figsize=(15, 5))
-    # Plot of correlation between values
-    axes[0].plot(dst_pred_cut, dst_cut, 'bx')
-    axes[0].set_title("Real vs. forecast Dst")
-    axes[0].set_xlabel("Forecast Dst [nT]")
-    axes[0].set_ylabel("Kyoto Dst [nT]")
+    #-------------------------------------- (4f) TEST PLOT FOR -------------------------------------
+    try:
+        fig, (axes) = plt.subplots(1, 3, figsize=(15, 5))
+        # Plot of correlation between values
+        axes[0].plot(dst_pred_cut, dst_cut, 'bx')
+        axes[0].set_title("Real vs. forecast Dst")
+        axes[0].set_xlabel("Forecast Dst [nT]")
+        axes[0].set_ylabel("Kyoto Dst [nT]")
 
-    # Histogram of forecast
-    n, bins, patches = axes[1].hist(dst_pred['dst'], 20)
-    axes[1].set_title("Histogram of forecast Dst")
-    axes[1].set_xlim([30, -200])
-    axes[1].set_xlabel("Forecast Dst [nT]")
+        # Histogram of forecast
+        n, bins, patches = axes[1].hist(dst_pred['dst'], 20)
+        axes[1].set_title("Histogram of forecast Dst")
+        axes[1].set_xlim([30, -200])
+        axes[1].set_xlabel("Forecast Dst [nT]")
 
-    plt.savefig('predstorm_stats.png')
+        plt.savefig('predstorm_stats.png')
+    except:
+        pass
 
 
 #========================================================================================
