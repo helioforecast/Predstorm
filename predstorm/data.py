@@ -2059,8 +2059,19 @@ def get_stereo_beacon_data(starttime, endtime, which_stereo='ahead', resolution=
     logger.info("Reading STEREO-{} beacon data".format(which_stereo.upper()))
 
     # Magnetometer data
-    magt, magdata = STEREO_.get_data_raw(starttime, endtime, 'mag_beacon', skip_files=skip_files)
-    magt = [datetime.fromtimestamp(t) for t in magt]
+    magt_ts, magdata = STEREO_.get_data_raw(starttime, endtime, 'mag_beacon')
+    # Convert time
+    magt = []
+    for t in magt_ts: 
+        try: 
+            magt.append(date2num(datetime.fromtimestamp(t)))
+        except: 
+            magt.append(np.nan)
+    magt = np.array(magt)
+    nantimes = np.isnan(magt)
+    if len(nantimes) != 0:
+        magt[nantimes] = np.interp(nantimes.nonzero()[0], (~nantimes).nonzero()[0], magt[~nantimes])
+    #magt = [datetime.fromtimestamp(t) for t in magt]
     magdata[magdata < -1e20] = np.nan
     br, bt, bn = magdata[:,0], magdata[:,1], magdata[:,2]
     btot = np.sqrt(br**2. + bt**2. + bn**2.)
@@ -2069,19 +2080,21 @@ def get_stereo_beacon_data(starttime, endtime, which_stereo='ahead', resolution=
     if starttime <= datetime(2009, 9, 13):
         if endtime > datetime(2009, 9, 13):
             pt_s, pdata_s = STEREO_.get_data_raw(starttime, datetime(2009, 9, 13, 23, 59, 00), 'proton_beacon',
-                                              extra_columns=["Velocity_HGRTN:4"], skip_files=skip_files)
+                                              extra_columns=["Velocity_HGRTN:4"])
             pt_e, pdata_e = STEREO_.get_data_raw(datetime(2009, 9, 14), endtime, 'proton_beacon',
-                                              extra_columns=["Velocity_RTN:4"], skip_files=skip_files)
-            pt = np.vstack((pt_s, pt_e))
+                                              extra_columns=["Velocity_RTN:4"])
+            pt_ts = np.vstack((pt_s, pt_e))
             pdata = np.vstack((pdata_s, pdata_e))
         else:
-            pt_s, pdata_s = STEREO_.get_data_raw(starttime, endtime, 'proton_beacon',
-                                              extra_columns=["Velocity_HGRTN:4"], skip_files=skip_files)
+            pt_ts, pdata = STEREO_.get_data_raw(starttime, endtime, 'proton_beacon',
+                                              extra_columns=["Velocity_HGRTN:4"])
     else:
-        pt, pdata = STEREO_.get_data_raw(starttime, endtime, 'proton_beacon', extra_columns=["Velocity_RTN:4"], skip_files=skip_files)
+        pt_ts, pdata = STEREO_.get_data_raw(starttime, endtime, 'proton_beacon', extra_columns=["Velocity_RTN:4"])
 
-    pt = [datetime.fromtimestamp(t) for t in pt]
+    pt = np.array([datetime.fromtimestamp(t) for t in pt_ts])
+    pt = date2num(pt)
     pdata[pdata < -1e29] = np.nan
+    data_cols = STEREO_.spacecraft['data']['proton_beacon']['columns']
     density = pdata[:,0]
     temperature = pdata[:,1]
     vx, vtot = pdata[:,2], pdata[:,5]
@@ -2096,14 +2109,14 @@ def get_stereo_beacon_data(starttime, endtime, which_stereo='ahead', resolution=
         tarray = np.array(stime + np.arange(0, nmins)*(1./24./60.))
 
     # Interpolate variables to time:
-    br_int = np.interp(tarray, date2num(magt), br)
-    bt_int = np.interp(tarray, date2num(magt), bt)
-    bn_int = np.interp(tarray, date2num(magt), bn)
-    btot_int = np.interp(tarray, date2num(magt), btot)
-    density_int = np.interp(tarray, date2num(pt), density)
-    vx_int = np.interp(tarray, date2num(pt), vx)
-    vtot_int = np.interp(tarray, date2num(pt), vtot)
-    temp_int = np.interp(tarray, date2num(pt), temperature)
+    br_int = np.interp(tarray, magt, br)
+    bt_int = np.interp(tarray, magt, bt)
+    bn_int = np.interp(tarray, magt, bn)
+    btot_int = np.interp(tarray, magt, btot)
+    density_int = np.interp(tarray, pt, density)
+    vx_int = np.interp(tarray, pt, vx)
+    vtot_int = np.interp(tarray, pt, vtot)
+    temp_int = np.interp(tarray, pt, temperature)
 
     # Pack into object:
     stereo = SatData({'time': tarray,

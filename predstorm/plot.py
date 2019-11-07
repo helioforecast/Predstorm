@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 # --------------------------- PLOTTING FUNCTIONS ----------------------------------------
 # =======================================================================================
 
-def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPRED_data, dst_label='Dst Temerin & Li 2002', past_days=3.5, future_days=7., verification_mode=False, timestamp=None, **kwargs):
+def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPRED_data, newell_coupling=None, dst_label='Dst Temerin & Li 2002', past_days=3.5, future_days=7., verification_mode=False, timestamp=None, **kwargs):
     """
     Plots solar wind variables, past from DSCOVR and future/predicted from STEREO-A.
     Total B-field and Bz (top), solar wind speed (second), particle density (third)
@@ -91,6 +91,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
     date_fmt = kwargs.get('date_fmt', pltcfg.date_fmt)
     c_dst = kwargs.get('c_dst', pltcfg.c_dst)
     c_dis = kwargs.get('c_dis', pltcfg.c_dis)
+    c_ec = kwargs.get('c_ec', pltcfg.c_ec)
     c_sta = kwargs.get('c_sta', pltcfg.c_sta)
     c_sta_dst = kwargs.get('c_sta_dst', pltcfg.c_sta_dst)
     ms_dst = kwargs.get('c_dst', pltcfg.ms_dst)
@@ -121,12 +122,17 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
         timestamp = datetime.utcnow()
     timeutc = mdates.date2num(timestamp)
 
+    if newell_coupling == None:
+        n_plots = 4
+    else:
+        n_plots = 5
+
     plotstart = timeutc - past_days
     plotend = timeutc + future_days
 
     # SUBPLOT 1: Total B-field and Bz
     # -------------------------------
-    ax1 = fig.add_subplot(411)
+    ax1 = fig.add_subplot(n_plots,1,1)
     axes.append(ax1)
 
     # Total B-field and Bz (DSCOVR)
@@ -153,7 +159,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
 
     # SUBPLOT 2: Solar wind speed
     # ---------------------------
-    ax2 = fig.add_subplot(412)
+    ax2 = fig.add_subplot(n_plots,1,2)
     axes.append(ax2)
 
     # Plot solar wind speed (DSCOVR):
@@ -176,7 +182,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
 
     # SUBPLOT 3: Solar wind density
     # -----------------------------
-    ax3 = fig.add_subplot(413)
+    ax3 = fig.add_subplot(n_plots,1,3)
     axes.append(ax3)
 
     # Plot solar wind density:
@@ -191,7 +197,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
 
     # SUBPLOT 4: Actual and predicted Dst
     # -----------------------------------
-    ax4 = fig.add_subplot(414)
+    ax4 = fig.add_subplot(n_plots,1,4)
     axes.append(ax4)
 
     # Observed Dst Kyoto (past):
@@ -222,6 +228,21 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
     # Label plot with geomagnetic storm levels
     pltcfg.plot_dst_activity_lines(xlims=[plotstart, plotend])
 
+    # SUBPLOT 5: Newell Coupling
+    # --------------------------
+    if newell_coupling != None:
+        ax5 = fig.add_subplot(n_plots,1,5)
+        axes.append(ax5)
+
+        # Plot solar wind density:
+        plt.plot_date(newell_coupling['time'], newell_coupling['ec']/4421., '-', color=c_ec, label='Newell coupling',linewidth=1.5)
+        plt.ylabel('Newell Coupling / 4421\n$\mathregular{[(km/s)^{4/3} nT^{2/3}]}$',fontsize=fs_ylabel)
+        # For y limits check where the maximum and minimum are for DSCOVR and STEREO taken together:
+        plt.ylim([0,np.nanmax(newell_coupling['ec']/4421.)*1.1])
+
+        # Indicate level of interest (Ec/4421 = 1.0)
+        plt.plot_date([plotstart,plotend], [1,1],'--k', alpha=0.5, linewidth=1)
+
     # GENERAL FORMATTING
     # ------------------
     for ax in axes:
@@ -235,7 +256,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
         ax.xaxis.set_major_formatter(myformat)
 
         # Vertical line for NOW:
-        ax.plot_date([timeutc,timeutc],[-2000,2000],'-k', linewidth=2)
+        ax.plot_date([timeutc,timeutc],[-2000,100000],'-k', linewidth=2)
 
     # Liability text:
     pltcfg.group_info_text()

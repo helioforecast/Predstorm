@@ -232,8 +232,6 @@ def main():
     stam.shift_wind_to_L1()
 
     stam_with_nans = copy.deepcopy(stam)
-    import IPython
-    IPython.embed()
     stam.interp_nans()
 
     logger.info("(3) Conversion from RTN to GSE and then to GSM as if STEREO was on Sun-Earth line")
@@ -292,6 +290,7 @@ def main():
     logger.info("Creating output plot...")
     plot_solarwind_and_dst_prediction([dism, dis], [stam_with_nans, sta], 
                                       dst, dst_pred,
+                                      newell_coupling=newell_coupling,
                                       past_days=plot_past_days,
                                       future_days=plot_future_days,
                                       dst_label=dst_label,

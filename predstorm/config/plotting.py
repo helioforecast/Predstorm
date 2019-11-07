@@ -34,7 +34,7 @@ c_kp = 'lightgreen'
 # Colour for aurora power
 c_aurora = 'orange'
 # Colour for newell coupling
-c_ec = 'turquoise'
+c_ec = 'teal'
 
 # FUNCTIONS
 # ---------
