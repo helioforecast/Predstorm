@@ -159,7 +159,8 @@ class SatData():
                     'ReferenceFrame': '',
                     'FileVersion': {},
                     'Instruments': [],
-                    'RemovedTimes': []
+                    'RemovedTimes': [],
+                    'PlasmaDataIntegrity': 10
                     }
 
     def __init__(self, input_dict, source=None, header=None):
@@ -1373,7 +1374,7 @@ def get_time_lag_wrt_earth(timestamp=None, satname='STEREO-A', v_mean=400., sun_
     else:
         raise Exception("Not a valid satellite name to find position!")
 
-    traj = SAT.trajectory([timestamp], reference_frame='HEEQ', units='AU',
+    traj = SAT.trajectory([timestamp], frame='HEEQ', units='AU',
                           observer='SUN')
 
     posx, posy, posz = traj[:,0][0], traj[:,1][0], traj[:,2][0]
@@ -1808,6 +1809,7 @@ def get_past_dst(filepath=None, starttime=None, endtime=None):
 
 def get_omni_data(starttime=None, endtime=None, filepath='', download=False, dldir='data'):
     """
+    Reads OMNI2 .dat format data
     Will download and read OMNI2 data file (in .dat format).
     Variable definitions from OMNI2 dataset:
     see http://omniweb.gsfc.nasa.gov/html/ow_data.html
@@ -1817,6 +1819,10 @@ def get_omni_data(starttime=None, endtime=None, filepath='', download=False, dld
 
     Parameters
     ==========
+    starttime : datetime.datetime
+        Start time of period of data to return.
+    endtime : datetime.datetime
+        End time of period of data to return.
     filepath : str (default='', reverts to 'data/omni2_all_years.dat')
         Path to file to read.
     download : bool (default=False)
@@ -1829,8 +1835,11 @@ def get_omni_data(starttime=None, endtime=None, filepath='', download=False, dld
     omni_data : predstorm.SatData
     """
 
-    if download == False and filepath != '' and not os.path.exists(filepath):
-        raise Exception("get_omni_data: {} does not exist! Run get_omni_data(download=True) to download file.".format(filepath))
+    if download == False:
+        if filepath != '' and not os.path.exists(filepath):
+            raise Exception("get_omni_data: {} does not exist! Run get_omni_data(download=True) to download file.".format(filepath))
+        else:
+            raise Exception("get_omni_data: no data source specified! Run get_omni_data(download=True) or get_omni_data(filepath=path) to specify source.".format(filepath))
 
     if download:
         omni2_url = 'https://spdf.gsfc.nasa.gov/pub/data/omni/low_res_omni/omni2_all_years.dat'
@@ -1962,6 +1971,119 @@ def get_omni_data(starttime=None, endtime=None, filepath='', download=False, dld
     return omni_data
 
 
+def get_omni_data_new(starttime=None, endtime=None, filepath='', dldir='data'):
+    """
+    Downloads and read OMNI2 data files (in yearly .dat format).
+    Variable definitions from OMNI2 dataset:
+    see http://omniweb.gsfc.nasa.gov/html/ow_data.html
+
+    Parameters
+    ==========
+    starttime : datetime.datetime
+        Start time of period of data to return.
+    endtime : datetime.datetime
+        End time of period of data to return.
+    filepath : str (default='', reverts to 'data/omni2_all_years.dat')
+        Path to file to read.
+    download : bool (default=False)
+        If True, file will be downloaded to directory (dldir)
+    dldir : str (default='data')
+        If using download, file will be downloaded to this dir and then be read.
+
+    Returns
+    =======
+    omni_data : predstorm.SatData
+    """
+
+    startyear = starttime.strftime("%Y")
+    endyear = endtime.strftime("%Y")
+    dlyears = np.arange(int(startyear), int(endyear)+1, 1)
+    omni_data_url = 'https://spdf.gsfc.nasa.gov/pub/data/omni/low_res_omni/'
+
+    for dlyear in dlyears:
+        omni2_url = omni_data_url+'omni2_{}.dat'.format(dlyear)
+        logger.info("get_omni_data: retrieving OMNI2 data from {}".format(omni2_url))
+        try: 
+            omni_data_part = np.genfromtxt(omni2_url)
+            if dlyear != dlyears[0]:
+                omni_data_raw = np.hstack((omni_data_raw, omni_data_part))
+            else:
+                omni_data_raw = omni_data_part
+        except Exception as e:
+            logger.error("get_omni_data: OMNI2 data download failed (reason: {})".format(e))
+
+    # Time variables:
+    # ---------------
+    year, day, hour = omni_data_raw[:,0], omni_data_raw[:,1], omni_data_raw[:,2]
+
+    # Plasma variables:
+    # -----------------
+    speed = omni_data_raw[:,24]   # bulk speed
+    speed[speed == 9999] = np.NaN
+    speed_phi = omni_data_raw[:,25]   # speed angle phi
+    speed_phi[speed_phi == 999.9] = np.NaN
+    speed_theta = omni_data_raw[:,26] # speed angle theta
+    speed_theta[speed_theta == 999.9] = np.NaN
+    # Convert speed to GSE x see OMNI website footnote
+    speedx = (-speed) * np.cos(np.radians(speed_theta)) * np.cos(np.radians(speed_phi))
+    den = omni_data_raw[:,23] # proton density /ccm
+    den[den == 999.9] = np.NaN
+    pdyn = omni_data_raw[:,28] # pdyn in nPa
+    pdyn[pdyn == 99.99] = np.NaN
+
+    # Magnetic field variables:
+    # -------------------------
+    btot = omni_data_raw[:,9] # total field in nT
+    btot[btot == 999.9] = np.NaN
+
+    # GSE components in nT
+    bx = omni_data_raw[:,12]
+    bx[bx == 999.9] = np.NaN
+    by = omni_data_raw[:,13]
+    by[by == 999.9] = np.NaN
+    bz = omni_data_raw[:,14]
+    bz[bz == 999.9] = np.NaN
+
+    # GSM components in nT
+    bygsm = omni_data_raw[:,15]
+    bygsm[bygsm == 999.9] = np.NaN
+    bzgsm = omni_data_raw[:,16]
+    bzgsm[bzgsm == 999.9] = np.NaN
+
+    # Indices:
+    # --------
+    kp = omni_data_raw[:,38]    # kp index
+    kp[kp == 99] = np.NaN
+    dst = omni_data_raw[:,40]   # dst index
+    dst[dst == 99999] = np.NaN
+    ae = omni_data_raw[:,41]    # ae index
+    ae[ae == 9999] = np.NaN
+    spot = omni_data_raw[:,39]  # sunspot number
+    spot[spot == 999] = np.NaN
+
+    #convert time to matplotlib format
+    times = np.zeros(len(year))
+    for index in range(0,len(year)):
+        times[index] = date2num(datetime(int(year[index]), 1, 1) + timedelta(day[index] - 1) +
+                       timedelta(hours=hour[index]))
+
+    omni_data = SatData({'time': times,
+                         'btot': btot, 'bx': bx, 'by': bygsm, 'bz': bzgsm,
+                         'speed': speed, 'speedx': speedx, 'density': den, 'pdyn': pdyn,
+                         'dst': dst, 'kp': kp, 'ae': ae},
+                         source='OMNI')
+    omni_data.h['DataSource'] = "OMNI (NASA OMNI2 data)"
+    omni_data.h['SourceURL'] = omni_data_url
+    omni_data.h['SamplingRate'] = times[1] - times[0]
+    omni_data.h['ReferenceFrame'] = 'GSM'
+    omni_data.h['HeliosatObject'] = heliosat._SpiceObject(None, "EARTH")
+
+    if starttime != None or endtime != None:
+        omni_data = omni_data.cut(starttime=starttime, endtime=endtime)
+
+    return omni_data
+
+
 def get_predstorm_realtime_data(resolution='hour'):
     """Reads data from PREDSTORM real-time output.
 
@@ -2007,7 +2129,7 @@ def get_sdo_realtime_image():
     #sdo_latest='https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_0193pfss.jpg'
     try: urllib.request.urlretrieve(sdo_latest,'latest_1024_0193.jpg')
     except urllib.error.URLError as e:
-        logger.error('Failed downloading ', sdo.latest,' ',e.reason)
+        logger.error('Failed downloading ', sdo_latest,' ',e)
     #convert to png
     #check if ffmpeg is available locally in the folder or systemwide
     if os.path.isfile('ffmpeg'):
@@ -2094,10 +2216,17 @@ def get_stereo_beacon_data(starttime, endtime, which_stereo='ahead', resolution=
     pt = np.array([datetime.fromtimestamp(t) for t in pt_ts])
     pt = date2num(pt)
     pdata[pdata < -1e29] = np.nan
-    data_cols = STEREO_.spacecraft['data']['proton_beacon']['columns']
+    data_cols = STEREO_.spacecraft['data']['sta_plastic_beacon']['columns']
     density = pdata[:,0]
     temperature = pdata[:,1]
     vx, vtot = pdata[:,2], pdata[:,5]
+
+    # Check plasma data is reasonable:
+    integrity = 2   # integrity of 0 means data is very dodgy
+    if np.nanmean(np.diff(pt)) > 0.003: # 0.00069444 is mean diff in timesteps for min data
+        integrity -= 1
+    if np.nanstd(vtot) > 300.:  # quiet times should be 70ish
+        integrity -= 1
 
     stime = date2num(starttime) - date2num(starttime)%(1./24.)
     # Roundabout way to get time_h ensures timings with full hours/mins:
@@ -2125,9 +2254,10 @@ def get_stereo_beacon_data(starttime, endtime, which_stereo='ahead', resolution=
                    source='STEREO-A')
     stereo.h['DataSource'] = "STEREO-A Beacon"
     stereo.h['SamplingRate'] = tarray[1] - tarray[0]
-    stereo.h['ReferenceFrame'] = STEREO_.spacecraft["data"]['mag_beacon'].get("frame")#STEREO_.get_ref_frame('mag_beacon')
+    stereo.h['ReferenceFrame'] = STEREO_.spacecraft["data"]['sta_impact_beacon'].get("frame")
     stereo.h['HeliosatObject'] = STEREO_
     stereo.h['Instruments'] = ['PLASTIC', 'IMPACT']
+    stereo.h['PlasmaDataIntegrity'] = integrity
 
     return stereo
 

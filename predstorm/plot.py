@@ -141,9 +141,9 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
 
     # STEREO-A minute resolution data with timeshift
     plt.plot_date(stam['time'][sta_index_future], stam['btot'][sta_index_future],
-                  '-', c=c_sta, linewidth=lw, label='B STEREO-Ahead')
+                  '-', c=c_sta, linewidth=lw, label='B STEREO-A')
     plt.plot_date(stam['time'][sta_index_future], stam['bn'][sta_index_future],
-                  '-', c=c_sta, alpha=0.5, linewidth=lw, label='Bn RTN STEREO-Ahead')
+                  '-', c=c_sta, alpha=0.5, linewidth=lw, label='Bn RTN STEREO-A')
 
     # Indicate 0 level for Bz
     plt.plot_date([plotstart,plotend], [0,0],'--k', alpha=0.5, linewidth=1)
@@ -155,7 +155,11 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
 
     plt.ylim(bplotmin, bplotmax)
 
-    plt.title('L1 real time solar wind from NOAA SWPC for '+ datetime.strftime(timestamp, "%Y-%m-%d %H:%M")+ ' UT   STEREO-A beacon', fontsize=fs_title)
+    if 'stereo' in stam.source.lower():
+        pred_source = 'STEREO-Ahead Beacon'
+    elif 'omni' in stam.source.lower():
+        pred_source = '27-day SW-Recurrence Model (OMNI)'
+    plt.title('L1 real time solar wind from NOAA SWPC for '+ datetime.strftime(timestamp, "%Y-%m-%d %H:%M")+ ' UT & {}'.format(pred_source), fontsize=fs_title)
 
     # SUBPLOT 2: Solar wind speed
     # ---------------------------
@@ -168,7 +172,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
 
     # Plot STEREO-A data with timeshift and savgol filter
     plt.plot_date(stam['time'][sta_index_future],signal.savgol_filter(stam['speed'][sta_index_future],11,1),'-', 
-                  c=c_sta, linewidth=lw, label='speed STEREO-Ahead')
+                  c=c_sta, linewidth=lw, label='speed {}'.format(stam.source))
 
     # Add speed levels:
     pltcfg.plot_speed_lines(xlims=[plotstart, plotend])
@@ -193,7 +197,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
 
     #plot STEREO-A data with timeshift and savgol filter
     plt.plot_date(stam['time'][sta_index_future], signal.savgol_filter(stam['density'][sta_index_future],5,1),
-                  '-', c=c_sta, linewidth=lw, label='density STEREO-Ahead')
+                  '-', c=c_sta, linewidth=lw, label='density {}'.format(stam.source))
 
     # SUBPLOT 4: Actual and predicted Dst
     # -----------------------------------
