@@ -101,7 +101,6 @@ import pdb
 import pickle
 import scipy.io
 import seaborn as sns
-import sunpy.time
 import urllib
 
 # Local imports
