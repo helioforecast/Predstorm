@@ -251,6 +251,7 @@ def main():
     stam['bx'], stam['by'], stam['bz'] = stam['br'], -stam['bt'], stam['bn']    # RTN to quasi-GSE
     stam.convert_GSE_to_GSM()
 
+    use_recurrence_model = False
     if not use_recurrence_model:
         sw_future = stam.make_hourly_data()
         sw_future_min = stam
