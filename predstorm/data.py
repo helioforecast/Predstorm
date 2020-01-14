@@ -611,6 +611,49 @@ class SatData():
         return self
 
 
+    def get_weighted_average(self, key, past_timesteps=4, past_weights=0.65):
+        """
+        Calculates a weighted average of speed and magnetic field bx, by, bz and the Newell coupling ec
+        for a number of ave_hours (4 by default) back in time
+        input data time resolution should be 1 hour
+        aurora output time resolution as given by dt can be higher
+        corresponds roughly to ap_inter_sol.pro in IDL ovation
+
+        Parameters
+        ==========
+        self : ...
+        key : str
+            String of key to return average for.
+        past_timesteps : int (default=4)
+            Timesteps previous to integrate over, usually 4 (hours)
+        past_weights : float (default=0.65)
+            Reduce weights by factor with each hour back
+
+        Returns
+        =======
+        avg : np.ndarray
+            Array containing averaged values. Same length as original.
+        """
+
+        if key not in self.vars:
+            raise Exception("Key {} not available in this ({}) SatData object!".format(key, self.source))
+
+        avg = np.zeros((len(self)))
+
+        for t_ind, timestep in enumerate(self.data[0]):
+            weights = np.ones(past_timesteps)  #make array with weights
+            for k in np.arange(1,past_timesteps,1):
+                weights[k] = weights[k-1] * past_weights
+
+            t_inds_for_weights = np.arange(t_ind, t_ind-past_timesteps,-1)
+            t_inds_for_weights[t_inds_for_weights < 0] = 0
+
+            #sum last hours with each weight and normalize
+            avg[t_ind] = np.round(np.nansum(self[key][t_inds_for_weights]*weights) / np.nansum(weights),1)
+
+        return avg
+
+
     def make_hourly_data(self):
         """Takes data with minute resolution and interpolates to hour.
         Uses .interp_to_time(). See that function for more usability options.
@@ -2329,12 +2372,12 @@ def save_to_file(filepath, wind=None, dst=None, aurora=None, kp=None, ec=None):
     out[:,13] = dst['dst']
     out[:,14] = kp['kp']
     out[:,15] = aurora['aurora']
-    out[:,16] = ec['ec']
+    out[:,16] = ec['ec']/4421.
 
     #description
     column_vals = '{:>17}{:>16}{:>7}{:>7}{:>7}{:>7}{:>9}{:>9}{:>8}{:>7}{:>8}{:>12}'.format(
         'Y  m  d  H  M  S', 'matplotlib_time', 'B[nT]', 'Bx', 'By', 'Bz', 'N[ccm-3]', 'V[km/s]',
-        'Dst[nT]', 'Kp', 'AP[GW]', 'Ec[Wb/s]')
+        'Dst[nT]', 'Kp', 'AP[GW]', 'Ec/4421[(km/s)**(4/3)nT**(2/3)]')
     time_cols_fmt = '%4i %2i %2i %2i %2i %2i %15.6f'
     b_cols_fmt = 4*'%7.2f'
     p_cols_fmt = '%9.0i%9.0i'

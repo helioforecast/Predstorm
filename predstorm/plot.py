@@ -239,10 +239,11 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
         axes.append(ax5)
 
         # Plot solar wind density:
-        plt.plot_date(newell_coupling['time'], newell_coupling['ec']/4421., '-', color=c_ec, label='Newell coupling',linewidth=1.5)
+        avg_newell_coupling = newell_coupling.get_weighted_average('ec')
+        plt.plot_date(newell_coupling['time'], avg_newell_coupling/4421., '-', color=c_ec, label='Newell coupling',linewidth=1.5)
         plt.ylabel('Newell Coupling / 4421\n$\mathregular{[(km/s)^{4/3} nT^{2/3}]}$',fontsize=fs_ylabel)
         # For y limits check where the maximum and minimum are for DSCOVR and STEREO taken together:
-        plt.ylim([0,np.nanmax(newell_coupling['ec']/4421.)*1.1])
+        plt.ylim([0,np.nanmax(avg_newell_coupling/4421.)*1.1])
 
         # Indicate level of interest (Ec/4421 = 1.0)
         plt.plot_date([plotstart,plotend], [1,1],'--k', alpha=0.5, linewidth=1)
