@@ -2378,9 +2378,9 @@ def merge_Data(satdata1, satdata2, keys=None):
             raise Exception("Dataset1 contains key ({}) not available in Dataset2!".format(k))
 
     # Find num of points for addition:
-    if (satdata1.h['SamplingRate'] - 1./24.) < 0.0001:
+    if np.abs((satdata1.h['SamplingRate'] - 1./24.)) < 0.0001:
         timestep = 1./24.
-    elif (satdata1.h['SamplingRate'] - 1./24./60.) < 0.0001:
+    elif np.abs((satdata1.h['SamplingRate'] - 1./24./60.)) < 0.0001:
         timestep = 1./24./60.
     else:
         timestep = satdata1.h['SamplingRate']
@@ -2398,16 +2398,21 @@ def merge_Data(satdata1, satdata2, keys=None):
 
     MergedData = SatData(datadict, source=satdata1.source+'+'+satdata2.source)
     tf = "%Y-%m-%d %H:%M:%S"
-    MergedData.h['DataSource'] = '{} ({} - {}) & {} ({} - {})'.format(satdata1.h['DataSource'],
-                                                datetime.strftime(num2date(satdata1['time'][0]), tf),
-                                                datetime.strftime(num2date(satdata1['time'][-1]), tf),
-                                                satdata2.h['DataSource'],
-                                                datetime.strftime(num2date(new_time[0]), tf),
-                                                datetime.strftime(num2date(new_time[-1]), tf))
+    if satdata1.h['DataSource'] == satdata2.h['DataSource']:
+        MergedData.h['DataSource'] = satdata1.h['DataSource']
+        MergedData.h['Instruments'] = satdata1.h['Instruments']
+        MergedData.h['FileVersion'] = satdata1.h['FileVersion']
+    else:
+        MergedData.h['DataSource'] = '{} ({} - {}) & {} ({} - {})'.format(satdata1.h['DataSource'],
+                                                    datetime.strftime(num2date(satdata1['time'][0]), tf),
+                                                    datetime.strftime(num2date(satdata1['time'][-1]), tf),
+                                                    satdata2.h['DataSource'],
+                                                    datetime.strftime(num2date(new_time[0]), tf),
+                                                    datetime.strftime(num2date(new_time[-1]), tf))
+        MergedData.h['Instruments'] = satdata1.h['Instruments'] + satdata2.h['Instruments']
+        MergedData.h['FileVersion'] = {**satdata1.h['FileVersion'], **satdata2.h['FileVersion']}
     MergedData.h['SamplingRate'] = timestep
     MergedData.h['ReferenceFrame'] = satdata1.h['ReferenceFrame']
-    MergedData.h['Instruments'] = satdata1.h['Instruments'] + satdata2.h['Instruments']
-    MergedData.h['FileVersion'] = {**satdata1.h['FileVersion'], **satdata2.h['FileVersion']}
 
     logger.info("merge_Data: Finished merging data.")
 

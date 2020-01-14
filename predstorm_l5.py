@@ -158,6 +158,22 @@ def main():
         timenow = dism['time'][-1]
         # Get UTC time now
         timeutc = date2num(timestamp)
+        # Save to pickle file for recurrence model:
+        rec_dism = copy.deepcopy(dism)
+        # Cut by three days so data is always 3 days old at least, in case it's updated
+        rec_dism.cut(endtime=num2date(timenow-3))
+        rec_model_path = 'recurrence_l1_27days.pickle'
+        if not os.path.exists(rec_model_path):
+            with open(rec_model_path, 'wb') as f:
+                pickle.dump(rec_dism, f)
+        with open(rec_model_path, 'rb') as f:
+            rec_27days = pickle.load(f)
+        if rec_dism['time'][-1] > rec_27days['time'][-1]:
+            rec_dism.cut(starttime=num2date(rec_27days['time'][-1]))
+            rec_new = ps.merge_Data(rec_27days, rec_dism)
+            rec_new.cut(starttime=num2date(timenow-90))  # don't keep more than three months
+            with open(rec_model_path, 'wb') as f:
+                pickle.dump(rec_new, f)
     elif run_mode == 'historic':
         timestamp = historic_date
         if (datetime.utcnow() - historic_date).days < (7.-plot_past_days):
