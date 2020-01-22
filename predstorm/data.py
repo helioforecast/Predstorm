@@ -895,7 +895,9 @@ class SatData():
         """Corrects for differences in B and density values due to solar wind
         expansion at different radii.
         
-        ********* TO DO CHECK exponents - are others better?
+        Exponents taken from Kivelson and Russell, Introduction to Space Physics (Ch. 4.3.2).
+        Density, btot, bt, bn, bx and bz are scaled according to 1/r**2.
+        bt and by are scaled according to 1/r.
 
         Parameters
         ==========
@@ -909,11 +911,15 @@ class SatData():
         dttime = [num2date(t).replace(tzinfo=None) for t in self['time']]
         L1Pos = get_l1_position(dttime, units=self.pos.h['Units'], refframe=self.pos.h['ReferenceFrame'])
 
-        corr_factor = (self.pos['r']/L1Pos['r'])**-2
-        shift_var_list = ['btot', 'br', 'bt', 'bn', 'bx', 'by', 'bz', 'density']
-        shift_vars = [v for v in shift_var_list if v in self.vars]
+        shift_vars_2 = ['density', 'btot', 'bt', 'bn', 'bx', 'bz']      # behave according to inverse-square law
+        shift_vars = [v for v in shift_vars_2 if v in self.vars]
         for var in shift_vars:
-            self[var] = self[var] * corr_factor
+            self[var] = self[var] * (self.pos['r']/L1Pos['r'])**(-2.)
+        
+        shift_vars_1 = ['bt', 'by']
+        shift_vars = [v for v in shift_vars_1 if v in self.vars]      # behave according to 1/r
+        for var in shift_vars:
+            self[var] = self[var] * (self.pos['r']/L1Pos['r'])**(-1.)
         logger.info("shift_wind_to_L1: Extrapolated B and density values to L1 distance")
 
         return self
@@ -1881,7 +1887,7 @@ def get_omni_data(starttime=None, endtime=None, filepath='', download=False, dld
     if download == False:
         if filepath != '' and not os.path.exists(filepath):
             raise Exception("get_omni_data: {} does not exist! Run get_omni_data(download=True) to download file.".format(filepath))
-        else:
+        if filepath == '':
             raise Exception("get_omni_data: no data source specified! Run get_omni_data(download=True) or get_omni_data(filepath=path) to specify source.".format(filepath))
 
     if download:
