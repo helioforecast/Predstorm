@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 # --------------------------- PLOTTING FUNCTIONS ----------------------------------------
 # =======================================================================================
 
-def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPRED_data, newell_coupling=None, dst_label='Dst Temerin & Li 2002', past_days=3.5, future_days=7., verification_mode=False, timestamp=None, **kwargs):
+def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPRED_data, newell_coupling=None, dst_label='Dst Temerin & Li 2002', past_days=3.5, future_days=7., verification_mode=False, timestamp=None, outfile='predstorm_real.png', **kwargs):
     """
     Plots solar wind variables, past from DSCOVR and future/predicted from STEREO-A.
     Total B-field and Bz (top), solar wind speed (second), particle density (third)
@@ -278,14 +278,190 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
     filename_eps = filename.replace('png', 'eps')
 
     if not verification_mode:
-        plt.savefig('predstorm_real.png')
-        logger.info('Real-time plot saved as predstorm_real.png!')
+        plt.savefig(outfile)
+        logger.info('Real-time plot saved as {}!'.format(outfile))
 
     #if not server: # Just plot and exit
     #    plt.show()
     #    sys.exit()
     plt.savefig(filename)
     logger.info('Plot saved as png:\n'+ filename)
+
+
+def plot_solarwind_science(DSCOVR_data, STEREOA_data, verification_mode=False, timestamp=None, past_days=7, future_days=7, outfile='predstorm_science.png', **kwargs):
+    """
+    Plots solar wind variables, past from DSCOVR and future/predicted from STEREO-A.
+    Total B-field and Bz (top), solar wind speed (second), particle density (third)
+    and Dst (fourth) from Kyoto and model prediction.
+
+    Parameters
+    ==========
+    DSCOVR_data : list[minute data, hourly data]
+        DSCOVR data in different time resolutions.
+    STEREOA_data : list[minute data, hourly data]
+        STEREO-A data in different time resolutions.
+    lw : int (default=1)
+        Linewidth for plotting functions.
+    fs : int (default=11)
+        Font size for all text in plot.
+    ms : int (default=5)
+        Marker size for markers in plot.
+    figsize : tuple(float=width, float=height) (default=(14,12))
+        Figure size (in inches) for output file.
+    verification_mode : bool (default=False)
+        If True, verification mode will produce a plot of the predicted Dst
+        for model verification purposes.
+    timestamp : datetime obj
+        Time for 'now' label in plot.
+
+    Returns
+    =======
+    plt.savefig : .png file
+        File saved to XXX
+    """
+
+    figsize = kwargs.get('figsize', pltcfg.figsize)
+    lw = kwargs.get('lw', pltcfg.lw)
+    fs = kwargs.get('fs', pltcfg.fs)
+    date_fmt = kwargs.get('date_fmt', pltcfg.date_fmt)
+    c_dst = kwargs.get('c_dst', pltcfg.c_dst)
+    c_dis = kwargs.get('c_dis', pltcfg.c_dis)
+    c_ec = kwargs.get('c_ec', pltcfg.c_ec)
+    c_sta = kwargs.get('c_sta', pltcfg.c_sta)
+    c_sta_dst = kwargs.get('c_sta_dst', pltcfg.c_sta_dst)
+    ms_dst = kwargs.get('c_dst', pltcfg.ms_dst)
+    fs_legend = kwargs.get('fs_legend', pltcfg.fs_legend)
+    fs_ylabel = kwargs.get('fs_legend', pltcfg.fs_ylabel)
+    fs_title = kwargs.get('fs_title', pltcfg.fs_title)
+
+    # Set style:
+    sns.set_context(pltcfg.sns_context)
+    sns.set_style(pltcfg.sns_style)
+
+    # Make figure object:
+    fig = plt.figure(1,figsize=(20,8))
+    axes = []
+
+    # Set data objects:
+    stam, sta = STEREOA_data
+    dism, dis = DSCOVR_data
+
+    # For the minute data, check which are the intervals to show for STEREO-A until end of plot
+    sta_index_future=np.where(np.logical_and(stam['time'] > dism['time'][-1], \
+                              stam['time'] < dism['time'][-1]+future_days))[0]
+
+    if timestamp == None:
+        timestamp = datetime.utcnow()
+    timeutc = mdates.date2num(timestamp)
+
+    n_plots = 3
+
+    plotstart = timeutc - past_days
+    plotend = timeutc + future_days
+
+    # SUBPLOT 1: Total B-field and Bz
+    # -------------------------------
+    ax1 = fig.add_subplot(n_plots,1,1)
+    axes.append(ax1)
+
+    # Total B-field and Bz (DSCOVR)
+    plt.plot_date(dism['time'], dism['btot'],'-', c='black', label='B', linewidth=lw)
+    plt.plot_date(dism['time'], dism['bx'],'-', c='teal', label='Bx', linewidth=lw)
+    plt.plot_date(dism['time'], dism['by'],'-', c='orange', label='By', linewidth=lw)
+    plt.plot_date(dism['time'], dism['bz'],'-', c='purple', label='Bz', linewidth=lw)
+
+    # STEREO-A minute resolution data with timeshift
+    plt.plot_date(stam['time'][sta_index_future], stam['btot'][sta_index_future],
+                  '-', c='black', alpha=0.5, linewidth=0.5)
+    plt.plot_date(stam['time'][sta_index_future], stam['br'][sta_index_future],
+                  '-', c='teal', alpha=0.5, linewidth=0.5)
+    plt.plot_date(stam['time'][sta_index_future], stam['bt'][sta_index_future],
+                  '-', c='orange', alpha=0.5, linewidth=0.5)
+    plt.plot_date(stam['time'][sta_index_future], stam['bn'][sta_index_future],
+                  '-', c='purple', alpha=0.5, linewidth=0.5)
+
+    # Indicate 0 level for Bz
+    plt.plot_date([plotstart,plotend], [0,0],'--k', alpha=0.5, linewidth=1)
+    plt.ylabel('Magnetic field [nT]',  fontsize=fs_ylabel)
+
+    # For y limits check where the maximum and minimum are for DSCOVR and STEREO taken together:
+    bplotmax=np.nanmax(np.concatenate((dism['btot'],stam['btot'][sta_index_future])))+5
+    bplotmin=np.nanmin(np.concatenate((dism['bz'],stam['bn'][sta_index_future]))-5)
+
+    plt.ylim((-13, 13))
+
+    if 'stereo' in stam.source.lower():
+        pred_source = 'STEREO-Ahead Beacon'
+    elif 'omni' in stam.source.lower():
+        pred_source = '27-day SW-Recurrence Model (OMNI)'
+    plt.title('L1 real time solar wind from NOAA SWPC for '+ datetime.strftime(timestamp, "%Y-%m-%d %H:%M")+ ' UT & {}'.format(pred_source), fontsize=fs_title)
+
+    # SUBPLOT 2: Solar wind speed
+    # ---------------------------
+    ax2 = fig.add_subplot(n_plots,1,2)
+    axes.append(ax2)
+
+    # Plot solar wind speed (DSCOVR):
+    plt.plot_date(dism['time'], dism['speed'],'-', c='black', label='speed',linewidth=lw)
+    plt.ylabel('Speed $\mathregular{[km \\ s^{-1}]}$', fontsize=fs_ylabel)
+
+    # Plot STEREO-A data with timeshift and savgol filter
+    plt.plot_date(stam['time'][sta_index_future],signal.savgol_filter(stam['speed'][sta_index_future],11,1),'-', 
+                  c='black', alpha=0.5, linewidth=lw)
+
+    # Add speed levels:
+    pltcfg.plot_speed_lines(xlims=[plotstart, plotend])
+
+    # For y limits check where the maximum and minimum are for DSCOVR and STEREO taken together:
+    vplotmax=np.nanmax(np.concatenate((dism['speed'],signal.savgol_filter(stam['speed'][sta_index_future],11,1))))+100
+    vplotmin=np.nanmin(np.concatenate((dism['speed'],signal.savgol_filter(stam['speed'][sta_index_future],11,1)))-50)
+    plt.ylim(vplotmin, vplotmax)
+
+    plt.annotate('now', xy=(timeutc,vplotmax-(vplotmax-vplotmin)*0.25), xytext=(timeutc+0.05,vplotmax-(vplotmax-vplotmin)*0.25), color='k', fontsize=14)
+
+    # SUBPLOT 3: Solar wind density
+    # -----------------------------
+    ax3 = fig.add_subplot(n_plots,1,3)
+    axes.append(ax3)
+
+    # Plot solar wind density:
+    plt.plot_date(dism['time'], dism['density'],'-k', label='density',linewidth=lw)
+    plt.ylabel('Density $\mathregular{[ccm^{-3}]}$',fontsize=fs_ylabel)
+    # For y limits check where the maximum and minimum are for DSCOVR and STEREO taken together:
+    plt.ylim([0,np.nanmax(np.nanmax(np.concatenate((dism['density'],stam['density'][sta_index_future])))+10)])
+
+    #plot STEREO-A data with timeshift and savgol filter
+    plt.plot_date(stam['time'][sta_index_future], signal.savgol_filter(stam['density'][sta_index_future],5,1),
+                  '-', c='black', alpha=0.5, linewidth=lw)
+
+    # GENERAL FORMATTING
+    # ------------------
+    for ax in axes:
+        ax.set_xlim([plotstart,plotend])
+        ax.tick_params(axis="x", labelsize=fs)
+        ax.tick_params(axis="y", labelsize=fs)
+        ax.legend(loc=2,ncol=4,fontsize=fs_legend)
+
+        # Dates on x-axes:
+        myformat = mdates.DateFormatter(date_fmt)
+        ax.xaxis.set_major_formatter(myformat)
+
+        # Vertical line for NOW:
+        ax.plot_date([timeutc,timeutc],[-2000,100000],'-k', linewidth=2)
+
+    # Liability text:
+    pltcfg.group_info_text()
+    pltcfg.liability_text()
+
+    #save plot
+    if not verification_mode:
+        plot_label = 'realtime'
+    else:
+        plot_label = 'verify'
+
+    if not verification_mode:
+        plt.savefig(outfile)
+        logger.info('Real-time plot saved as {}!'.format(outfile))
 
 
 def plot_stereo_dscovr_comparison(stam, dism, dst, timestamp=None, look_back=20, outfile=None, **kwargs):

@@ -2445,13 +2445,14 @@ def merge_Data(satdata1, satdata2, keys=None):
         # Make combined array data
         datadict[k] = np.concatenate((satdata1[k], int_var))
 
-    MergedData = SatData(datadict, source=satdata1.source+'+'+satdata2.source)
     tf = "%Y-%m-%d %H:%M:%S"
     if satdata1.h['DataSource'] == satdata2.h['DataSource']:
+        MergedData = SatData(datadict, source=satdata1.source)
         MergedData.h['DataSource'] = satdata1.h['DataSource']
         MergedData.h['Instruments'] = satdata1.h['Instruments']
         MergedData.h['FileVersion'] = satdata1.h['FileVersion']
     else:
+        MergedData = SatData(datadict, source=satdata1.source+'+'+satdata2.source)
         MergedData.h['DataSource'] = '{} ({} - {}) & {} ({} - {})'.format(satdata1.h['DataSource'],
                                                     datetime.strftime(num2date(satdata1['time'][0]), tf),
                                                     datetime.strftime(num2date(satdata1['time'][-1]), tf),

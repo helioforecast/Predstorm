@@ -107,7 +107,7 @@ import urllib
 import heliosat
 import predstorm as ps
 from predstorm.config.constants import AU, dist_to_L1
-from predstorm.plot import plot_solarwind_and_dst_prediction
+from predstorm.plot import plot_solarwind_and_dst_prediction, plot_solarwind_science
 from predstorm.predict import dst_loss_function
 
 # GET INPUT PARAMETERS
@@ -171,7 +171,8 @@ def main():
         if rec_dism['time'][-1] > rec_27days['time'][-1]:
             rec_dism.cut(starttime=num2date(rec_27days['time'][-1]))
             rec_new = ps.merge_Data(rec_27days, rec_dism)
-            rec_new.cut(starttime=num2date(timenow-90))  # don't keep more than three months
+            rec_new.cut(starttime=num2date(timenow-365))  # don't keep more than 1 year
+            rec_new.source = 'NOAA-L1'
             with open(rec_model_path, 'wb') as f:
                 pickle.dump(rec_new, f)
     elif run_mode == 'historic':
@@ -339,6 +340,9 @@ def main():
                                       past_days=plot_past_days,
                                       future_days=plot_future_days,
                                       dst_label=dst_label,
+                                      timestamp=timestamp)
+    plt.close()
+    plot_solarwind_science([dism, sw_past], [sw_future_min, sw_future], 
                                       timestamp=timestamp)
     # ********************************************************************
 
