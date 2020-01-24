@@ -412,7 +412,6 @@ def _jit_calc_dst_temerin_li_2002(time, btot, bx, by, bz, speed, speedx, density
         bp = (by[i]**2 + bx[i]**2)**0.5  
         #contains t1, but in cos and sin 
         dh = bp*np.cos(np.arctan2(bx[i],by[i])+6.10) * (3.59e-2 * np.cos(2*np.pi*t1/yearli + 0.04) - 2.18e-2*np.sin(2*np.pi*t1-1.60))
-        #print(i, bx[i], by[i], bz[i])
         theta_li = -(np.arccos(-bz[i]/bt)-np.pi)/2
         exx = 1e-3 * abs(speedx[i]) * bt * np.sin(theta_li)**6.1
         #t1 and dt are in days

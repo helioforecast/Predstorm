@@ -222,7 +222,7 @@ class SatData():
 
 
     def __str__(self):
-        """Print string describing object."""
+        """Return string describing object."""
 
         ostr = "Length of data:\t\t{}\n".format(len(self))
         ostr += "Keys in data:\t\t{}\n".format(self.vars)
@@ -1111,7 +1111,7 @@ class SatData():
     def get_state(self):
         """Finds state of wind and fills self.state attribute."""
 
-        print("Coming soon.")
+        logger.info("Coming soon.")
 
     # -----------------------------------------------------------------------------------
     # Data archiving
@@ -1120,7 +1120,7 @@ class SatData():
     def archive(self):
         """Make archive of long-term data."""
 
-        print("Not yet implemented.")
+        logger.info("Not yet implemented.")
 
 
 class PositionData():
@@ -1907,7 +1907,6 @@ def get_omni_data(starttime=None, endtime=None, filepath='', download=False, dld
     #check how many rows exist in this file
     f=open(filepath)
     dataset= len(f.readlines())
-    #print(dataset)
     #global Variables
     spot=np.zeros(dataset) 
     btot=np.zeros(dataset) #floating points
@@ -1939,7 +1938,7 @@ def get_omni_data(starttime=None, endtime=None, filepath='', download=False, dld
     with open('data/omni2_all_years.dat') as f:
         for line in f:
             line = line.split() # to deal with blank 
-            #print line #41 is Dst index, in nT
+            #41 is Dst index, in nT
             dst[j]=line[40]
             ae[j]=line[41]
             kp[j]=line[38]
@@ -2475,7 +2474,6 @@ def merge_Data(satdata1, satdata2, keys=None):
 
 def getpositions(filename):  
     pos=scipy.io.readsav(filename)  
-    print
     return pos
 
 
@@ -2505,15 +2503,12 @@ def converttime():
     http://matplotlib.org/examples/pylab_examples/date_demo2.html
     """
 
-    print('convert time start')
     for index in range(0,dataset):
         #first to datetimeobject 
         timedum=datetime(int(year[index]), 1, 1) + timedelta(day[index] - 1) +timedelta(hours=hour[index])
         #then to matlibplot dateformat:
         times1[index] = matplotlib.dates.date2num(timedum)
-        #print time
-        #print year[index], day[index], hour[index]
-    print('convert time done')   #for time conversion
+    logger.info('convert time done')   #for time conversion
 
 
 def round_to_hour(dt):

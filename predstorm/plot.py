@@ -141,9 +141,14 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
 
     # STEREO-A minute resolution data with timeshift
     plt.plot_date(stam['time'][sta_index_future], stam['btot'][sta_index_future],
-                  '-', c=c_sta, linewidth=lw, label='B STEREO-A')
-    plt.plot_date(stam['time'][sta_index_future], stam['bn'][sta_index_future],
-                  '-', c=c_sta, alpha=0.5, linewidth=lw, label='Bn RTN STEREO-A')
+                  '-', c=c_sta, linewidth=lw, label='B {}'.format(stam.source))
+    if 'stereo' in stam.source.lower():
+        plt.plot_date(stam['time'][sta_index_future], stam['bn'][sta_index_future],
+                      '-', c=c_sta, alpha=0.5, linewidth=lw, label='Bn RTN {}'.format(stam.source))
+    else:
+        plt.plot_date(stam['time'][sta_index_future], stam['bz'][sta_index_future],
+                      '-', c=c_sta, alpha=0.5, linewidth=lw, label='Bz GSM {}'.format(stam.source))
+
 
     # Indicate 0 level for Bz
     plt.plot_date([plotstart,plotend], [0,0],'--k', alpha=0.5, linewidth=1)
@@ -157,8 +162,8 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
 
     if 'stereo' in stam.source.lower():
         pred_source = 'STEREO-Ahead Beacon'
-    elif 'omni' in stam.source.lower():
-        pred_source = '27-day SW-Recurrence Model (OMNI)'
+    elif 'dscovr' in stam.source.lower() or 'noaa' in stam.source.lower():
+        pred_source = '27-day SW-Recurrence Model (NOAA)'
     plt.title('L1 real time solar wind from NOAA SWPC for '+ datetime.strftime(timestamp, "%Y-%m-%d %H:%M")+ ' UT & {}'.format(pred_source), fontsize=fs_title)
 
     # SUBPLOT 2: Solar wind speed
@@ -212,7 +217,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
     dstplotmin = np.nanmin(np.concatenate((dst['dst'], dst_pred['dst'])))-20
 
     if dstplotmin > -100:       # Low activity (normal)
-        plt.ylim([-100,np.nanmax(dst['dst'])+20])
+        plt.ylim([-100, dstplotmax + 30])
     else:                       # High activity
         plt.ylim([dstplotmin, dstplotmax])
 
@@ -220,9 +225,9 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
     if not verification_mode:
         plt.plot_date(dst_pred['time'], dst_pred['dst'], '-', c=c_sta_dst, label=dst_label, markersize=3, linewidth=1)
         # Add generic error bars of +/-15 nT:
-        error=15
+        error=8
         plt.fill_between(dst_pred['time'], dst_pred['dst']-error, dst_pred['dst']+error, alpha=0.2,
-                         label='Error for high speed streams')
+                         label='prediction accuracy +/- 8 nT')
     else:
         #load saved data l prefix is for loaded - WARNING This will crash if called right now
         [timenowb, sta_ptime, sta_vr, sta_btime, sta_btot, sta_br,sta_bt, sta_bn, rbtime_num, rbtot, rbzgsm, rptime_num, rpv, rpn, lrdst_time, lrdst, lcom_time, ldst_burton, ldst_obrien,ldst_temerin_li]=pickle.load(open(verify_filename,'rb') )
@@ -240,10 +245,10 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
 
         # Plot solar wind density:
         avg_newell_coupling = newell_coupling.get_weighted_average('ec')
-        plt.plot_date(newell_coupling['time'], avg_newell_coupling/4421., '-', color=c_ec, label='Newell coupling',linewidth=1.5)
+        plt.plot_date(newell_coupling['time'], avg_newell_coupling/4421., '-', color=c_ec, label='Newell coupling 4h weighted mean',linewidth=1.5)
         plt.ylabel('Newell Coupling / 4421\n$\mathregular{[(km/s)^{4/3} nT^{2/3}]}$',fontsize=fs_ylabel)
         # For y limits check where the maximum and minimum are for DSCOVR and STEREO taken together:
-        plt.ylim([0,np.nanmax(avg_newell_coupling/4421.)*1.1])
+        plt.ylim([0,np.nanmax(avg_newell_coupling/4421.)*1.2])
 
         # Indicate level of interest (Ec/4421 = 1.0)
         plt.plot_date([plotstart,plotend], [1,1],'--k', alpha=0.5, linewidth=1)
@@ -288,7 +293,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
     logger.info('Plot saved as png:\n'+ filename)
 
 
-def plot_solarwind_science(DSCOVR_data, STEREOA_data, verification_mode=False, timestamp=None, past_days=7, future_days=7, outfile='predstorm_science.png', **kwargs):
+def plot_solarwind_science(DSCOVR_data, STEREOA_data, verification_mode=False, timestamp=None, past_days=7, future_days=7, plot_step=20, outfile='predstorm_science.png', **kwargs):
     """
     Plots solar wind variables, past from DSCOVR and future/predicted from STEREO-A.
     Total B-field and Bz (top), solar wind speed (second), particle density (third)
@@ -355,6 +360,7 @@ def plot_solarwind_science(DSCOVR_data, STEREOA_data, verification_mode=False, t
     timeutc = mdates.date2num(timestamp)
 
     n_plots = 3
+    plst = plot_step
 
     plotstart = timeutc - past_days
     plotend = timeutc + future_days
@@ -365,10 +371,10 @@ def plot_solarwind_science(DSCOVR_data, STEREOA_data, verification_mode=False, t
     axes.append(ax1)
 
     # Total B-field and Bz (DSCOVR)
-    plt.plot_date(dism['time'], dism['btot'],'-', c='black', label='B', linewidth=lw)
-    plt.plot_date(dism['time'], dism['bx'],'-', c='teal', label='Bx', linewidth=lw)
-    plt.plot_date(dism['time'], dism['by'],'-', c='orange', label='By', linewidth=lw)
-    plt.plot_date(dism['time'], dism['bz'],'-', c='purple', label='Bz', linewidth=lw)
+    plt.plot_date(dism['time'][::plst], dism['btot'][::plst],'-', c='black', label='B', linewidth=lw)
+    plt.plot_date(dism['time'][::plst], dism['bx'][::plst],'-', c='teal', label='Bx', linewidth=lw)
+    plt.plot_date(dism['time'][::plst], dism['by'][::plst],'-', c='orange', label='By', linewidth=lw)
+    plt.plot_date(dism['time'][::plst], dism['bz'][::plst],'-', c='purple', label='Bz', linewidth=lw)
 
     # STEREO-A minute resolution data with timeshift
     plt.plot_date(stam['time'][sta_index_future], stam['btot'][sta_index_future],
@@ -392,8 +398,8 @@ def plot_solarwind_science(DSCOVR_data, STEREOA_data, verification_mode=False, t
 
     if 'stereo' in stam.source.lower():
         pred_source = 'STEREO-Ahead Beacon'
-    elif 'omni' in stam.source.lower():
-        pred_source = '27-day SW-Recurrence Model (OMNI)'
+    elif 'dscovr' in stam.source.lower() or 'noaa' in stam.source.lower():
+        pred_source = '27-day SW-Recurrence Model (NOAA)'
     plt.title('L1 real time solar wind from NOAA SWPC for '+ datetime.strftime(timestamp, "%Y-%m-%d %H:%M")+ ' UT & {}'.format(pred_source), fontsize=fs_title)
 
     # SUBPLOT 2: Solar wind speed
@@ -402,7 +408,7 @@ def plot_solarwind_science(DSCOVR_data, STEREOA_data, verification_mode=False, t
     axes.append(ax2)
 
     # Plot solar wind speed (DSCOVR):
-    plt.plot_date(dism['time'], dism['speed'],'-', c='black', label='speed',linewidth=lw)
+    plt.plot_date(dism['time'][::plst], dism['speed'][::plst],'-', c='black', label='speed',linewidth=lw)
     plt.ylabel('Speed $\mathregular{[km \\ s^{-1}]}$', fontsize=fs_ylabel)
 
     # Plot STEREO-A data with timeshift and savgol filter
@@ -425,7 +431,7 @@ def plot_solarwind_science(DSCOVR_data, STEREOA_data, verification_mode=False, t
     axes.append(ax3)
 
     # Plot solar wind density:
-    plt.plot_date(dism['time'], dism['density'],'-k', label='density',linewidth=lw)
+    plt.plot_date(dism['time'][::plst], dism['density'][::plst],'-k', label='density',linewidth=lw)
     plt.ylabel('Density $\mathregular{[ccm^{-3}]}$',fontsize=fs_ylabel)
     # For y limits check where the maximum and minimum are for DSCOVR and STEREO taken together:
     plt.ylim([0,np.nanmax(np.nanmax(np.concatenate((dism['density'],stam['density'][sta_index_future])))+10)])

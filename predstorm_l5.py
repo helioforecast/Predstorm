@@ -173,6 +173,7 @@ def main():
             rec_new = ps.merge_Data(rec_27days, rec_dism)
             rec_new.cut(starttime=num2date(timenow-365))  # don't keep more than 1 year
             rec_new.source = 'NOAA-L1'
+            logger.info("Pickled real-time data contains data from {} till {}".format(num2date(rec_new['time'][0]), num2date(rec_new['time'][-1])))
             with open(rec_model_path, 'wb') as f:
                 pickle.dump(rec_new, f)
     elif run_mode == 'historic':
@@ -181,7 +182,6 @@ def main():
             logger.info("Using historic mode with current DSCOVR data and {} timestamp".format(timestamp))
             dism = ps.get_dscovr_realtime_data()
             dism = dism.cut(endtime=timestamp)
-            dis = dism.make_hourly_data()
         else:
             logger.info("Using historic mode with archive DSCOVR data")
             dism = ps.get_dscovr_data(starttime=timestamp-timedelta(days=plot_past_days+1),
@@ -190,6 +190,7 @@ def main():
         timenow = timeutc
     dism.interp_nans()
     dis = dism.make_hourly_data()
+    sw_past_min = dism
     sw_past = dis
 
     timeutcstr = datetime.strftime(timestamp, tstr_format)
@@ -204,35 +205,36 @@ def main():
     #------------------------ (1b) Get real-time STEREO-A beacon data -----------------------
 
     logger.info("(2) Getting STEREO-A data...")
+    use_recurrence_model = False
     if run_mode == 'normal':
-        stam = ps.get_stereo_beacon_data(starttime=startread, endtime=timestamp-timedelta(minutes=1))
+        try:
+            stam = ps.get_stereo_beacon_data(starttime=startread, endtime=timestamp-timedelta(minutes=1))
+            stam.load_positions()
+            sta_details = stam.return_position_details(timestamp)
+            if stam.h['PlasmaDataIntegrity'] == 0: # very low quality data
+                use_recurrence_model = True
+        except Exception as e:
+            logger.info("STEREO-A read failed for reason: {}".format(e))
+            use_recurrence_model = True
     elif run_mode == 'historic':
         lag_L1, lag_r = ps.get_time_lag_wrt_earth(timestamp=timestamp, satname='STEREO-A')
         est_timelag = lag_L1 + lag_r
         stam = ps.get_stereo_beacon_data(starttime=timestamp-timedelta(days=plot_future_days+est_timelag),
                                          endtime=timestamp+timedelta(days=2))
+        stam.load_positions()
+        sta_details = stam.return_position_details(timestamp)
 
-    logger.info('UTC time of last datapoint in STEREO-A beacon data:')
-    logger.info('\t{}'.format(num2date(stam['time'][-1])))
-    logger.info('Time lag in minutes: {}'.format(int(round((timeutc-stam['time'][-1])*24*60))))
-
-    # Prepare data:
-    stam.load_positions()
-    sta_details = stam.return_position_details(timestamp)
-
-    use_recurrence_model = False
-    if stam.h['PlasmaDataIntegrity'] == 0: # very low quality data
+    if run_mode == 'normal' and use_recurrence_model:
         use_recurrence_model = True
         logger.info("STEREO-A plasma data is missing/corrupted, using 27-day recurrence model for plasma data instead.")
         rec_start = timestamp - timedelta(days=27)
         rec_end = timestamp - timedelta(days=27-plot_future_days)
-        sw_future = ps.get_omni_data_new(starttime=rec_start, endtime=rec_end)
-        sw_future['time'] = sw_future['time'] + 27.
-        sw_future.h['DataSource'] += ' t+27days'
-        sw_future.source += '+27days'
-        # Remove OMNI indices, don't need them:
-        sw_future['kp'], sw_future['ae'], sw_future['dst'] = 0., 0., 0.
-        sw_future.vars = [v for v in sw_future.vars if v not in ['kp', 'ae', 'dst']]
+        with open(rec_model_path, 'rb') as f:
+            sw_future_min = pickle.load(f)
+        sw_future_min.cut(starttime=rec_start, endtime=rec_end)
+        sw_future_min['time'] += 27.
+        sw_future_min.h['DataSource'] += ' t+27days'
+        sw_future_min.source += '+27days'
 
     #------------------------- (1c) Load NOAA Dst for comparison ----------------------------
 
@@ -252,39 +254,38 @@ def main():
 
     #========================== (2) PREDICTION CALCULATIONS ==================================
 
-    logger.info("\n-------------------------\nL5-to-L1 MAPPING\n-------------------------")
-    #------------------------ (2a) Corrections to time-shifted STEREO-A data ----------------
-    logger.info("Doing corrections to STEREO-A data...")
-
-    logger.info("(1) Shift time at STEREO-A according to solar wind rotation")
-    stam.shift_time_to_L1()
-    logger.info("STA-to-L1 adjusted time of last datapoint in STEREO-A:")
-    logger.info("\t{}".format(num2date(stam['time'][-1])))
-
-    logger.info("(2) Make correction for difference in heliocentric distance")
-    stam.shift_wind_to_L1()
-
-    logger.info("(3) Conversion from RTN to GSE and then to GSM as if STEREO was on Sun-Earth line")
-    stam['bx'], stam['by'], stam['bz'] = stam['br'], -stam['bt'], stam['bn']    # RTN to quasi-GSE
-    stam.convert_GSE_to_GSM()
-
-    use_recurrence_model = False
     if not use_recurrence_model:
+        logger.info('UTC time of last datapoint in STEREO-A beacon data:')
+        logger.info('\t{}'.format(num2date(stam['time'][-1])))
+        logger.info('Time lag in minutes: {}'.format(int(round((timeutc-stam['time'][-1])*24*60))))
+        logger.info("\n-------------------------\nL5-to-L1 MAPPING\n-------------------------")
+        #------------------------ (2a) Corrections to time-shifted STEREO-A data ----------------
+        logger.info("Doing corrections to STEREO-A data...")
+
+        logger.info("(1) Shift time at STEREO-A according to solar wind rotation")
+        stam.shift_time_to_L1()
+        logger.info("STA-to-L1 adjusted time of last datapoint in STEREO-A:")
+        logger.info("\t{}".format(num2date(stam['time'][-1])))
+
+        logger.info("(2) Make correction for difference in heliocentric distance")
+        stam.shift_wind_to_L1()
+
+        logger.info("(3) Conversion from RTN to GSE and then to GSM as if STEREO was on Sun-Earth line")
+        stam['bx'], stam['by'], stam['bz'] = stam['br'], -stam['bt'], stam['bn']    # RTN to quasi-GSE
+        stam.convert_GSE_to_GSM()
         sw_future = stam.make_hourly_data()
         sw_future_min = stam
     else:
-        sta = stam.interp_to_time(sw_future['time'])
-        sw_future.vars += ['br', 'bt', 'bn']
-        for bvar in ['bx', 'by', 'bz', 'btot', 'br', 'bt', 'bn']:
-            sw_future[bvar] = sta[bvar] 
-        sw_future.interp_nans()
-        sw_future_min = copy.deepcopy(sw_future)
+        sw_future_min.vars += ['br', 'bt', 'bn']
+        sw_future_min['br'], sw_future_min['bt'], sw_future_min['bn'] = sw_future_min['bx'], sw_future_min['by'], sw_future_min['bz']
+        sw_future_min.interp_nans()
+        sw_future = sw_future_min.make_hourly_data()
 
     #------------------- (2b) COMBINE DSCOVR and time-shifted STEREO-A data -----------------
 
     sw_merged = ps.merge_Data(sw_past, sw_future)
     try:
-        sw_merged_min = ps.merge_Data(dism, stam)
+        sw_merged_min = ps.merge_Data(sw_past_min, sw_future_min)
         savemindata = True
     except:
         logger.warning("No minute data available.")
@@ -334,7 +335,7 @@ def main():
     logger.info("\n-------------------------\nPLOTTING\n-------------------------")
     # ********************************************************************
     logger.info("Creating output plot...")
-    plot_solarwind_and_dst_prediction([dism, sw_past], [sw_future_min, sw_future], 
+    plot_solarwind_and_dst_prediction([sw_past_min, sw_past], [sw_future_min, sw_future], 
                                       dst, dst_pred,
                                       newell_coupling=newell_coupling,
                                       past_days=plot_past_days,
@@ -342,7 +343,7 @@ def main():
                                       dst_label=dst_label,
                                       timestamp=timestamp)
     plt.close()
-    plot_solarwind_science([dism, sw_past], [sw_future_min, sw_future], 
+    plot_solarwind_science([sw_past_min, sw_past], [sw_future_min, sw_future], 
                                       timestamp=timestamp)
     # ********************************************************************
 
@@ -373,7 +374,8 @@ def main():
 
     #----------------------------- (4b) CALCULATE FORECAST RESULTS --------------------------
 
-    logger.info("\n\nSATELLITE POSITION DETAILS\n--------------------------\n"+sta_details)
+    if not use_recurrence_model:
+        logger.info("\n\nSATELLITE POSITION DETAILS\n--------------------------\n"+sta_details)
 
     future_times = np.where(sw_merged['time'] > date2num(timestamp))
     past_times = np.where(sw_merged['time'] < date2num(timestamp))
