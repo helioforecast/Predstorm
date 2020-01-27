@@ -1,4 +1,15 @@
 __pycache__
 results
+real
+data
+build
+dist
+predstorm.egg*
 sta_beacon
+predstorm/spice/kernels/*
 *.png
+*.pickle
+*.log
+omni2*.*
+.DS*
+predstorm_real*
