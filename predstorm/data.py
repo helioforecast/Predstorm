@@ -1508,7 +1508,7 @@ def get_dscovr_archive_data(starttime, endtime, resolution='min', skip_files=Tru
     logger.info("Reading archived DSCOVR data")
 
     # Magnetometer data
-    magt, magdata = DSCOVR_.get_data_raw(starttime, endtime, 'mag', skip_files=skip_files)
+    magt, magdata = DSCOVR_.get_data_raw(starttime, endtime, 'mag')
     magt = [datetime.utcfromtimestamp(t) for t in magt]
     bx, by, bz = magdata[:,0], magdata[:,1], magdata[:,2]
     missing_value = -99999.
@@ -1554,7 +1554,10 @@ def get_dscovr_archive_data(starttime, endtime, resolution='min', skip_files=Tru
                       source='DSCOVR')
     dscovr.h['DataSource'] = "DSCOVR Level 1 (NOAA)"
     dscovr.h['SamplingRate'] = tarray[1] - tarray[0]
-    dscovr.h['ReferenceFrame'] = DSCOVR_.spacecraft["data"]['mag'].get("frame")
+    if heliosat.__version__ >= '0.4.0':
+        dscovr.h['ReferenceFrame'] = DSCOVR_.spacecraft['data_keys']['dscovr_mag']['version_default']['columns'][0]['frame']
+    else:
+        dscovr.h['ReferenceFrame'] = DSCOVR_.spacecraft["data"]['mag'].get("frame")
     dscovr.h['HeliosatObject'] = DSCOVR_
 
     return dscovr
@@ -1579,7 +1582,7 @@ def get_dscovr_realtime_data():
     dscovr_data : ps.SatData object
         Object containing DSCOVR data under standard keys.
     """
-    
+
     url_plasma='http://services.swpc.noaa.gov/products/solar-wind/plasma-7-day.json'
     url_mag='http://services.swpc.noaa.gov/products/solar-wind/mag-7-day.json'
 
@@ -2256,18 +2259,28 @@ def get_stereo_beacon_data(starttime, endtime, which_stereo='ahead', resolution=
             pt_ts = np.vstack((pt_s, pt_e))
             pdata = np.vstack((pdata_s, pdata_e))
         else:
+            # TODO: SPECIFY VERSIONS FOR THIS SPECIFIC DOWNLOAD
             pt_ts, pdata = STEREO_.get_data_raw(starttime, endtime, 'proton_beacon',
                                               extra_columns=["Velocity_HGRTN:4"])
     else:
-        pt_ts, pdata = STEREO_.get_data_raw(starttime, endtime, 'proton_beacon', extra_columns=["Velocity_RTN:4"])
+        if heliosat.__version__ >= '0.4.0':
+            pt_ts, pdata = STEREO_.get_data_raw(starttime, endtime, 'proton_beacon')
+            data_cols_list = STEREO_.spacecraft['data_keys']['sta_plastic_beacon']['version_default']['columns']
+            data_cols = [x['key'] for x in data_cols_list if x['default']==True]
+        else:
+            pt_ts, pdata = STEREO_.get_data_raw(starttime, endtime, 'proton_beacon', extra_columns=["Velocity_RTN:4"])
+            data_cols = STEREO_.spacecraft['data']['sta_plastic_beacon']['columns']
 
     pt = np.array([datetime.fromtimestamp(t) for t in pt_ts])
     pt = date2num(pt)
     pdata[pdata < -1e29] = np.nan
-    data_cols = STEREO_.spacecraft['data']['sta_plastic_beacon']['columns']
-    density = pdata[:,0]
-    temperature = pdata[:,1]
-    vx, vtot = pdata[:,2], pdata[:,5]
+    density = pdata[:,data_cols.index('Density')]
+    temperature = pdata[:,data_cols.index('Temperature_Inst')]
+    if pdata.shape[1] > 3:
+        vx, vtot = pdata[:,data_cols.index('Velocity_GSE')], pdata[:,5]
+    else:
+        vx = pdata[:,data_cols.index('Velocity_GSE')]
+        vtot = vx
 
     # Check plasma data is reasonable:
     integrity = 2   # integrity of 0 means data is very dodgy
@@ -2302,7 +2315,10 @@ def get_stereo_beacon_data(starttime, endtime, which_stereo='ahead', resolution=
                    source='STEREO-A')
     stereo.h['DataSource'] = "STEREO-A Beacon"
     stereo.h['SamplingRate'] = tarray[1] - tarray[0]
-    stereo.h['ReferenceFrame'] = STEREO_.spacecraft["data"]['sta_impact_beacon'].get("frame")
+    if heliosat.__version__ >= '0.4.0':
+        stereo.h['ReferenceFrame'] = STEREO_.spacecraft['data_keys']['sta_impact_beacon']['version_default']['columns'][0]['frame']
+    else:
+        stereo.h['ReferenceFrame'] = STEREO_.spacecraft["data"]['sta_impact_beacon'].get("frame")
     stereo.h['HeliosatObject'] = STEREO_
     stereo.h['Instruments'] = ['PLASTIC', 'IMPACT']
     stereo.h['PlasmaDataIntegrity'] = integrity

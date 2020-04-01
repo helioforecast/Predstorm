@@ -104,6 +104,7 @@ import seaborn as sns
 import urllib
 
 # Local imports
+sys.path.insert(0,"/Users/rbailey/Code/HelioSat2/HelioSat/")
 import heliosat
 import predstorm as ps
 from predstorm.config.constants import AU, dist_to_L1
@@ -223,6 +224,7 @@ def main():
                                          endtime=timestamp+timedelta(days=2))
         stam.load_positions()
         sta_details = stam.return_position_details(timestamp)
+    stam.interp_nans()
 
     if run_mode == 'normal' and use_recurrence_model:
         use_recurrence_model = True
