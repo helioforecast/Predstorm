@@ -1930,6 +1930,7 @@ def get_omni_data(starttime=None, endtime=None, filepath='', download=False, dld
 
     den=np.zeros(dataset) #float
     pdyn=np.zeros(dataset) #float
+    temp=np.zeros(dataset) #float
     year=np.zeros(dataset)
     day=np.zeros(dataset)
     hour=np.zeros(dataset)
@@ -1985,7 +1986,11 @@ def get_omni_data(starttime=None, endtime=None, filepath='', download=False, dld
 
             #24 in file, index 23 proton density /ccm
             den[j]=line[23]
-            if den[j] == 999.9: den[j]=np.NaN
+            if den[j] == 999.9: den[j]=np.NaN  
+
+            #23 in file, index 22 proton temperature in K
+            temp[j]=line[22]
+            if temp[j] == 9999999.: temp[j]=np.NaN
 
             #29 in file, index 28 Pdyn, F6.2, fill values sind 99.99, in nPa
             pdyn[j]=line[28]
@@ -2006,7 +2011,7 @@ def get_omni_data(starttime=None, endtime=None, filepath='', download=False, dld
 
     omni_data = SatData({'time': times1,
                          'btot': btot, 'bx': bx, 'by': bygsm, 'bz': bzgsm,
-                         'speed': speed, 'speedx': speedx, 'density': den, 'pdyn': pdyn,
+                         'speed': speed, 'speedx': speedx, 'density': den, 'pdyn': pdyn, 'temp': temp,
                          'dst': dst, 'kp': kp, 'ae': ae},
                          source='OMNI')
     omni_data.h['DataSource'] = "OMNI (NASA OMNI2 data)"
@@ -2077,6 +2082,8 @@ def get_omni_data_new(starttime=None, endtime=None, filepath='', dldir='data'):
     speed_theta[speed_theta == 999.9] = np.NaN
     # Convert speed to GSE x see OMNI website footnote
     speedx = (-speed) * np.cos(np.radians(speed_theta)) * np.cos(np.radians(speed_phi))
+    temp = omni_data_raw[:,22] # proton temperature K
+    temp[temp == 9999999.] = np.NaN
     den = omni_data_raw[:,23] # proton density /ccm
     den[den == 999.9] = np.NaN
     pdyn = omni_data_raw[:,28] # pdyn in nPa
@@ -2120,7 +2127,7 @@ def get_omni_data_new(starttime=None, endtime=None, filepath='', dldir='data'):
 
     omni_data = SatData({'time': times,
                          'btot': btot, 'bx': bx, 'by': bygsm, 'bz': bzgsm,
-                         'speed': speed, 'speedx': speedx, 'density': den, 'pdyn': pdyn,
+                         'speed': speed, 'speedx': speedx, 'density': den, 'pdyn': pdyn, 'temp': temp,
                          'dst': dst, 'kp': kp, 'ae': ae},
                          source='OMNI')
     omni_data.h['DataSource'] = "OMNI (NASA OMNI2 data)"
@@ -2224,8 +2231,10 @@ def get_stereo_beacon_data(starttime, endtime, which_stereo='ahead', resolution=
 
     if which_stereo.lower() in ['a', 'ahead']:
         STEREO_ = heliosat.STA()
+        short_stereo = 'a'
     elif which_stereo.lower() in ['b', 'behind']:
         STEREO_ = heliosat.STB()
+        short_stereo = 'b'
     else:
         logger.error("{} is not a valid STEREO type! Use either 'ahead' or 'behind'.".format(which_stereo))
 
@@ -2265,21 +2274,21 @@ def get_stereo_beacon_data(starttime, endtime, which_stereo='ahead', resolution=
     else:
         if heliosat.__version__ >= '0.4.0':
             pt_ts, pdata = STEREO_.get_data_raw(starttime, endtime, 'proton_beacon')
-            data_cols_list = STEREO_.spacecraft['data_keys']['sta_plastic_beacon']['version_default']['columns']
-            data_cols = [x['key'] for x in data_cols_list if x['default']==True]
+            data_cols = STEREO_.get_data_columns("proton_beacon")
         else:
             pt_ts, pdata = STEREO_.get_data_raw(starttime, endtime, 'proton_beacon', extra_columns=["Velocity_RTN:4"])
-            data_cols = STEREO_.spacecraft['data']['sta_plastic_beacon']['columns']
+            data_cols = STEREO_.spacecraft['data']['st{}_plastic_beacon'.format(short_stereo)]['columns']
 
     pt = np.array([datetime.fromtimestamp(t) for t in pt_ts])
     pt = date2num(pt)
     pdata[pdata < -1e29] = np.nan
-    density = pdata[:,data_cols.index('Density')]
-    temperature = pdata[:,data_cols.index('Temperature_Inst')]
+    print(data_cols)
+    density = pdata[:,data_cols.index('density')]
+    temperature = pdata[:,data_cols.index('temperature')]
     if pdata.shape[1] > 3:
-        vx, vtot = pdata[:,data_cols.index('Velocity_GSE')], pdata[:,5]
+        vx, vtot = pdata[:,data_cols.index('speed')], pdata[:,5]
     else:
-        vx = pdata[:,data_cols.index('Velocity_GSE')]
+        vx = pdata[:,data_cols.index('speed')]
         vtot = vx
 
     # Check plasma data is reasonable:
@@ -2312,13 +2321,125 @@ def get_stereo_beacon_data(starttime, endtime, which_stereo='ahead', resolution=
     stereo = SatData({'time': tarray,
                    'btot': btot_int, 'br': br_int, 'bt': bt_int, 'bn': bn_int,
                    'speed': vtot_int, 'speedx': vx_int, 'density': density_int, 'temp': temp_int},
-                   source='STEREO-A')
-    stereo.h['DataSource'] = "STEREO-A Beacon"
+                   source='STEREO-{}'.format(short_stereo.upper()))
+    stereo.h['DataSource'] = "STEREO-{} Beacon".format(short_stereo.upper())
     stereo.h['SamplingRate'] = tarray[1] - tarray[0]
     if heliosat.__version__ >= '0.4.0':
-        stereo.h['ReferenceFrame'] = STEREO_.spacecraft['data_keys']['sta_impact_beacon']['version_default']['columns'][0]['frame']
+        stereo.h['ReferenceFrame'] = STEREO_.spacecraft['data_keys']['st{}_impact_beacon'.format(short_stereo)]['version_default']['columns'][0]['frame']
     else:
-        stereo.h['ReferenceFrame'] = STEREO_.spacecraft["data"]['sta_impact_beacon'].get("frame")
+        stereo.h['ReferenceFrame'] = STEREO_.spacecraft["data"]['st{}_impact_beacon'.format(short_stereo)].get("frame")
+    stereo.h['HeliosatObject'] = STEREO_
+    stereo.h['Instruments'] = ['PLASTIC', 'IMPACT']
+    stereo.h['PlasmaDataIntegrity'] = integrity
+
+    return stereo
+
+
+def get_stereo_l1_data(starttime, endtime, which_stereo='ahead', resolution='min'):
+    """Downloads and reads STEREO-A beacon data from CDF files. Files handling
+    is done using heliosat, so files are downloaded to HELIOSAT_DATAPATH.
+
+    Notes: 
+        - HGRTN != RTN: http://www.srl.caltech.edu/STEREO/docs/coordinate_systems.html
+        - Data before 2009-09-14 is in HGRTN, RTN after that.
+
+    Parameters
+    ==========
+    starttime : datetime.datetime
+        Datetime object with the required starttime of the input data.
+    endtime : datetime.datetime
+        Datetime object with the required endtime of the input data.
+    which_stereo : str ('ahead'/'a' or 'behind'/'b')
+        Which stereo satellite should be used.
+    resolution : str, (optional, 'min' (default) or 'hour')
+        Determines which resolution data should be returned in.
+
+    Returns
+    =======
+    sta : predstorm.SatData
+        Object containing satellite data.
+    """
+
+    logger = logging.getLogger(__name__)
+
+    if which_stereo.lower() in ['a', 'ahead']:
+        STEREO_ = heliosat.STA()
+        short_stereo = 'a'
+    elif which_stereo.lower() in ['b', 'behind']:
+        STEREO_ = heliosat.STB()
+        short_stereo = 'b'
+    else:
+        logger.error("{} is not a valid STEREO type! Use either 'ahead' or 'behind'.".format(which_stereo))
+
+    logger.info("Reading STEREO-{} beacon data".format(which_stereo.upper()))
+
+    # Magnetometer data
+    magt_ts, magdata = STEREO_.get_data_raw(starttime, endtime, 'mag')
+    # Convert time
+    magt = []
+    for t in magt_ts: 
+        try: 
+            magt.append(date2num(datetime.fromtimestamp(t)))
+        except: 
+            magt.append(np.nan)
+    magt = np.array(magt)
+    nantimes = np.isnan(magt)
+    if len(nantimes) != 0:
+        magt[nantimes] = np.interp(nantimes.nonzero()[0], (~nantimes).nonzero()[0], magt[~nantimes])
+    #magt = [datetime.fromtimestamp(t) for t in magt]
+    magdata[magdata < -1e20] = np.nan
+    br, bt, bn = magdata[:,0], magdata[:,1], magdata[:,2]
+    btot = np.sqrt(br**2. + bt**2. + bn**2.)
+
+    # Particle data
+    pt_ts, pdata = STEREO_.get_data_raw(starttime, endtime, 'proton')
+    data_cols = STEREO_.get_data_columns("proton")
+
+    pt = np.array([datetime.fromtimestamp(t) for t in pt_ts])
+    pt = date2num(pt)
+    pdata[pdata < -1e29] = np.nan
+    density = pdata[:,data_cols.index('proton_number_density')]
+    temperature = pdata[:,data_cols.index('proton_temperature')]
+    vx = pdata[:,data_cols.index('proton_bulk_speed')]
+    vtot = vx
+
+    # Check plasma data is reasonable:
+    integrity = 2   # integrity of 0 means data is very dodgy
+    if np.nanmean(np.diff(pt)) > 0.003: # 0.00069444 is mean diff in timesteps for min data
+        integrity -= 1
+    if np.nanstd(vtot) > 300.:  # quiet times should be 70ish
+        integrity -= 1
+
+    stime = date2num(starttime) - date2num(starttime)%(1./24.)
+    # Roundabout way to get time_h ensures timings with full hours/mins:
+    if resolution == 'hour':
+        nhours = (endtime.replace(tzinfo=None) - num2date(stime).replace(tzinfo=None)).total_seconds()/60./60.
+        tarray = np.array(stime + np.arange(0, nhours)*(1./24.))
+    elif resolution == 'min':
+        nmins = (endtime.replace(tzinfo=None) - num2date(stime).replace(tzinfo=None)).total_seconds()/60.
+        tarray = np.array(stime + np.arange(0, nmins)*(1./24./60.))
+
+    # Interpolate variables to time:
+    br_int = np.interp(tarray, magt, br)
+    bt_int = np.interp(tarray, magt, bt)
+    bn_int = np.interp(tarray, magt, bn)
+    btot_int = np.interp(tarray, magt, btot)
+    density_int = np.interp(tarray, pt, density)
+    vx_int = np.interp(tarray, pt, vx)
+    vtot_int = np.interp(tarray, pt, vtot)
+    temp_int = np.interp(tarray, pt, temperature)
+
+    # Pack into object:
+    stereo = SatData({'time': tarray,
+                   'btot': btot_int, 'br': br_int, 'bt': bt_int, 'bn': bn_int,
+                   'speed': vtot_int, 'speedx': vx_int, 'density': density_int, 'temp': temp_int},
+                   source='STEREO-{}'.format(short_stereo.upper()))
+    stereo.h['DataSource'] = "STEREO-{} L1+L2".format(short_stereo.upper())
+    stereo.h['SamplingRate'] = tarray[1] - tarray[0]
+    if heliosat.__version__ >= '0.4.0':
+        stereo.h['ReferenceFrame'] = STEREO_.spacecraft['data_keys']['st{}_impact_l1'.format(short_stereo)]['version_default']['columns'][0]['frame']
+    else:
+        stereo.h['ReferenceFrame'] = STEREO_.spacecraft["data"]['st{}_impact_l1'.format(short_stereo)].get("frame")
     stereo.h['HeliosatObject'] = STEREO_
     stereo.h['Instruments'] = ['PLASTIC', 'IMPACT']
     stereo.h['PlasmaDataIntegrity'] = integrity
