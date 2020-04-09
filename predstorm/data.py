@@ -896,8 +896,9 @@ class SatData():
         expansion at different radii.
         
         Exponents taken from Kivelson and Russell, Introduction to Space Physics (Ch. 4.3.2).
-        Density, btot, bt, bn, bx and bz are scaled according to 1/r**2.
-        bt and by are scaled according to 1/r.
+        Magnetic field components are scaled according to values in
+        Hanneson et al. (2020) JGR Space Physics paper.
+        https://doi.org/10.1029/2019JA027139
 
         Parameters
         ==========
@@ -911,16 +912,27 @@ class SatData():
         dttime = [num2date(t).replace(tzinfo=None) for t in self['time']]
         L1Pos = get_l1_position(dttime, units=self.pos.h['Units'], refframe=self.pos.h['ReferenceFrame'])
 
-        shift_vars_2 = ['density', 'btot', 'bt', 'bn', 'bx', 'bz']      # behave according to inverse-square law
-        shift_vars = [v for v in shift_vars_2 if v in self.vars]
+        if 'density' in self.vars:
+            self['density'] = self['density'] * (self.pos['r']/L1Pos['r'])**(-2)
+
+        if 'btot' in self.vars:
+            self['btot'] = self['btot'] * (self.pos['r']/L1Pos['r'])**(-1.49)
+
+        shift_vars_r = ['br', 'bx'] # radial component
+        shift_vars = [v for v in shift_vars_r if v in self.vars]      # behave according to 1/r
         for var in shift_vars:
-            self[var] = self[var] * (self.pos['r']/L1Pos['r'])**(-2.)
+            self[var] = self[var] * (self.pos['r']/L1Pos['r'])**(-1.94)
         
-        shift_vars_1 = ['bt', 'by']
-        shift_vars = [v for v in shift_vars_1 if v in self.vars]      # behave according to 1/r
+        shift_vars_t = ['bt', 'by'] # tangential component
+        shift_vars = [v for v in shift_vars_t if v in self.vars]      # behave according to 1/r
         for var in shift_vars:
-            self[var] = self[var] * (self.pos['r']/L1Pos['r'])**(-1.)
-        logger.info("shift_wind_to_L1: Extrapolated B and density values to L1 distance")
+            self[var] = self[var] * (self.pos['r']/L1Pos['r'])**(-1.26)
+
+        shift_vars_n = ['bn', 'bz'] # normal component
+        shift_vars = [v for v in shift_vars_n if v in self.vars]      # behave according to 1/r
+        for var in shift_vars:
+            self[var] = self[var] * (self.pos['r']/L1Pos['r'])**(-1.34)
+        logger.info("shift_wind_to_L1: Scaled B and density values to L1 distance")
 
         return self
 
