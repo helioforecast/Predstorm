@@ -46,6 +46,7 @@ from datetime import datetime, timedelta, timezone
 from dateutil.relativedelta import relativedelta
 from dateutil import tz
 import gzip
+import h5py
 import logging
 import numpy as np
 import pdb
@@ -2188,6 +2189,21 @@ def get_predstorm_realtime_data(resolution='hour'):
 
     return pred_data
     
+
+def get_rtsw_archive_data(filepath):
+    hf = h5py.File(filepath)
+    rtsw_data = SatData({'time': np.array(hf.get('time')),
+                       'btot': np.array(hf.get('bt')), 'bx': np.array(hf.get('bx_gsm')), 
+                       'by': np.array(hf.get('by_gsm')), 'bz': np.array(hf.get('bz_gsm')),
+                       'speed': np.array(hf.get('speed')), 'density': np.array(hf.get('density')), 
+                       'temp': np.array(hf.get('temperature'))},
+                       source='DSCOVR')
+    rtsw_data.h['DataSource'] = "DSCOVR (NOAA)"
+    rtsw_data.h['SamplingRate'] = hf.attrs['SamplingRate']
+    rtsw_data.h['ReferenceFrame'] = 'GSM'
+    rtsw_data.h['HeliosatObject'] = heliosat.DSCOVR()
+    return rtsw_data
+
 
 def get_sdo_realtime_image():
     """Downloads latest SDO image."""

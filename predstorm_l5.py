@@ -91,7 +91,6 @@ else:
     matplotlib.use('Qt5Agg') # figures are shown on mac
 
 from datetime import datetime, timedelta
-import json
 import logging
 import logging.config
 import matplotlib.pyplot as plt
@@ -158,24 +157,6 @@ def main():
         timenow = dism['time'][-1]
         # Get UTC time now
         timeutc = date2num(timestamp)
-        # Save to pickle file for recurrence model:
-        rec_dism = copy.deepcopy(dism)
-        # Cut by three days so data is always 3 days old at least, in case it's updated
-        rec_dism.cut(endtime=num2date(timenow-3))
-        rec_model_path = 'recurrence_l1_27days.pickle'
-        if not os.path.exists(rec_model_path):
-            with open(rec_model_path, 'wb') as f:
-                pickle.dump(rec_dism, f)
-        with open(rec_model_path, 'rb') as f:
-            rec_27days = pickle.load(f)
-        if rec_dism['time'][-1] > rec_27days['time'][-1]:
-            rec_dism.cut(starttime=num2date(rec_27days['time'][-1]))
-            rec_new = ps.merge_Data(rec_27days, rec_dism)
-            rec_new.cut(starttime=num2date(timenow-365))  # don't keep more than 1 year
-            rec_new.source = 'NOAA-L1'
-            logger.info("Pickled real-time data contains data from {} till {}".format(num2date(rec_new['time'][0]), num2date(rec_new['time'][-1])))
-            with open(rec_model_path, 'wb') as f:
-                pickle.dump(rec_new, f)
     elif run_mode == 'historic':
         timestamp = historic_date
         if (datetime.utcnow() - historic_date).days < (7.-plot_past_days):
@@ -231,8 +212,8 @@ def main():
         logger.info("STEREO-A plasma data is missing/corrupted, using 27-day recurrence model for plasma data instead.")
         rec_start = timestamp - timedelta(days=27)
         rec_end = timestamp - timedelta(days=27-plot_future_days)
-        with open(rec_model_path, 'rb') as f:
-            sw_future_min = pickle.load(f)
+        pers27_path = "data/rtsw_min_last100days.h5"
+        sw_future_min = ps.get_rtsw_archive_data(pers27_path)
         sw_future_min.cut(starttime=rec_start, endtime=rec_end)
         sw_future_min['time'] += 27.
         sw_future_min.h['DataSource'] += ' t+27days'

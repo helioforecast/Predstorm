@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 from .data import get_dscovr_realtime_data, get_dscovr_archive_data
-from .data import get_dscovr_data
+from .data import get_dscovr_data, get_rtsw_archive_data
 from .data import get_stereo_beacon_data, get_stereo_l1_data
 from .data import get_noaa_dst, get_past_dst
 from .data import get_omni_data, get_omni_data_new
