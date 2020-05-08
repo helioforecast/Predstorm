@@ -235,6 +235,8 @@ def main():
     if use3DCORE:
         logger.info("(4) Reading 3DCORE flux rope output...")
         fr_t_m, fr_B_m, fr_t, fr_B = ps.get_3DCORE_output(path_3DCORE)
+    else:
+        fr_t_m = []
 
     #========================== (2) PREDICTION CALCULATIONS ==================================
 
