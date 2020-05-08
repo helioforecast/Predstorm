@@ -14,7 +14,6 @@ packages needed to add to anaconda installation: sunpy, cdflib (https://github.c
 
 
 issues:
-- predstorm_L5_stereob_errors.py needs to be rewritten for new data structures (recarrays)
 - rewrite verification in predstorm_l5.py
 - use astropy instead of ephem in predstorm_module.py
 
@@ -31,9 +30,7 @@ things to add:
 - add timeshifts from L1 to Earth
 - add approximate levels of Dst for each location to see the aurora (depends on season)
   taken from correlations of ovation prime, SuomiNPP data in NASA worldview and Dst
-- check coordinate conversions again, GSE to GSM is ok
 - deal with CMEs at STEREO, because systematically degrades prediction results
-- proper status/debugging logging system
 
 future larger steps:
 (1) add the semi-supervised learning algorithm from the predstorm_L1 program; e.g. with older
@@ -77,7 +74,7 @@ import getopt
 
 # READ INPUT OPTIONS FROM COMMAND LINE
 argv = sys.argv[1:]
-opts, args = getopt.getopt(argv,"hv=",["server", "help", "historic=", "verbose="])
+opts, args = getopt.getopt(argv,"hv=",["server", "help", "historic=", "verbose=", "use3DCORE="])
 
 server = False
 if "--server" in [o for o, v in opts]:
@@ -228,12 +225,16 @@ def main():
         if (datetime.utcnow() - historic_date).days < (7.-plot_past_days):
             dst = ps.get_noaa_dst()
         else:
-            dst = ps.get_past_dst(filepath="dstarchive/WWW_dstae00016185.dat",
+            dst = ps.get_past_dst(filepath="dstarchive/WWW_dstae00010670.dat",
                                   starttime=num2date(timenow)-timedelta(days=plot_past_days+1),
                                   endtime=num2date(timenow))
             if len(dst) == 0.:
                 raise Exception("Kyoto Dst data for historic mode is missing! Go to http://wdc.kugi.kyoto-u.ac.jp/dstae/index.html")
         dst = dst.cut(endtime=timestamp)
+
+    if use3DCORE:
+        logger.info("(4) Reading 3DCORE flux rope output...")
+        fr_t_m, fr_B_m, fr_t, fr_B = ps.get_3DCORE_output(path_3DCORE)
 
     #========================== (2) PREDICTION CALCULATIONS ==================================
 
@@ -263,6 +264,25 @@ def main():
         sw_future_min['br'], sw_future_min['bt'], sw_future_min['bn'] = sw_future_min['bx'], sw_future_min['by'], sw_future_min['bz']
         sw_future_min.interp_nans()
         sw_future = sw_future_min.make_hourly_data()
+
+    if use3DCORE:
+        logger.info("(4) Filling prediction with flux rope values from 3DCORE")
+        # Interpolate minute values to match STEREO values:
+        sw_f_times = sw_future_min['time'][np.logical_and(sw_future_min['time'] >= fr_t_m[0], sw_future_min['time'] <= fr_t_m[-1])]
+        for ib, bn in enumerate(fr_B_m):
+            fr_B_m[ib] = np.interp(sw_f_times, fr_t_m, fr_B_m[ib])
+        # Minute:
+        sw_future_min['bx'][np.logical_and(sw_future_min['time'] >= fr_t_m[0], sw_future_min['time'] <= fr_t_m[-1])] = fr_B_m[0]
+        sw_future_min['by'][np.logical_and(sw_future_min['time'] >= fr_t_m[0], sw_future_min['time'] <= fr_t_m[-1])] = fr_B_m[1]
+        sw_future_min['bz'][np.logical_and(sw_future_min['time'] >= fr_t_m[0], sw_future_min['time'] <= fr_t_m[-1])] = fr_B_m[2]
+        sw_future_min['bn'][np.logical_and(sw_future_min['time'] >= fr_t_m[0], sw_future_min['time'] <= fr_t_m[-1])] = fr_B_m[2]
+        # Hourly:
+        sw_future['bx'][np.logical_and(sw_future['time'] >= fr_t[0], sw_future['time'] <= fr_t[-1])] = fr_B[0]
+        sw_future['by'][np.logical_and(sw_future['time'] >= fr_t[0], sw_future['time'] <= fr_t[-1])] = fr_B[1]
+        sw_future['bz'][np.logical_and(sw_future['time'] >= fr_t[0], sw_future['time'] <= fr_t[-1])] = fr_B[2]
+        # Recalculate total B-field:
+        sw_future_min['btot'] = np.sqrt(sw_future_min['bx']**2. + sw_future_min['by']**2. + sw_future_min['bz']**2.)
+        sw_future['btot'] = np.sqrt(sw_future['bx']**2. + sw_future['by']**2. + sw_future['bz']**2.)
 
     #------------------- (2b) COMBINE DSCOVR and time-shifted STEREO-A data -----------------
 
@@ -324,7 +344,8 @@ def main():
                                       past_days=plot_past_days,
                                       future_days=plot_future_days,
                                       dst_label=dst_label,
-                                      timestamp=timestamp)
+                                      timestamp=timestamp,
+                                      times_3DCORE=fr_t_m)
     plt.close()
     plot_solarwind_science([sw_past_min, sw_past], [sw_future_min, sw_future], 
                                       timestamp=timestamp)
@@ -456,7 +477,7 @@ def main():
 if __name__ == '__main__':
 
     run_mode = 'normal'
-    verbose = True
+    verbose, use3DCORE = True, False
     for opt, arg in opts:
         if opt == "--server":
             server = True
@@ -467,6 +488,9 @@ if __name__ == '__main__':
             run_mode = 'historic'
             historic_date = datetime.strptime(arg, "%Y-%m-%dT%H:%M")
             historic_date = historic_date.replace(tzinfo=None)
+        elif opt == '--use3DCORE':
+            use3DCORE = True
+            path_3DCORE = arg
         elif opt == '-h' or opt == '--help':
             print("")
             print("-----------------------------------------------------------------")
@@ -480,6 +504,8 @@ if __name__ == '__main__':
             print("                python predstorm_l5.py --server")
             print("--historic    : Run script with a historic data set.")
             print("                python predstorm_l5.py --historic='2017-09-07T23:00'")
+            print("--use3DCORE   : Run script with 3DCORE flux rope input.")
+            print("                python predstorm_l5.py --historic='2017-09-07T23:00' --use3DCORE='dst.pickle'")
             print("GENERAL OPTIONS:")
             print("-h/--help     : print this help data")
             print("-v/--verbose  : print logging output to shell for debugging")

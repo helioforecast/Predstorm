@@ -696,7 +696,12 @@ class SatData():
             inds = np.isnan(self[k])
             if len(inds) == 0:
                 return self
-            self[k][inds] = np.interp(inds.nonzero()[0], (~inds).nonzero()[0], self[k][~inds])
+            if len(inds.nonzero()[0]) == len(self[k]):
+                logger.warning("Data column {} in {} data is full of nans. Dropping this column.".format(k, self.source))
+                self.vars.remove(k)
+                self[k] = 0.
+            else:
+                self[k][inds] = np.interp(inds.nonzero()[0], (~inds).nonzero()[0], self[k][~inds])
         return self
 
 
@@ -1476,6 +1481,37 @@ def sphere2cart(r, phi, theta):
 # ***************************************************************************************
 # B. Data reading and writing:
 # ***************************************************************************************
+
+
+def get_3DCORE_output(pickle_file):
+    """Reads a specific pickle file and returns the flux rope values.
+    NOTE: only a test version.
+
+    Do later:
+    - coordinate conversion?
+    - use proper ensemble runs rather than just mean
+    - add values into evaluation while keeping originals for comparison
+    """
+
+    with open(pickle_file, "rb") as fh:
+        data = pickle.load(fh)
+    nans = np.isnan(data['predictions'][0][:,0,0])
+    tdata = np.array(data['t'])[(~nans).nonzero()[0]]
+    numdates = date2num(tdata)
+    mean_fluxrope = np.nanmean(data['predictions'][0][(~nans).nonzero()[0]], axis=1)
+
+    # Round to nearest hour
+    stime = date2num(tdata[0]) - date2num(tdata[0])%(1./24.)
+    nhours = (tdata[-1]-tdata[0]).total_seconds()/60./60.
+    time_h = np.array(stime + np.arange(1, nhours)*(1./24.))
+
+    fr_x_m, fr_x_m, fr_z_m = mean_fluxrope[:,0], mean_fluxrope[:,1], mean_fluxrope[:,2]
+
+    fr_x = np.interp(time_h, numdates, mean_fluxrope[:,0])
+    fr_y = np.interp(time_h, numdates, mean_fluxrope[:,1])
+    fr_z = np.interp(time_h, numdates, mean_fluxrope[:,2])
+
+    return numdates, [fr_x_m, fr_x_m, fr_z_m], time_h, [fr_x, fr_y, fr_z]
 
 
 def get_dscovr_data(starttime, endtime, resolution='min', skip_files=True):
@@ -2310,7 +2346,6 @@ def get_stereo_beacon_data(starttime, endtime, which_stereo='ahead', resolution=
     pt = np.array([datetime.fromtimestamp(t) for t in pt_ts])
     pt = date2num(pt)
     pdata[pdata < -1e29] = np.nan
-    print(data_cols)
     density = pdata[:,data_cols.index('density')]
     temperature = pdata[:,data_cols.index('temperature')]
     if pdata.shape[1] > 3:

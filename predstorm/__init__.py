@@ -7,7 +7,7 @@ from .data import get_noaa_dst, get_past_dst
 from .data import get_omni_data, get_omni_data_new
 from .data import get_predstorm_realtime_data, get_position_data
 from .data import get_l1_position, get_sdo_realtime_image
-from .data import get_icme_catalogue
+from .data import get_icme_catalogue, get_3DCORE_output
 from .data import merge_Data, save_to_file
 from .data import get_time_lag_wrt_earth
 from .data import init_logging

@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 # --------------------------- PLOTTING FUNCTIONS ----------------------------------------
 # =======================================================================================
 
-def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPRED_data, newell_coupling=None, dst_label='Dst Temerin & Li 2002', past_days=3.5, future_days=7., verification_mode=False, timestamp=None, outfile='predstorm_real.png', **kwargs):
+def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPRED_data, newell_coupling=None, dst_label='Dst Temerin & Li 2002', past_days=3.5, future_days=7., verification_mode=False, timestamp=None, times_3DCORE=[], outfile='predstorm_real.png', **kwargs):
     """
     Plots solar wind variables, past from DSCOVR and future/predicted from STEREO-A.
     Total B-field and Bz (top), solar wind speed (second), particle density (third)
@@ -160,6 +160,9 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
 
     plt.ylim(bplotmin, bplotmax)
 
+    if len(times_3DCORE) > 0:
+        plt.annotate('flux rope (3DCORE)', xy=(times_3DCORE[0],bplotmax-(bplotmax-bplotmin)*0.25), xytext=(times_3DCORE[0]+0.05,bplotmax-(bplotmax-bplotmin)*0.95), color='gray', fontsize=14)
+
     if 'stereo' in stam.source.lower():
         pred_source = 'STEREO-Ahead Beacon'
     elif 'dscovr' in stam.source.lower() or 'noaa' in stam.source.lower():
@@ -267,6 +270,11 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
 
         # Vertical line for NOW:
         ax.plot_date([timeutc,timeutc],[-2000,100000],'-k', linewidth=2)
+
+        # Indicate where prediction comes from 3DCORE:
+        if len(times_3DCORE) > 0:
+            ax.plot_date([times_3DCORE[0],times_3DCORE[0]],[-2000,100000], color='gray', linewidth=1, linestyle='--')
+            ax.plot_date([times_3DCORE[-1],times_3DCORE[-1]],[-2000,100000], color='gray', linewidth=1, linestyle='--')
 
     # Liability text:
     pltcfg.group_info_text()
