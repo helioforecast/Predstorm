@@ -109,6 +109,8 @@ from predstorm.predict import dst_loss_function
 # GET INPUT PARAMETERS
 from predstorm_l5_input import *
 
+tstr_format = "%Y-%m-%dT%H%M" #formerly "%Y-%m-%d-%H_%M"
+
 #========================================================================================
 #--------------------------------- MAIN SCRIPT ------------------------------------------
 #========================================================================================
@@ -116,8 +118,10 @@ from predstorm_l5_input import *
 def main():
     """The main code."""
 
+    # Define timing parameters:
+    timenow = datetime.utcnow()
     timestamp = datetime.utcnow()
-    lag_sta_L1, lag_sta_r = ps.get_time_lag_wrt_earth(timestamp=timestamp, satname='STEREO-A')
+    lag_sta_L1, lag_sta_r = ps.get_time_lag_wrt_earth(timestamp=timenow, satname='STEREO-A')
     est_timelag = lag_sta_L1 + lag_sta_r
     plot_future_days = est_timelag
 
@@ -127,7 +131,7 @@ def main():
     predstorm_header += '\n------------------------------------------------------------------------\n'
     predstorm_header += '\n'
     predstorm_header += 'PREDSTORM L5 v1 method for geomagnetic storm and aurora forecasting. \n'
-    predstorm_header += 'IWF-Helio Group, Space Research Institute Graz, last update August 2019.\n'
+    predstorm_header += 'Created by Helio4Cast Group, Graz, last update August 2020.\n'
     predstorm_header += '\n'
     predstorm_header += 'Time shifting magnetic field and plasma data from STEREO-A, \n'
     predstorm_header += 'or from an L5 mission or interplanetary CubeSats, to predict\n'
@@ -146,10 +150,9 @@ def main():
 
     #------------------------ (1a) Get real-time DSCOVR data --------------------------------
 
-    tstr_format = "%Y-%m-%d-%H_%M" # "%Y-%m-%dT%H%M" would be better
-    logger.info("(1) Getting DSCOVR data...")
+    logger.info("(1) Getting L1 data...")
     if run_mode == 'normal':
-        dism = ps.get_dscovr_realtime_data()
+        dism = ps.get_noaa_realtime_data()
         # Get time of the last entry in the DSCOVR data
         timenow = dism['time'][-1]
         # Get UTC time now
@@ -158,7 +161,7 @@ def main():
         timestamp = historic_date
         if (datetime.utcnow() - historic_date).days < (7.-plot_past_days):
             logger.info("Using historic mode with current DSCOVR data and {} timestamp".format(timestamp))
-            dism = ps.get_dscovr_realtime_data()
+            dism = ps.get_noaa_realtime_data()
             dism = dism.cut(endtime=timestamp)
         else:
             logger.info("Using historic mode with archive DSCOVR data")
@@ -167,9 +170,9 @@ def main():
         timeutc = date2num(timestamp)
         timenow = timeutc
     dism.interp_nans()
-    dis = dism.make_hourly_data()
+
     sw_past_min = dism
-    sw_past = dis
+    sw_past = dism.make_hourly_data()
 
     timeutcstr = datetime.strftime(timestamp, tstr_format)
     timenowstr = datetime.strftime(num2date(timenow), tstr_format)
@@ -237,6 +240,7 @@ def main():
         fr_t_m, fr_B_m, fr_t, fr_B = ps.get_3DCORE_output(path_3DCORE)
     else:
         fr_t_m = []
+    dst['dst'] = dst['dst'] + dst_obs_offset
 
     #========================== (2) PREDICTION CALCULATIONS ==================================
 
@@ -331,7 +335,7 @@ def main():
         dst_pred = sw_merged.make_dst_prediction_from_model(model)
         if dst_method == 'ml_dstdiff':
             dst_tl = sw_merged.make_dst_prediction(method='temerin_li_2006', t_correction=True)
-            dst_pred['dst'] = dst_tl['dst'] + dst_pred['dst']
+            dst_pred['dst'] = dst_tl['dst'] + dst_pred['dst'] + dst_offset
         dst_label = 'Dst predicted using ML (GBR)'
         #dst_pred['dst'] = dst_pred['dst'] + 10
 

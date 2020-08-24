@@ -152,6 +152,7 @@ class DstFeatureExtraction(BaseEstimator, TransformerMixin):
         # Calculate past terms:
         past_pressure = create_past_dataset(pressure, look_back=self.look_back)
         past_rc = create_past_dataset(rc, look_back=self.look_back)
+        past_ec = create_past_dataset(ec, look_back=self.look_back)
         past_speed = create_past_dataset(speed, look_back=self.look_back)
         past_bz = create_past_dataset(bz, look_back=self.look_back)
         past_dbz = create_past_dataset(dbz, look_back=self.look_back)
@@ -170,7 +171,7 @@ class DstFeatureExtraction(BaseEstimator, TransformerMixin):
         else:
             features = np.concatenate((X, rc.reshape(-1,1), ec.reshape(-1,1), pressure.reshape(-1,1), 
                                        bz_exp.reshape(-1,1), sinphi.reshape(-1,1), dbz.reshape(-1,1),
-                                       past_pressure, past_rc, past_speed, past_bz, past_dbz, past_sinphi), axis=1)
+                                       past_pressure, past_rc, past_speed, past_bz, past_dbz, past_sinphi, past_ec), axis=1)
             self.feature_keys = ['sin_DOY', 'cos_DOY', 'time', 'speed', 'density', 'btot', 'bx', 'by', 'bz'] + \
                                 ['rc', 'ec', 'pressure', 'bzpower', 'sinphi', 'dbz'] + \
                                 ['pressure(t-{})'.format(i) for i in range(1,self.look_back+1)] + \
@@ -178,7 +179,8 @@ class DstFeatureExtraction(BaseEstimator, TransformerMixin):
                                 ['speed(t-{})'.format(i) for i in range(1,self.look_back+1)] + \
                                 ['bz(t-{})'.format(i) for i in range(1,self.look_back+1)] + \
                                 ['dbz(t-{})'.format(i) for i in range(1,self.look_back+1)] + \
-                                ['sinphi(t-{})'.format(i) for i in range(1,self.look_back+1)]
+                                ['sinphi(t-{})'.format(i) for i in range(1,self.look_back+1)] + \
+                                ['ec(t-{})'.format(i) for i in range(1,self.look_back+1)]
 
 
         return features

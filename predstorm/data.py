@@ -152,7 +152,7 @@ class SatData():
                     'speed', 'speedx', 'density', 'temp', 'pdyn',
                     'bx', 'by', 'bz', 'btot',
                     'br', 'bt', 'bn',
-                    'dst', 'kp', 'aurora', 'ec', 'ae']
+                    'dst', 'kp', 'aurora', 'ec', 'ae', 'f10.7']
 
     empty_header = {'DataSource': '',
                     'SourceURL' : '',
@@ -1614,72 +1614,9 @@ def get_dscovr_archive_data(starttime, endtime, resolution='min', skip_files=Tru
 
 def get_dscovr_realtime_data():
     """
-    Downloads and returns DSCOVR data 
-    data from http://services.swpc.noaa.gov/products/solar-wind/
-    if needed replace with ACE
-    http://legacy-www.swpc.noaa.gov/ftpdir/lists/ace/
-    get 3 or 7 day data
-    url_plasma='http://services.swpc.noaa.gov/products/solar-wind/plasma-3-day.json'
-    url_mag='http://services.swpc.noaa.gov/products/solar-wind/mag-3-day.json'
-    
-    Parameters
-    ==========
-    None
-
-    Returns
-    =======
-    dscovr_data : ps.SatData object
-        Object containing DSCOVR data under standard keys.
-    """
-
-    url_plasma='http://services.swpc.noaa.gov/products/solar-wind/plasma-7-day.json'
-    url_mag='http://services.swpc.noaa.gov/products/solar-wind/mag-7-day.json'
-
-    # Read plasma data:
-    with urllib.request.urlopen(url_plasma) as url:
-        dp = json.loads (url.read().decode())
-        dpn = [[np.nan if x == None else x for x in d] for d in dp]     # Replace None w NaN
-        dtype=[(x, 'float') for x in dp[0]]
-        dates = [date2num(datetime.strptime(x[0], "%Y-%m-%d %H:%M:%S.%f")) for x in dpn[1:]]
-        dp_ = [tuple([d]+[float(y) for y in x[1:]]) for d, x in zip(dates, dpn[1:])] 
-        DSCOVR_P = np.array(dp_, dtype=dtype)
-    # Read magnetic field data:
-    with urllib.request.urlopen(url_mag) as url:
-        dm = json.loads(url.read().decode())
-        dmn = [[np.nan if x == None else x for x in d] for d in dm]     # Replace None w NaN
-        dtype=[(x, 'float') for x in dmn[0]]
-        dates = [date2num(datetime.strptime(x[0], "%Y-%m-%d %H:%M:%S.%f")) for x in dmn[1:]]
-        dm_ = [tuple([d]+[float(y) for y in x[1:]]) for d, x in zip(dates, dm[1:])] 
-        DSCOVR_M = np.array(dm_, dtype=dtype)
-
-    last_timestep = np.min([DSCOVR_M['time_tag'][-1], DSCOVR_P['time_tag'][-1]])
-    first_timestep = np.max([DSCOVR_M['time_tag'][0], DSCOVR_P['time_tag'][0]])
-
-    nminutes = int((num2date(last_timestep)-num2date(first_timestep)).total_seconds()/60.)
-    itime = np.asarray([date2num(num2date(first_timestep) + timedelta(minutes=i)) for i in range(nminutes)], dtype=np.float64)
-
-    rbtot_m = np.interp(itime, DSCOVR_M['time_tag'], DSCOVR_M['bt'])
-    rbxgsm_m = np.interp(itime, DSCOVR_M['time_tag'], DSCOVR_M['bx_gsm'])
-    rbygsm_m = np.interp(itime, DSCOVR_M['time_tag'], DSCOVR_M['by_gsm'])
-    rbzgsm_m = np.interp(itime, DSCOVR_M['time_tag'], DSCOVR_M['bz_gsm'])
-    rpv_m = np.interp(itime, DSCOVR_P['time_tag'], DSCOVR_P['speed'])
-    rpn_m = np.interp(itime, DSCOVR_P['time_tag'], DSCOVR_P['density'])
-    rpt_m = np.interp(itime, DSCOVR_P['time_tag'], DSCOVR_P['temperature'])
-
-    # Pack into object
-    dscovr_data = SatData({'time': itime,
-                           'btot': rbtot_m, 'bx': rbxgsm_m, 'by': rbygsm_m, 'bz': rbzgsm_m,
-                           'speed': rpv_m, 'density': rpn_m, 'temp': rpt_m},
-                           source='DSCOVR')
-    dscovr_data.h['DataSource'] = "DSCOVR (NOAA)"
-    dscovr_data.h['SamplingRate'] = 1./24./60.
-    dscovr_data.h['ReferenceFrame'] = 'GSM'
-    DSCOVR_ = heliosat.DSCOVR()
-    dscovr_data.h['HeliosatObject'] = DSCOVR_
-    
-    logger.info('get_dscovr_data_real: DSCOVR data read completed.')
-    
-    return dscovr_data
+    Deprecated in favour of get_noaa_realtime_data.
+    """    
+    return get_noaa_realtime_data()
 
 
 def get_icme_catalogue(filepath=None, spacecraft=None, starttime=None, endtime=None):
@@ -1908,6 +1845,72 @@ def get_past_dst(filepath=None, starttime=None, endtime=None):
     return dst_data
 
 
+def get_noaa_realtime_data():
+    """
+    Downloads and returns real-time solar wind data 
+    7-day data downloaded from http://services.swpc.noaa.gov/products/solar-wind/
+    
+    Parameters
+    ==========
+    None
+
+    Returns
+    =======
+    sw_data : ps.SatData object
+        Object containing NOAA real-time solar wind data under standard keys.
+    """
+
+    url_plasma='http://services.swpc.noaa.gov/products/solar-wind/plasma-7-day.json'
+    url_mag='http://services.swpc.noaa.gov/products/solar-wind/mag-7-day.json'
+
+    # Read plasma data:
+    with urllib.request.urlopen(url_plasma) as url:
+        dp = json.loads (url.read().decode())
+        dpn = [[np.nan if x == None else x for x in d] for d in dp]     # Replace None w NaN
+        dtype=[(x, 'float') for x in dp[0]]
+        dates = [date2num(datetime.strptime(x[0], "%Y-%m-%d %H:%M:%S.%f")) for x in dpn[1:]]
+        dp_ = [tuple([d]+[float(y) for y in x[1:]]) for d, x in zip(dates, dpn[1:])] 
+        plasma = np.array(dp_, dtype=dtype)
+    # Read magnetic field data:
+    with urllib.request.urlopen(url_mag) as url:
+        dm = json.loads(url.read().decode())
+        dmn = [[np.nan if x == None else x for x in d] for d in dm]     # Replace None w NaN
+        dtype=[(x, 'float') for x in dmn[0]]
+        dates = [date2num(datetime.strptime(x[0], "%Y-%m-%d %H:%M:%S.%f")) for x in dmn[1:]]
+        dm_ = [tuple([d]+[float(y) for y in x[1:]]) for d, x in zip(dates, dm[1:])] 
+        magfield = np.array(dm_, dtype=dtype)
+
+    last_timestep = np.min([magfield['time_tag'][-1], plasma['time_tag'][-1]])
+    first_timestep = np.max([magfield['time_tag'][0], plasma['time_tag'][0]])
+
+    nminutes = int((num2date(last_timestep)-num2date(first_timestep)).total_seconds()/60.)
+    itime = np.asarray([date2num(num2date(first_timestep) + timedelta(minutes=i)) for i in range(nminutes)], dtype=np.float64)
+
+    rbtot_m = np.interp(itime, magfield['time_tag'], magfield['bt'])
+    rbxgsm_m = np.interp(itime, magfield['time_tag'], magfield['bx_gsm'])
+    rbygsm_m = np.interp(itime, magfield['time_tag'], magfield['by_gsm'])
+    rbzgsm_m = np.interp(itime, magfield['time_tag'], magfield['bz_gsm'])
+    rpv_m = np.interp(itime, plasma['time_tag'], plasma['speed'])
+    rpn_m = np.interp(itime, plasma['time_tag'], plasma['density'])
+    rpt_m = np.interp(itime, plasma['time_tag'], plasma['temperature'])
+
+    # Pack into object
+    sw_data = SatData({'time': itime,
+                           'btot': rbtot_m, 'bx': rbxgsm_m, 'by': rbygsm_m, 'bz': rbzgsm_m,
+                           'speed': rpv_m, 'density': rpn_m, 'temp': rpt_m},
+                           source='DSCOVR')
+    sw_data.h['DataSource'] = "DSCOVR (NOAA)"
+    sw_data.h['SamplingRate'] = 1./24./60.
+    sw_data.h['ReferenceFrame'] = 'GSM'
+    # Source isn't provided, but can assume DSCOVR:
+    DSCOVR_ = heliosat.DSCOVR()
+    sw_data.h['HeliosatObject'] = DSCOVR_
+    
+    logger.info('get_noaa_realtime_data: NOAA RTSW data read completed.')
+    
+    return sw_data
+
+
 def get_omni_data(starttime=None, endtime=None, filepath='', download=False, dldir='data'):
     """
     Reads OMNI2 .dat format data
@@ -1984,11 +1987,11 @@ def get_omni_data(starttime=None, endtime=None, filepath='', download=False, dld
     day=np.zeros(dataset)
     hour=np.zeros(dataset)
     t=np.zeros(dataset) #index time
-    
+    f10_7=np.zeros(dataset)
     
     j=0
     logger.info('get_omni_data: Reading OMNI2 data ...')
-    with open('data/omni2_all_years.dat') as f:
+    with open(filepath) as f:
         for line in f:
             line = line.split() # to deal with blank 
             #41 is Dst index, in nT
@@ -2043,7 +2046,11 @@ def get_omni_data(starttime=None, endtime=None, filepath='', download=False, dld
 
             #29 in file, index 28 Pdyn, F6.2, fill values sind 99.99, in nPa
             pdyn[j]=line[28]
-            if pdyn[j] == 99.99: pdyn[j]=np.NaN      
+            if pdyn[j] == 99.99: pdyn[j]=np.NaN
+
+            #51 is F10.7 index
+            f10_7[j]=line[50]
+            if f10_7[j] >= 999.9: f10_7[j]=np.NaN
 
             year[j]=line[0]
             day[j]=line[1]
@@ -2061,7 +2068,7 @@ def get_omni_data(starttime=None, endtime=None, filepath='', download=False, dld
     omni_data = SatData({'time': times1,
                          'btot': btot, 'bx': bx, 'by': bygsm, 'bz': bzgsm,
                          'speed': speed, 'speedx': speedx, 'density': den, 'pdyn': pdyn, 'temp': temp,
-                         'dst': dst, 'kp': kp, 'ae': ae},
+                         'dst': dst, 'kp': kp, 'ae': ae, 'f10.7': f10_7},
                          source='OMNI')
     omni_data.h['DataSource'] = "OMNI (NASA OMNI2 data)"
     if download:
@@ -2081,6 +2088,10 @@ def get_omni_data_new(starttime=None, endtime=None, filepath='', dldir='data'):
     Downloads and read OMNI2 data files (in yearly .dat format).
     Variable definitions from OMNI2 dataset:
     see http://omniweb.gsfc.nasa.gov/html/ow_data.html
+    Can also download OMNI data using the following commands:
+    curl -d  "activity=retrieve&res=hour&spacecraft=omni2&start_date=20200101&end_date=20200501&vars=24&vars=40" https://omniweb.sci.gsfc.nasa.gov/cgi/nx1.cgi > test_curl.txt
+    And example link:
+    https://omniweb.sci.gsfc.nasa.gov/cgi/nx1.cgi?activity=ftp&res=hour&spacecraft=omni2&start_date=20200101&end_date=20200501&vars=24&vars=40&scale=Linear&view=0&nsum=1
 
     Parameters
     ==========
@@ -2225,6 +2236,47 @@ def get_predstorm_realtime_data(resolution='hour'):
 
     return pred_data
     
+
+def get_quicklook_dst_data(starttime, endtime):
+
+    from bs4 import BeautifulSoup
+    import requests
+
+    print("In progress.")
+    sys.exit()
+
+    year = starttime.strftime("%Y")
+    month = starttime.strftime("%m")
+    link = "http://wdc.kugi.kyoto-u.ac.jp/dst_realtime/{}{}/index.html".format(year, month)
+    html = requests.get(link).text
+    soup = BeautifulSoup(html, "lxml")
+
+    htmldst = soup.find_all('pre')[0]
+    dsttable = htmldst.text.split('\n')
+    readtable = False
+    dstmonth, timesmonth = [], []
+    for line in dsttable:
+        if line != '' and readtable:
+            dstday = line.replace('-',' -').replace('  ',' ').replace('  ',' ').replace('  ',' ').split(' ')
+            dstday.remove('')
+            daynum = int(dstday[0])
+            if '9999' in line:
+                hoursnow = datetime.utcnow().hour
+                timevals = [datetime(int(year), int(month), daynum, n) for n in range(hoursnow)]
+                print("INCOMPLETE", dstday)
+                dstmonth += [float(n) for n in dstday[1:hoursnow+1]]
+                timesmonth += timevals
+                print(len(dstmonth), len(timesmonth))
+                break
+            dstvals = dstday[-24:]
+            timevals = [datetime(int(year), int(month), daynum, n) for n in range(24)]
+            print(daynum, dstvals)
+            dstmonth += [float(n) for n in dstvals]
+            timesmonth += timevals
+            print(len(dstmonth), len(timesmonth))
+        if 'DAY' in line:
+            readtable = True
+
 
 def get_rtsw_archive_data(filepath):
     hf = h5py.File(filepath)
