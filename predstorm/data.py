@@ -62,10 +62,10 @@ import json
 import urllib
 
 # External
+import astropy.time
 import cdflib
 import heliosat
 from heliosat.spice import transform_frame
-import astropy.time
 import spiceypy
 try:
     from netCDF4 import Dataset
@@ -680,7 +680,28 @@ class SatData():
         return Data_h
 
 
-    def interp_nans(self, keys=None):
+    def find_nan_periods(self, keys=None):
+        """Picks out periods with nans in data."""
+
+        if keys == None:
+            keys = self.vars
+
+        periods = {}
+        for key in keys:
+            periods[key] = []
+            nan_inds = np.where(np.isnan(self[key]))[0]
+            if len(nan_inds) != 0:
+                starttime = self['time'][nan_inds[0]]
+                for i_where, i_nan in enumerate(nan_inds[:-1]):
+                    if (nan_inds[i_where+1] - nan_inds[i_where]) > 1:
+                        endtime = self['time'][nan_inds[i_where]]
+                        periods[key].append([starttime, endtime])
+                        starttime = self['time'][nan_inds[i_where+1]]
+
+        return periods      
+
+
+    def interp_nans(self, keys=None, return_masked_array=False):
         """Linearly interpolates over nans in array.
 
         Parameters
@@ -692,6 +713,8 @@ class SatData():
         logger.info("interp_nans: Interpolating nans in {} data".format(self.source))
         if keys == None:
             keys = self.vars
+        if return_masked_array:
+            orig_data = np.ma.array(copy.deepcopy(self.data))
         for k in keys:
             inds = np.isnan(self[k])
             if len(inds) == 0:
@@ -702,7 +725,13 @@ class SatData():
                 self[k] = 0.
             else:
                 self[k][inds] = np.interp(inds.nonzero()[0], (~inds).nonzero()[0], self[k][~inds])
-        return self
+        if not return_masked_array:
+            return self
+        else:
+            masked_array = np.ma.masked_where(np.isnan(orig_data), self.data)
+            satdata_masked = copy.deepcopy(self)
+            satdata_masked.data = masked_array
+            return self, satdata_masked
 
 
     def interp_to_time(self, tarray, keys=None):
@@ -891,6 +920,9 @@ class SatData():
 
             ## ADD BOTH time shifts to the stbh_t
             self.data[0] = self.data[0] + timelag_L1 + timelag_diff_r
+
+            # In case of "backward" r/lon/lat movements and reversed time steps, sort:
+            self.data = self.data[:,np.argsort(self.data[0])]
             logger.info("shift_time_to_L1: Shifting time by {:.1f}-{:.1f} hours".format(
                 (timelag_L1+timelag_diff_r)[0]*24., (timelag_L1+timelag_diff_r)[-1]*24.))
 
@@ -1615,7 +1647,7 @@ def get_dscovr_archive_data(starttime, endtime, resolution='min', skip_files=Tru
 def get_dscovr_realtime_data():
     """
     Deprecated in favour of get_noaa_realtime_data.
-    """    
+    """
     return get_noaa_realtime_data()
 
 
@@ -1847,9 +1879,9 @@ def get_past_dst(filepath=None, starttime=None, endtime=None):
 
 def get_noaa_realtime_data():
     """
-    Downloads and returns real-time solar wind data 
+    Downloads and returns real-time solar wind data
     7-day data downloaded from http://services.swpc.noaa.gov/products/solar-wind/
-    
+
     Parameters
     ==========
     None
@@ -1869,7 +1901,7 @@ def get_noaa_realtime_data():
         dpn = [[np.nan if x == None else x for x in d] for d in dp]     # Replace None w NaN
         dtype=[(x, 'float') for x in dp[0]]
         dates = [date2num(datetime.strptime(x[0], "%Y-%m-%d %H:%M:%S.%f")) for x in dpn[1:]]
-        dp_ = [tuple([d]+[float(y) for y in x[1:]]) for d, x in zip(dates, dpn[1:])] 
+        dp_ = [tuple([d]+[float(y) for y in x[1:]]) for d, x in zip(dates, dpn[1:])]
         plasma = np.array(dp_, dtype=dtype)
     # Read magnetic field data:
     with urllib.request.urlopen(url_mag) as url:
@@ -1877,7 +1909,7 @@ def get_noaa_realtime_data():
         dmn = [[np.nan if x == None else x for x in d] for d in dm]     # Replace None w NaN
         dtype=[(x, 'float') for x in dmn[0]]
         dates = [date2num(datetime.strptime(x[0], "%Y-%m-%d %H:%M:%S.%f")) for x in dmn[1:]]
-        dm_ = [tuple([d]+[float(y) for y in x[1:]]) for d, x in zip(dates, dm[1:])] 
+        dm_ = [tuple([d]+[float(y) for y in x[1:]]) for d, x in zip(dates, dm[1:])]
         magfield = np.array(dm_, dtype=dtype)
 
     last_timestep = np.min([magfield['time_tag'][-1], plasma['time_tag'][-1]])
@@ -1905,9 +1937,9 @@ def get_noaa_realtime_data():
     # Source isn't provided, but can assume DSCOVR:
     DSCOVR_ = heliosat.DSCOVR()
     sw_data.h['HeliosatObject'] = DSCOVR_
-    
+
     logger.info('get_noaa_realtime_data: NOAA RTSW data read completed.')
-    
+
     return sw_data
 
 
@@ -2358,6 +2390,7 @@ def get_stereo_beacon_data(starttime, endtime, which_stereo='ahead', resolution=
 
     # Magnetometer data
     magt_ts, magdata = STEREO_.get_data_raw(starttime, endtime, 'mag_beacon')
+
     # Convert time
     magt = []
     for t in magt_ts: 
@@ -2486,7 +2519,7 @@ def get_stereo_l1_data(starttime, endtime, which_stereo='ahead', resolution='min
     else:
         logger.error("{} is not a valid STEREO type! Use either 'ahead' or 'behind'.".format(which_stereo))
 
-    logger.info("Reading STEREO-{} beacon data".format(which_stereo.upper()))
+    logger.info("Reading STEREO-{} L1 data".format(which_stereo.upper()))
 
     # Magnetometer data
     magt_ts, magdata = STEREO_.get_data_raw(starttime, endtime, 'mag')

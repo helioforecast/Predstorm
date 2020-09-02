@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 # --------------------------- PLOTTING FUNCTIONS ----------------------------------------
 # =======================================================================================
 
-def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPRED_data, newell_coupling=None, dst_label='Dst Temerin & Li 2002', past_days=3.5, future_days=7., verification_mode=False, timestamp=None, times_3DCORE=[], outfile='predstorm_real.png', **kwargs):
+def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPRED_data, newell_coupling=None, dst_label='Dst Temerin & Li 2002', past_days=3.5, future_days=7., verification_mode=False, timestamp=None, times_3DCORE=[], times_nans={}, outfile='predstorm_real.png', **kwargs):
     """
     Plots solar wind variables, past from DSCOVR and future/predicted from STEREO-A.
     Total B-field and Bz (top), solar wind speed (second), particle density (third)
@@ -180,16 +180,22 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
     plt.plot_date(dism['time'], dism['speed'],'-', c=c_dis, label='speed L1',linewidth=lw)
     plt.ylabel('Speed $\mathregular{[km \\ s^{-1}]}$', fontsize=fs_ylabel)
 
+    stam_speed_filt = signal.savgol_filter(stam['speed'],11,1)
+    if 'speed' in times_nans:
+        stam_speed_filt = np.ma.array(stam_speed_filt)
+        for times in times_nans['speed']:
+            stam_speed_filt = np.ma.masked_where(np.logical_and(stam['time'] > times[0], stam['time'] < times[1]), stam_speed_filt)
+
     # Plot STEREO-A data with timeshift and savgol filter
-    plt.plot_date(stam['time'][i_fut],signal.savgol_filter(stam['speed'][i_fut],11,1),'-', 
+    plt.plot_date(stam['time'][i_fut], stam_speed_filt[i_fut],'-', 
                   c=c_sta, linewidth=lw, label='speed {}'.format(stam.source))
 
     # Add speed levels:
     pltcfg.plot_speed_lines(xlims=[plotstart, plotend])
 
     # For y limits check where the maximum and minimum are for DSCOVR and STEREO taken together:
-    vplotmax=np.nanmax(np.concatenate((dism['speed'],signal.savgol_filter(stam['speed'][i_fut],11,1))))+100
-    vplotmin=np.nanmin(np.concatenate((dism['speed'],signal.savgol_filter(stam['speed'][i_fut],11,1)))-50)
+    vplotmax=np.nanmax(np.concatenate((dism['speed'],stam_speed_filt[i_fut])))+100
+    vplotmin=np.nanmin(np.concatenate((dism['speed'],stam_speed_filt[i_fut]))-50)
     plt.ylim(vplotmin, vplotmax)
 
     plt.annotate('now', xy=(timeutc,vplotmax-(vplotmax-vplotmin)*0.25), xytext=(timeutc+0.05,vplotmax-(vplotmax-vplotmin)*0.25), color='k', fontsize=14)
@@ -199,14 +205,20 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
     ax3 = fig.add_subplot(n_plots,1,3)
     axes.append(ax3)
 
+    stam_density_filt = signal.savgol_filter(stam['density'],5,1)
+    if 'density' in times_nans:
+        stam_density_filt = np.ma.array(stam_density_filt)
+        for times in times_nans['density']:
+            stam_density_filt = np.ma.masked_where(np.logical_and(stam['time'] > times[0], stam['time'] < times[1]), stam_density_filt)
+
     # Plot solar wind density:
     plt.plot_date(dism['time'], dism['density'],'-k', label='density L1',linewidth=lw)
     plt.ylabel('Density $\mathregular{[ccm^{-3}]}$',fontsize=fs_ylabel)
     # For y limits check where the maximum and minimum are for DSCOVR and STEREO taken together:
-    plt.ylim([0,np.nanmax(np.nanmax(np.concatenate((dism['density'],stam['density'][i_fut])))+10)])
+    plt.ylim([0,np.nanmax(np.nanmax(np.concatenate((dism['density'],stam_density_filt[i_fut])))+10)])
 
     #plot STEREO-A data with timeshift and savgol filter
-    plt.plot_date(stam['time'][i_fut], signal.savgol_filter(stam['density'][i_fut],5,1),
+    plt.plot_date(stam['time'][i_fut], stam_density_filt[i_fut],
                   '-', c=c_sta, linewidth=lw, label='density {}'.format(stam.source))
 
     # SUBPLOT 4: Actual and predicted Dst

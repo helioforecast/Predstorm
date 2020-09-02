@@ -6,7 +6,7 @@
 sun_syn = 26.24
 
 # Number of days on right side of plot (future data from STEREO-A)
-plot_future_days = 6.0
+plot_future_days = 7.0
 
 # Number of days on left side of plot (past data)
 plot_past_days = 3.5
@@ -19,4 +19,4 @@ dst_method = 'ml_dstdiff'
 
 # Offset for Dst in plot
 dst_offset = 0
-dst_obs_offset = 60
+dst_obs_offset = 30
