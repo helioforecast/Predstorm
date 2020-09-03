@@ -698,7 +698,7 @@ class SatData():
                         periods[key].append([starttime, endtime])
                         starttime = self['time'][nan_inds[i_where+1]]
 
-        return periods      
+        return periods
 
 
     def interp_nans(self, keys=None, return_masked_array=False):

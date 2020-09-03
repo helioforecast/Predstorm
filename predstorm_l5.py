@@ -196,13 +196,11 @@ def main():
             if force_stereoa:
                 logger.warning("STEREO-A data has low data quality but using data anyway.")
             else:
-                use_recurrence_model = True
                 raise Exception("Very low STEREO-A data quality!")
         if len(np.where(np.isnan(stam['speed']))[0]) > len(stam)/2:
             if force_stereoa:
-                logger.warning("STEREO-A data is {:.1f}% nans but using data anyway.")
+                logger.warning("STEREO-A data is {:.1f}% nans but using data anyway.".format(len(np.where(np.isnan(stam['speed']))[0])/len(stam)*100.))
             else:
-                use_recurrence_model = True
                 raise Exception("STEREO-A data is {:.1f}% nans!".format(len(np.where(np.isnan(stam['speed']))[0])/len(stam)*100.))
         nan_periods = stam.find_nan_periods()
         stam = stam.interp_nans()
@@ -224,7 +222,7 @@ def main():
         sw_future_min.h['DataSource'] += ' t+27days'
         sw_future_min.source += '+27days'
         shifted_nan_periods = sw_future_min.find_nan_periods()
-    
+
     if not use_recurrence_model:
         time_last_sta = num2date(stam['time'][-1]).replace(tzinfo=None)
         logger.info('Time of last datapoint in STEREO-A data (UTC):')
@@ -363,6 +361,12 @@ def main():
             dst_pred['dst'] = dst_tl['dst'] + dst_pred['dst'] + psl5.dst_offset
         dst_label = 'Dst predicted using ML (GBR)'
 
+    # Combine in data object:
+    sw_merged['dst'] = dst_pred['dst']
+    sw_merged['kp'] = kp_newell['kp']
+    sw_merged['aurora'] = aurora_power['aurora']
+    sw_merged['ec'] = newell_coupling['ec']
+
     #========================== (3) PLOT RESULTS ============================================
 
     logger.info("\n-------------------------\nPLOTTING\n-------------------------")
@@ -402,13 +406,25 @@ def main():
     past_100days = timenow - timedelta(days=100)
 
     # Data for archiving (past 100 days):
-    # doesn't work yet
-    #past_100days_file = os.path.join('data', 'psl5_last100days.h5')
-    #if not os.path.exists(past_100days_file):
-    #    with h5py.File(past_100days_file, mode='w') as hf:
-    #        hf.create_dataset('time', data=sw_merged['time'], maxshape=(None), chunks=True)
-    #        for key in sw_merged.vars:
-    #            hf.create_dataset(key, data=sw_merged[key], maxshape=(None), chunks=True)
+    if run_mode == 'normal':
+        pickled_forecasts = "data/past_100days_running_forecasts.p"
+        if not os.path.exists(pickled_forecasts):
+            forecasts = sw_merged.data
+            forecasts = forecasts[:, forecasts[0] > date2num(timestamp)]
+            logger.info("Creating new 100-day file for saving forecasts under {}".format(pickled_forecasts))
+            recurr = np.full((1, forecasts.shape[1]), use_recurrence_model)   # column defining which input was used
+            forecasts = np.vstack((forecasts, recurr))
+        else:
+            with open(pickled_forecasts, 'rb') as f:
+                past_forecasts = pickle.load(f)
+            new_forecasts = sw_merged.data
+            new_forecasts = new_forecasts[:, new_forecasts[0] > past_forecasts[0][-1]]
+            recurr = np.full((1, new_forecasts.shape[1]), use_recurrence_model)
+            new_forecasts = np.vstack((new_forecasts, recurr))
+            forecasts = np.hstack((past_forecasts, new_forecasts))
+            logger.info("Last {} value at {}, adding {} new value(s).".format(pickled_forecasts, num2date(past_forecasts[0][-1]), new_forecasts.shape[1]))
+        with open(pickled_forecasts, "wb") as f:
+            pickle.dump(forecasts, f)
 
     # Standard data:
     filename_save = outputdirectory+'/savefiles/predstorm_v1_realtime_stereo_a_save_{}.txt'.format(timenowstr)
