@@ -76,6 +76,7 @@ except:
 from .predict import make_kp_from_wind, calc_ring_current_term
 from .predict import make_aurora_power_from_wind, calc_newell_coupling
 from .predict import calc_dst_burton, calc_dst_obrien, calc_dst_temerin_li
+from .predict import DstFeatureExtraction, dst_loss_function
 from .config.constants import AU, dist_to_L1
 
 logger = logging.getLogger(__name__)
@@ -857,7 +858,7 @@ class SatData():
         return newData
 
 
-    def shift_time_to_L1(self, sun_syn=26.24, method='new'):
+    def shift_time_to_L1(self, sun_syn=26.24, method='new', ignore_rotation=False):
         """Shifts the time variable to roughly correspond to solar wind at L1 using a
         correction for timing for the Parker spiral.
         See Simunac et al. 2009 Ann. Geophys. equation 1 and Thomas et al. 2018 Space Weather,
@@ -876,6 +877,10 @@ class SatData():
         method : str (default='new')
             Method to be used. 'old' means average of time diff is added, 'new' means full
             array of time values is added to original time array.
+        ignore_rotation : bool (default=False)
+            Set to True if the rotation of the solar wind should be ignored.
+            This can be used to calculate the arrival times of e.g. a CME expanding to L1,
+            which largely ignore ambient solar wind rotation.
 
         Returns
         =======
@@ -899,7 +904,8 @@ class SatData():
             timelag_diff_r = np.zeros(len(L1_r))
 
             # define time lag from satellite to Earth
-            timelag_L1 = abs(self.pos['lon']*180/np.pi)/(360/sun_syn) #days
+            if not ignore_rotation:
+                timelag_L1 = abs(self.pos['lon']*180/np.pi)/(360/sun_syn) #days
 
             # Go through all data points
             for i in np.arange(0,len(L1_r),1):
@@ -919,12 +925,17 @@ class SatData():
                 timelag_diff_r[i] = np.round(diff_r_deg/(360/sun_syn),3)
 
             ## ADD BOTH time shifts to the stbh_t
-            self.data[0] = self.data[0] + timelag_L1 + timelag_diff_r
+            if not ignore_rotation:
+                self.data[0] = self.data[0] + timelag_L1 + timelag_diff_r
+                logger.info("shift_time_to_L1: Shifting time by {:.1f}-{:.1f} hours".format(
+                    (timelag_L1+timelag_diff_r)[0]*24., (timelag_L1+timelag_diff_r)[-1]*24.))
+            else:
+                self.data[0] = self.data[0] + timelag_diff_r
+                logger.info("shift_time_to_L1: Shifting time by {:.1f}-{:.1f} hours".format(
+                    (timelag_diff_r)[0]*24., (timelag_diff_r)[-1]*24.))
 
             # In case of "backward" r/lon/lat movements and reversed time steps, sort:
             self.data = self.data[:,np.argsort(self.data[0])]
-            logger.info("shift_time_to_L1: Shifting time by {:.1f}-{:.1f} hours".format(
-                (timelag_L1+timelag_diff_r)[0]*24., (timelag_L1+timelag_diff_r)[-1]*24.))
 
         return self
 
@@ -949,27 +960,33 @@ class SatData():
 
         dttime = [num2date(t).replace(tzinfo=None) for t in self['time']]
         L1Pos = get_l1_position(dttime, units=self.pos.h['Units'], refframe=self.pos.h['ReferenceFrame'])
+        r_ratio = L1Pos['r']/self.pos['r']
 
         if 'density' in self.vars:
-            self['density'] = self['density'] * (self.pos['r']/L1Pos['r'])**(-2)
+            #self['density'] = self['density'] * (self.pos['r']/L1Pos['r'])**(-2)
+            self['density'] = self['density'] * (r_ratio)**(-2)
 
         if 'btot' in self.vars:
-            self['btot'] = self['btot'] * (self.pos['r']/L1Pos['r'])**(-1.49)
+            #self['btot'] = self['btot'] * (self.pos['r']/L1Pos['r'])**(-1.49)
+            self['btot'] = self['btot'] * (r_ratio)**(-1.49)
 
         shift_vars_r = ['br', 'bx'] # radial component
         shift_vars = [v for v in shift_vars_r if v in self.vars]      # behave according to 1/r
         for var in shift_vars:
-            self[var] = self[var] * (self.pos['r']/L1Pos['r'])**(-1.94)
+            #self[var] = self[var] * (self.pos['r']/L1Pos['r'])**(-1.94)
+            self[var] = self[var] * (r_ratio)**(-1.94)
         
         shift_vars_t = ['bt', 'by'] # tangential component
         shift_vars = [v for v in shift_vars_t if v in self.vars]      # behave according to 1/r
         for var in shift_vars:
-            self[var] = self[var] * (self.pos['r']/L1Pos['r'])**(-1.26)
+            #self[var] = self[var] * (self.pos['r']/L1Pos['r'])**(-1.26)
+            self[var] = self[var] * (r_ratio)**(-1.26)
 
         shift_vars_n = ['bn', 'bz'] # normal component
         shift_vars = [v for v in shift_vars_n if v in self.vars]      # behave according to 1/r
         for var in shift_vars:
-            self[var] = self[var] * (self.pos['r']/L1Pos['r'])**(-1.34)
+            #self[var] = self[var] * (self.pos['r']/L1Pos['r'])**(-1.34)
+            self[var] = self[var] * (r_ratio)**(-1.34)
         logger.info("shift_wind_to_L1: Scaled B and density values to L1 distance")
 
         return self
@@ -1106,7 +1123,7 @@ class SatData():
         return dstData
 
 
-    def make_dst_prediction_from_model(self, model):
+    def make_dst_prediction_from_model(self, model, reduced_features=True, old_method=False):
         """Makes prediction of Dst from previously trained machine learning model
         with data in array.
 
@@ -1121,8 +1138,33 @@ class SatData():
             New object containing predicted Dst data.
         """
 
+        import pandas as pd
+
+        feature_extractor = DstFeatureExtraction(input_keys=self.default_keys, 
+                                                 reduced_features=reduced_features)
+        feature_extractor.look_back = 24
+        feature_extractor.v_power = 3
+        feature_extractor.den_power = 1
+        feature_extractor.bz_power = 2
+        features = feature_extractor.transform(self.data.T)
+
+        df_features = pd.DataFrame(features, columns=feature_extractor.feature_keys, dtype=np.float64)
+        keys = feature_extractor.feature_keys
+        if feature_extractor.reduced_features:
+            keep_first = 11
+        else:
+            keep_first = 15
+        reduced_keys = keys[:keep_first] + [k for k in keys[keep_first:] if 'rc' in k or 'bz' in k]
+        cut_times = [1,2,3,4,5,6,8,12,16,20,24]
+        reduced_keys = reduced_keys[:keep_first] + [k for k in reduced_keys[keep_first:] if int(k[5:-1]) in cut_times]
+        features = df_features[reduced_keys]
+
         logger.info("Making Dst prediction for {} using machine learning model".format(self.source))
-        dst_pred = model.predict(self.data.T)
+
+        if not old_method:
+            dst_pred = model.predict(features)
+        else:
+            dst_pred = model.predict(self.data.T)
 
         dstData = SatData({'time': self['time'], 'dst': dst_pred})
         dstData.h['DataSource'] = "Dst prediction from {} data using ML model".format(self.source)
@@ -2310,14 +2352,16 @@ def get_quicklook_dst_data(starttime, endtime):
             readtable = True
 
 
-def get_rtsw_archive_data(filepath):
-    hf = h5py.File(filepath)
-    rtsw_data = SatData({'time': np.array(hf.get('time')),
-                       'btot': np.array(hf.get('bt')), 'bx': np.array(hf.get('bx_gsm')), 
-                       'by': np.array(hf.get('by_gsm')), 'bz': np.array(hf.get('bz_gsm')),
-                       'speed': np.array(hf.get('speed')), 'density': np.array(hf.get('density')), 
-                       'temp': np.array(hf.get('temperature'))},
-                       source='DSCOVR')
+def get_rtsw_archive_data(filepath, add_dst=False):
+    hf = h5py.File(filepath, 'r')
+    data_dict = {'time': np.array(hf.get('time')),
+                 'btot': np.array(hf.get('bt')), 'bx': np.array(hf.get('bx_gsm')), 
+                 'by': np.array(hf.get('by_gsm')), 'bz': np.array(hf.get('bz_gsm')),
+                 'speed': np.array(hf.get('speed')), 'density': np.array(hf.get('density')), 
+                 'temp': np.array(hf.get('temperature'))}
+    if add_dst:
+        data_dict['dst'] = np.array(hf.get('dst'))
+    rtsw_data = SatData(data_dict, source='DSCOVR')
     rtsw_data.h['DataSource'] = "DSCOVR (NOAA)"
     rtsw_data.h['SamplingRate'] = hf.attrs['SamplingRate']
     rtsw_data.h['ReferenceFrame'] = 'GSM'

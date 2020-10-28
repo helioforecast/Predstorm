@@ -39,7 +39,7 @@ c_ec = 'teal'
 # FUNCTIONS
 # ---------
 
-def plot_dst_activity_lines(xlims=None, ax=None):
+def plot_dst_activity_lines(xlims=None, ax=None, color='k'):
     if ax == None:
         ax = plt.gca()
     if xlims == None:
@@ -48,10 +48,10 @@ def plot_dst_activity_lines(xlims=None, ax=None):
         xmin, xmax = xlims
     ax.plot_date([xmin, xmax], [0, 0],'--k', alpha=0.3, linewidth=1)
     for hline, linetext in zip([-50, -100, -250], ['moderate', 'intense', 'super-storm']):
-        ax.plot_date([xmin, xmax], [hline, hline],'--k', alpha=0.3, lw=1)
-        ax.annotate(linetext, xy=(xmin, hline+2), xytext=(xmin+(xmax-xmin)*0.005, hline+2), color='k', fontsize=fs_levels)
+        ax.plot_date([xmin, xmax], [hline, hline],'--', color=color, alpha=0.3, lw=1)
+        ax.annotate(linetext, xy=(xmin, hline+2), xytext=(xmin+(xmax-xmin)*0.005, hline+2), color=color, fontsize=fs_levels)
 
-def plot_speed_lines(xlims=None, ax=None):
+def plot_speed_lines(xlims=None, ax=None, color='k'):
     if ax == None:
         ax = plt.gca()
     if xlims == None:
@@ -59,8 +59,8 @@ def plot_speed_lines(xlims=None, ax=None):
     else:
         xmin, xmax = xlims
     for hline, linetext in zip([400, 800], ['slow', 'fast']):
-        plt.plot_date([xmin, xmax], [hline, hline],'--k', alpha=0.3, linewidth=1)
-        plt.annotate(linetext,xy=(xmin,hline), xytext=(xmin+(xmax-xmin)*0.005,hline+5), color='k', fontsize=fs_levels)
+        ax.plot_date([xmin, xmax], [hline, hline],'--', color=color, alpha=0.3, linewidth=1)
+        ax.annotate(linetext,xy=(xmin,hline), xytext=(xmin+(xmax-xmin)*0.005,hline+5), color=color, fontsize=fs_levels)
 
 def liability_text():
     plt.figtext(0.01,0.03,'We take no responsibility or liability for the frequency of provision and accuracy of this forecast.' , fontsize=8, ha='left')

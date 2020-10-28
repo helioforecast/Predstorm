@@ -92,7 +92,7 @@ import h5py
 import logging
 import logging.config
 import matplotlib.pyplot as plt
-from matplotlib.dates import num2date, date2num
+from matplotlib.dates import num2date, date2num, DateFormatter
 import numpy as np
 import pdb
 import pickle
@@ -104,7 +104,9 @@ import urllib
 import heliosat
 import predstorm as ps
 from predstorm.config.constants import AU, dist_to_L1
+from predstorm.config import plotting as pltcfg
 from predstorm.plot import plot_solarwind_and_dst_prediction, plot_solarwind_science
+from predstorm.plot import plot_solarwind_pretty
 from predstorm.predict import dst_loss_function
 
 # GET INPUT PARAMETERS
@@ -341,7 +343,7 @@ def main():
         dst_label = 'Dst Temerin & Li 2002'
         dst_pred['dst'] = dst_pred['dst'] + psl5.dst_offset
     elif psl5.dst_method == 'temerin_li_2006':
-        dst_pred = sw_merged.make_dst_prediction(method='temerin_li_2006')
+        dst_pred = sw_merged.make_dst_prediction(method='temerin_li_2006', t_correction=True)
         dst_label = 'Dst Temerin & Li 2006'
         dst_pred['dst'] = dst_pred['dst'] + psl5.dst_offset
     elif psl5.dst_method == 'obrien':
@@ -371,7 +373,7 @@ def main():
 
     logger.info("\n-------------------------\nPLOTTING\n-------------------------")
     # ********************************************************************
-    logger.info("Creating output plot...")
+    logger.info("Creating output plots...")
     plot_solarwind_and_dst_prediction([sw_past_min, sw_past], [sw_future_min, sw_future], 
                                       dst, dst_pred,
                                       newell_coupling=newell_coupling,
@@ -383,7 +385,14 @@ def main():
                                       times_nans=shifted_nan_periods)
     plt.close()
     plot_solarwind_science([sw_past_min, sw_past], [sw_future_min, sw_future], 
-                                      timestamp=timestamp)
+                                      timestamp=timestamp,
+                                      past_days=plot_past_days,
+                                      future_days=plot_future_days)
+
+    try:
+        plot_solarwind_pretty(sw_past, sw_future, dst_pred, newell_coupling, timestamp)
+    except Exception as e:
+        logger.warning("Could not run plot_solarwind_pretty() due to error: {}".format(e))
     # ********************************************************************
 
 
@@ -530,10 +539,73 @@ def main():
         pass
 
 
-def validation():
+def validation(look_back=40):
     """Carries out validation for past month of data."""
 
-    pass
+    import seaborn as sns
+    sns.set_style('darkgrid')
+
+    now = datetime.utcnow()
+
+    lw = pltcfg.lw
+
+    pickled_forecasts = "data/past_100days_running_forecasts.p"  # correct without leo later
+    if not os.path.exists(pickled_forecasts):
+        raise Exception("Cannot carry out validation without past saved values! \
+                        Make sure the file {} is being written.".format(pickled_forecasts))
+
+    with open(pickled_forecasts, 'rb') as f:
+        past_forecasts = pickle.load(f)
+
+    sw_validation = ps.SatData({'time': past_forecasts[0]})
+    sw_validation.data = past_forecasts[:-1]
+    sw_validation.vars = ['bz', 'btot', 'speed', 'density', 'dst', 'aurora', 'kp', 'ec', 'ae']
+    sw_validation['ae'] = past_forecasts[-1]
+    sw_validation = sw_validation.make_hourly_data()
+    sw_validation = sw_validation.cut(starttime=now-timedelta(days=look_back), endtime=now)
+
+    # Read 27-day recurrence data:
+    pers27_path = "data/rtsw_hour_last100days.h5"
+    kyoto_dst = ps.get_rtsw_archive_data(pers27_path, add_dst=True)
+    kyoto_dst = kyoto_dst.interp_to_time(sw_validation['time'])
+    pers27_path_min = "data/rtsw_min_last100days.h5"
+    sw_recurrence = ps.get_rtsw_archive_data(pers27_path_min)
+    sw_recurrence = sw_recurrence.make_hourly_data()
+    sw_recurrence['time'] += 27. # correct by one Carrington rotation
+    sw_recurrence.h['DataSource'] += ' t+27days'
+    sw_recurrence = sw_recurrence.interp_to_time(sw_validation['time'])
+
+    pltvars = ['bz', 'btot', 'speed', 'density', 'dst']
+    ylabels = {'bz': '$B_z$ [nT]', 'btot': '$B_{tot}$ [nT]', 'speed': 'Solar wind speed\n[km/s]',
+               'density': 'Density [ccm-3]', 'dst': '$Dst$ [nT]'}
+    l5_true = sw_validation['ae'] != 1.
+    l5_inds = np.where(l5_true)
+    fig, axes = plt.subplots(len(pltvars)+1, sharex=True, figsize=pltcfg.figsize)
+
+    for i_var, pltvar in enumerate(pltvars):
+        if pltvar != 'dst':
+            axes[i_var].plot_date(sw_recurrence['time'], sw_recurrence[pltvar], 
+                                  'k-', lw=lw, alpha=0.2, label="27-day rec (not used)")
+        elif pltvar == 'dst':
+            axes[i_var].plot_date(kyoto_dst['time'], kyoto_dst['dst'], '--', c='green', lw=lw, label="Kyoto Dst")
+        sta_only = np.full((len(sw_validation)), np.nan)
+        sta_only[l5_true] = sw_validation[pltvar][l5_true]
+        rec_only = np.full((len(sw_validation)), np.nan)
+        rec_only[~l5_true] = sw_validation[pltvar][~l5_true]
+        axes[i_var].plot_date(sw_validation['time'], rec_only, 'k-', lw=lw, label="27-day rec ({:.0f}%)".format(100.*(len(sw_validation)-len(l5_inds[0]))/len(sw_validation)))
+        axes[i_var].plot_date(sw_validation['time'], sta_only, 'r-', lw=lw, label="STEREO-A ({:.0f}%)".format(100.*len(l5_inds[0])/len(sw_validation)))
+        axes[i_var].set_ylabel(ylabels[pltvar])
+    axes[-1].plot_date(sw_validation['time'], sw_validation['dst']-kyoto_dst['dst'], 'k-', lw=lw)
+    axes[-1].set_ylabel("$\Delta Dst$ [nT]")
+
+    # Formatting:
+    axes[0].set_title("Validation plot for solar wind forecasting between {} and {}".format((now - timedelta(days=look_back)).strftime('%Y-%m-%d'), now.strftime('%Y-%m-%d')))
+    axes[-1].set_xlim([now - timedelta(days=look_back), now])
+    axes[0].legend(loc='upper left', ncol=3)
+    axes[-2].legend(loc='upper left', ncol=3)
+
+    plt.subplots_adjust(hspace=0.1)
+    plt.savefig('predstorm_validation.png')
 
 
 #========================================================================================
@@ -544,6 +616,7 @@ if __name__ == '__main__':
 
     run_mode = 'normal'
     verbose, use3DCORE, force_stereoa = True, False, False
+    run_validation = False
     for opt, arg in opts:
         if opt == "--server":
             server = True
@@ -559,6 +632,8 @@ if __name__ == '__main__':
             path_3DCORE = arg
         elif opt == '--force-stereoa':
             force_stereoa = True
+        elif opt == '--validation':
+            run_validation = True
         elif opt == '-h' or opt == '--help':
             print("")
             print("-----------------------------------------------------------------")
@@ -596,7 +671,8 @@ if __name__ == '__main__':
     # CHECK OUTPUT DIRECTORIES AND REQUIRED FILES:
     outputdirectory='results'
     # Check if directory for output exists (for plots and txt files)
-    if os.path.isdir(outputdirectory) == False: os.mkdir(outputdirectory)
+    if os.path.isdir(outputdirectory) == False:
+        os.mkdir(outputdirectory)
     # Make directory for savefiles
     if os.path.isdir(outputdirectory+'/savefiles') == False:
         os.mkdir(outputdirectory+'/savefiles')
@@ -607,6 +683,11 @@ if __name__ == '__main__':
 
     # Closes all plots
     plt.close('all')
+
+    # Run validation:
+    if run_validation:
+        validation()
+        sys.exit()
 
     main()
 

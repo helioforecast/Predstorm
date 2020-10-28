@@ -27,6 +27,7 @@ import pdb
 import seaborn as sns
 import scipy.signal as signal
 import matplotlib.dates as mdates
+from matplotlib.dates import date2num, num2date, DateFormatter
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from matplotlib.patches import Polygon
@@ -507,6 +508,60 @@ def plot_solarwind_science(DSCOVR_data, STEREOA_data, verification_mode=False, t
     if not verification_mode:
         plt.savefig(outfile)
         logger.info('Real-time plot saved as {}!'.format(outfile))
+
+
+def plot_solarwind_pretty(sw_past, sw_future, dst, newell_coupling, timestamp):
+    """Uses the package mplcyberpunk to make a simpler and more visually appealing plot."""
+
+    import mplcyberpunk
+    plt.style.use("cyberpunk")
+    c_speed = (0.58, 0.404, 0.741)
+    c_dst = (0.031, 0.969, 0.996)
+    c_ec = (0.961, 0.827, 0)
+    alpha_fut = 0.5
+
+    fig, (ax1, ax2, ax3) = plt.subplots(3, figsize=(17,9), sharex=True)
+    time_past = dst['time'] <= date2num(timestamp)
+    time_future = dst['time'] >= date2num(timestamp)
+    # Plot data:
+    ax1.plot_date(sw_past['time'], sw_past['speed'], '-', c=c_speed, label="Solar wind speed [km/s]")
+    ax1.plot_date(sw_future['time'], sw_future['speed'], '-', c=c_speed, alpha=alpha_fut)
+    ax2.plot_date(dst['time'][time_past], dst['dst'][time_past], '-', c=c_dst, label="$Dst$ [nT]")
+    ax2.plot_date(dst['time'][time_future], dst['dst'][time_future], '-', c=c_dst, alpha=alpha_fut)
+    ax3.plot_date(newell_coupling['time'][time_past], newell_coupling['ec'][time_past]/4421., '-', c=c_ec, label="Newell Coupling\n[nT]")
+    ax3.plot_date(newell_coupling['time'][time_future], newell_coupling['ec'][time_future]/4421., '-', c=c_ec, alpha=alpha_fut)
+    ax3.set_xlim([dst['time'][0], dst['time'][-1]])
+    mplcyberpunk.add_glow_effects(ax1)
+    mplcyberpunk.add_glow_effects(ax2)
+    mplcyberpunk.add_glow_effects(ax3)
+
+    # Add labels:
+    props = dict(boxstyle='round', facecolor='silver', alpha=0.2)
+    # place a text box in upper left in axes coords
+    ax1.text(0.01, 0.95, "Solar wind speed [km/s]", transform=ax1.transAxes, fontsize=14,
+            verticalalignment='top', bbox=props)
+    ax2.text(0.01, 0.95, "Predicted $Dst$ [nT]", transform=ax2.transAxes, fontsize=14,
+            verticalalignment='top', bbox=props)
+    ax3.text(0.01, 0.95, 'Newell Coupling / 4421\n$\mathregular{[(km/s)^{4/3} nT^{2/3}]}$', transform=ax3.transAxes, fontsize=14,
+            verticalalignment='top', bbox=props)
+    pltcfg.plot_dst_activity_lines(xlims=[dst['time'][0], dst['time'][-1]], ax=ax2, color='silver')
+    pltcfg.plot_speed_lines(xlims=[dst['time'][0], dst['time'][-1]], ax=ax1, color='silver')
+
+    # Add vertical lines for 'now' time:
+    for ax in [ax1, ax2, ax3]:
+        ax.axvline(x=timestamp, linewidth=2, color='silver')
+    vplotmin, vplotmax = ax1.get_ylim()
+    ax1.annotate('now', xy=(timestamp, vplotmax-(vplotmax-vplotmin)*0.15), xytext=(timestamp+timedelta(hours=2.5),vplotmax-(vplotmax-vplotmin)*0.155), color='silver', fontsize=14)
+
+    # Formatting:
+    myformat = DateFormatter('%b %d %Hh')
+    ax3.xaxis.set_major_formatter(myformat)
+    ax1.tick_params(axis='both', which='major', labelsize=14)
+    ax2.tick_params(axis='both', which='major', labelsize=14)
+    ax3.tick_params(axis='both', which='major', labelsize=14)
+    plt.subplots_adjust(hspace=0.)
+
+    plt.savefig("predstorm_pretty.png")
 
 
 def plot_stereo_dscovr_comparison(stam, dism, dst, timestamp=None, look_back=20, outfile=None, **kwargs):
