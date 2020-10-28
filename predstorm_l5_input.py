@@ -19,4 +19,4 @@ dst_method = 'ml_dstdiff'
 
 # Offset for Dst in plot
 dst_offset = 0
-dst_obs_offset = 30
+dst_obs_offset = 0

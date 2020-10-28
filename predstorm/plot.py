@@ -511,7 +511,10 @@ def plot_solarwind_science(DSCOVR_data, STEREOA_data, verification_mode=False, t
 
 
 def plot_solarwind_pretty(sw_past, sw_future, dst, newell_coupling, timestamp):
-    """Uses the package mplcyberpunk to make a simpler and more visually appealing plot."""
+    """Uses the package mplcyberpunk to make a simpler and more visually appealing plot.
+
+    TO-DO:
+    - Implement weighted average smoothing on Newell Coupling."""
 
     import mplcyberpunk
     plt.style.use("cyberpunk")

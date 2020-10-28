@@ -357,7 +357,7 @@ def main():
     elif psl5.dst_method.startswith('ml'):
         with open('dst_pred_model_final.pickle', 'rb') as f:
             model = pickle.load(f)
-        dst_pred = sw_merged.make_dst_prediction_from_model(model)
+        dst_pred = sw_merged.make_dst_prediction_from_model(model, old_method=True)
         if psl5.dst_method == 'ml_dstdiff':
             dst_tl = sw_merged.make_dst_prediction(method='temerin_li_2006', t_correction=True)
             dst_pred['dst'] = dst_tl['dst'] + dst_pred['dst'] + psl5.dst_offset

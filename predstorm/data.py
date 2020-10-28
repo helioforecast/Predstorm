@@ -963,29 +963,24 @@ class SatData():
         r_ratio = L1Pos['r']/self.pos['r']
 
         if 'density' in self.vars:
-            #self['density'] = self['density'] * (self.pos['r']/L1Pos['r'])**(-2)
             self['density'] = self['density'] * (r_ratio)**(-2)
 
         if 'btot' in self.vars:
-            #self['btot'] = self['btot'] * (self.pos['r']/L1Pos['r'])**(-1.49)
             self['btot'] = self['btot'] * (r_ratio)**(-1.49)
 
         shift_vars_r = ['br', 'bx'] # radial component
         shift_vars = [v for v in shift_vars_r if v in self.vars]      # behave according to 1/r
         for var in shift_vars:
-            #self[var] = self[var] * (self.pos['r']/L1Pos['r'])**(-1.94)
             self[var] = self[var] * (r_ratio)**(-1.94)
         
         shift_vars_t = ['bt', 'by'] # tangential component
         shift_vars = [v for v in shift_vars_t if v in self.vars]      # behave according to 1/r
         for var in shift_vars:
-            #self[var] = self[var] * (self.pos['r']/L1Pos['r'])**(-1.26)
             self[var] = self[var] * (r_ratio)**(-1.26)
 
         shift_vars_n = ['bn', 'bz'] # normal component
         shift_vars = [v for v in shift_vars_n if v in self.vars]      # behave according to 1/r
         for var in shift_vars:
-            #self[var] = self[var] * (self.pos['r']/L1Pos['r'])**(-1.34)
             self[var] = self[var] * (r_ratio)**(-1.34)
         logger.info("shift_wind_to_L1: Scaled B and density values to L1 distance")
 
