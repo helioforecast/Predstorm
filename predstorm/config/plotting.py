@@ -26,6 +26,9 @@ c_dis_dst = 'purple'
 # Colour for STEREO data
 c_sta = 'red'
 c_sta_dst = 'blue'
+# Colour for magnetic fields
+c_btot = 'black'
+c_bx, c_by, c_bz = 'teal', 'orange', 'purple'
 # Colour for Dst
 c_dst = 'black'
 ms_dst = 4
@@ -69,3 +72,6 @@ def liability_text():
 def group_info_text():
     plt.figtext(0.99,0.05,'Helio4Cast Group, Graz, Austria', fontsize=12, ha='right')
     plt.figtext(0.99,0.025,'https://twitter.com/chrisoutofspace', fontsize=12, ha='right')
+
+def group_info_text_small():
+    plt.figtext(0.95,0.020,'Helio4Cast Group, Graz, https://helioforecast.space', fontsize=12, ha='right')

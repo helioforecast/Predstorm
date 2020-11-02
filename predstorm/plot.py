@@ -95,6 +95,10 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
     c_ec = kwargs.get('c_ec', pltcfg.c_ec)
     c_sta = kwargs.get('c_sta', pltcfg.c_sta)
     c_sta_dst = kwargs.get('c_sta_dst', pltcfg.c_sta_dst)
+    c_btot = kwargs.get('c_btot', pltcfg.c_btot)
+    c_bx = kwargs.get('c_bx', pltcfg.c_bx)
+    c_by = kwargs.get('c_by', pltcfg.c_by)
+    c_bz = kwargs.get('c_bz', pltcfg.c_bz)
     ms_dst = kwargs.get('c_dst', pltcfg.ms_dst)
     fs_legend = kwargs.get('fs_legend', pltcfg.fs_legend)
     fs_ylabel = kwargs.get('fs_legend', pltcfg.fs_ylabel)
@@ -117,7 +121,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
 
     # For the minute data, check which are the intervals to show for STEREO-A until end of plot
     i_fut = np.where(np.logical_and(stam['time'] > dism['time'][-1], \
-                              stam['time'] < dism['time'][-1]+future_days))[0]
+                     stam['time'] < dism['time'][-1]+future_days))[0]
 
     if timestamp == None:
         timestamp = datetime.utcnow()
@@ -137,27 +141,25 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
     axes.append(ax1)
 
     # Total B-field and Bz (DSCOVR)
-    plt.plot_date(dism['time'], dism['btot'],'-', c=c_dis, label='B total L1', linewidth=lw)
-    plt.plot_date(dism['time'], dism['bz'],'-', c=c_dis, alpha=0.5, label='Bz GSM L1', linewidth=lw)
+    plst = 2
+    plt.plot_date(dism['time'][::plst], dism['btot'][::plst],'-', c=c_btot, label='$B_{tot}$', linewidth=lw)
+    plt.plot_date(dism['time'][::plst], dism['bx'][::plst],'-', c=c_bx, label='$B_x$', linewidth=lw)
+    plt.plot_date(dism['time'][::plst], dism['by'][::plst],'-', c=c_by, label='$B_y$', linewidth=lw)
+    plt.plot_date(dism['time'][::plst], dism['bz'][::plst],'-', c=c_bz, label='$B_z$', linewidth=lw)
 
     # STEREO-A minute resolution data with timeshift
-    plt.plot_date(stam['time'][i_fut], stam['btot'][i_fut],
-                  '-', c=c_sta, linewidth=lw, label='B {}'.format(stam.source))
-    if 'stereo' in stam.source.lower():
-        plt.plot_date(stam['time'][i_fut], stam['bn'][i_fut],
-                      '-', c=c_sta, alpha=0.5, linewidth=lw, label='Bn RTN {}'.format(stam.source))
-    else:
-        plt.plot_date(stam['time'][i_fut], stam['bz'][i_fut],
-                      '-', c=c_sta, alpha=0.5, linewidth=lw, label='Bz GSM {}'.format(stam.source))
-
+    plt.plot_date(stam['time'][i_fut], stam['btot'][i_fut], '-', c=c_btot, alpha=0.5, linewidth=0.5)
+    plt.plot_date(stam['time'][i_fut], stam['br'][i_fut], '-', c=c_bx, alpha=0.5, linewidth=0.5)
+    plt.plot_date(stam['time'][i_fut], stam['bt'][i_fut], '-', c=c_by, alpha=0.5, linewidth=0.5)
+    plt.plot_date(stam['time'][i_fut], stam['bn'][i_fut], '-', c=c_bz, alpha=0.5, linewidth=0.5)
 
     # Indicate 0 level for Bz
     plt.plot_date([plotstart,plotend], [0,0],'--k', alpha=0.5, linewidth=1)
     plt.ylabel('Magnetic field [nT]',  fontsize=fs_ylabel)
 
     # For y limits check where the maximum and minimum are for DSCOVR and STEREO taken together:
-    bplotmax=np.nanmax(np.concatenate((dism['btot'],stam['btot'][i_fut])))+5
-    bplotmin=np.nanmin(np.concatenate((dism['bz'],stam['bn'][i_fut]))-5)
+    bplotmax = np.nanmax(dism['btot'])+5
+    bplotmin = -bplotmax
 
     plt.ylim(bplotmin, bplotmax)
 
@@ -178,7 +180,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
     axes.append(ax2)
 
     # Plot solar wind speed (DSCOVR):
-    plt.plot_date(dism['time'], dism['speed'],'-', c=c_dis, label='speed L1',linewidth=lw)
+    plt.plot_date(dism['time'][::plst], dism['speed'][::plst],'-', c='black', label='speed',linewidth=lw)
     plt.ylabel('Speed $\mathregular{[km \\ s^{-1}]}$', fontsize=fs_ylabel)
 
     stam_speed_filt = signal.savgol_filter(stam['speed'],11,1)
@@ -189,7 +191,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
 
     # Plot STEREO-A data with timeshift and savgol filter
     plt.plot_date(stam['time'][i_fut], stam_speed_filt[i_fut],'-', 
-                  c=c_sta, linewidth=lw, label='speed {}'.format(stam.source))
+                  c='black', alpha=0.5, linewidth=lw, label='speed {}'.format(stam.source))
 
     # Add speed levels:
     pltcfg.plot_speed_lines(xlims=[plotstart, plotend])
@@ -220,7 +222,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
 
     #plot STEREO-A data with timeshift and savgol filter
     plt.plot_date(stam['time'][i_fut], stam_density_filt[i_fut],
-                  '-', c=c_sta, linewidth=lw, label='density {}'.format(stam.source))
+                  '-', c='black', alpha=0.5, linewidth=lw, label='density {}'.format(stam.source))
 
     # SUBPLOT 4: Actual and predicted Dst
     # -----------------------------------
@@ -240,33 +242,27 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
         plt.ylim([dstplotmin, dstplotmax])
 
     # Plot predicted Dst
-    if not verification_mode:
-        plt.plot_date(dst_pred['time'], dst_pred['dst'], '-', c=c_sta_dst, label=dst_label, markersize=3, linewidth=1)
-        # Add generic error bars of +/-15 nT:
-        # Errors calculated using https://machinelearningmastery.com/prediction-intervals-for-machine-learning/
-        error_l1 = 5.038
-        error_l5 = 12.249
-        error_pers = 13.416
-        ih_fut = np.where(dst_pred['time'] > dis['time'][-1])[0]
-        ih_past = np.arange(0, ih_fut[0]+1)
-        # Error bars for data from L1:
-        plt.fill_between(dst_pred['time'][ih_past], dst_pred['dst'][ih_past]-error_l1, dst_pred['dst'][ih_past]+error_l1,
-                         alpha=0.1, facecolor=c_sta_dst,
-                         label=r'prediction interval +/- 1 & 2 $\sigma$ (68% and 95% significance)')
-        plt.fill_between(dst_pred['time'][ih_past], dst_pred['dst'][ih_past]-2*error_l1, dst_pred['dst'][ih_past]+2*error_l1,
-                         alpha=0.1, facecolor=c_sta_dst)
-        # Error bars for data from L5/STEREO:#
-        plt.fill_between(dst_pred['time'][ih_fut], dst_pred['dst'][ih_fut]-error_l5, dst_pred['dst'][ih_fut]+error_l5,
-                         alpha=0.1, facecolor=c_sta_dst)
-        plt.fill_between(dst_pred['time'][ih_fut], dst_pred['dst'][ih_fut]-2*error_l5, dst_pred['dst'][ih_fut]+2*error_l5,
-                         alpha=0.1, facecolor=c_sta_dst)
-    else:
-        #load saved data l prefix is for loaded - WARNING This will crash if called right now
-        [timenowb, sta_ptime, sta_vr, sta_btime, sta_btot, sta_br,sta_bt, sta_bn, rbtime_num, rbtot, \
-            rbzgsm, rptime_num, rpv, rpn, lrdst_time, lrdst, \
-            lcom_time, ldst_burton, ldst_obrien,ldst_temerin_li] = pickle.load(open(verify_filename,'rb') )
-        plt.plot_date(lcom_time, ldst_burton,'-b', label='Forecast Dst Burton et al. 1975',markersize=3, linewidth=1)
-        plt.plot_date(lcom_time, ldst_obrien,'-r', label='Forecast Dst OBrien & McPherron 2000',markersize=3, linewidth=1)
+    dst_pred_past = dst_pred['time'] < date2num(timestamp)
+    plt.plot_date(dst_pred['time'][dst_pred_past], dst_pred['dst'][dst_pred_past], '-', c=c_sta_dst, label=dst_label, markersize=3, linewidth=1)
+    plt.plot_date(dst_pred['time'][~dst_pred_past], dst_pred['dst'][~dst_pred_past], '-', c=c_sta_dst, alpha=0.5,  markersize=3, linewidth=1)
+    # Add generic error bars of +/-15 nT:
+    # Errors calculated using https://machinelearningmastery.com/prediction-intervals-for-machine-learning/
+    error_l1 = 5.038
+    error_l5 = 12.249
+    error_pers = 13.416
+    ih_fut = np.where(dst_pred['time'] > dis['time'][-1])[0]
+    ih_past = np.arange(0, ih_fut[0]+1)
+    # Error bars for data from L1:
+    plt.fill_between(dst_pred['time'][ih_past], dst_pred['dst'][ih_past]-error_l1, dst_pred['dst'][ih_past]+error_l1,
+                     alpha=0.1, facecolor=c_sta_dst,
+                     label=r'prediction interval +/- 1 & 2 $\sigma$ (68% and 95% significance)')
+    plt.fill_between(dst_pred['time'][ih_past], dst_pred['dst'][ih_past]-2*error_l1, dst_pred['dst'][ih_past]+2*error_l1,
+                     alpha=0.1, facecolor=c_sta_dst)
+    # Error bars for data from L5/STEREO:#
+    plt.fill_between(dst_pred['time'][ih_fut], dst_pred['dst'][ih_fut]-error_l5, dst_pred['dst'][ih_fut]+error_l5,
+                     alpha=0.1, facecolor=c_sta_dst)
+    plt.fill_between(dst_pred['time'][ih_fut], dst_pred['dst'][ih_fut]-2*error_l5, dst_pred['dst'][ih_fut]+2*error_l5,
+                     alpha=0.1, facecolor=c_sta_dst)
 
     # Label plot with geomagnetic storm levels
     pltcfg.plot_dst_activity_lines(xlims=[plotstart, plotend])
@@ -278,9 +274,12 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
         axes.append(ax5)
 
         # Plot solar wind density:
+        ec_past = newell_coupling['time'] < date2num(timestamp)
         avg_newell_coupling = newell_coupling.get_weighted_average('ec')
-        plt.plot_date(newell_coupling['time'], avg_newell_coupling/4421., '-', color=c_ec, 
+        plt.plot_date(newell_coupling['time'][ec_past], avg_newell_coupling[ec_past]/4421., '-', color=c_ec, # past
                       label='Newell coupling 4h weighted mean',linewidth=1.5)
+        plt.plot_date(newell_coupling['time'][~ec_past], avg_newell_coupling[~ec_past]/4421., '-', color=c_ec, # future
+                      alpha=0.5, linewidth=1.5)
         plt.ylabel('Newell Coupling / 4421\n$\mathregular{[(km/s)^{4/3} nT^{2/3}]}$',fontsize=fs_ylabel)
         # For y limits check where the maximum and minimum are for DSCOVR and STEREO taken together:
         plt.ylim([0,np.nanmax(avg_newell_coupling/4421.)*1.2])
@@ -531,9 +530,9 @@ def plot_solarwind_pretty(sw_past, sw_future, dst, newell_coupling, timestamp):
     ax1.plot_date(sw_future['time'], sw_future['speed'], '-', c=c_speed, alpha=alpha_fut)
     ax2.plot_date(dst['time'][time_past], dst['dst'][time_past], '-', c=c_dst, label="$Dst$ [nT]")
     ax2.plot_date(dst['time'][time_future], dst['dst'][time_future], '-', c=c_dst, alpha=alpha_fut)
-    ax3.plot_date(newell_coupling['time'][time_past], newell_coupling['ec'][time_past]/4421., '-', c=c_ec, label="Newell Coupling\n[nT]")
-    ax3.plot_date(newell_coupling['time'][time_future], newell_coupling['ec'][time_future]/4421., '-', c=c_ec, alpha=alpha_fut)
-    ax3.set_xlim([dst['time'][0], dst['time'][-1]])
+    avg_newell_coupling = newell_coupling.get_weighted_average('ec')
+    ax3.plot_date(newell_coupling['time'][time_past], avg_newell_coupling[time_past]/4421., '-', c=c_ec, label="Newell Coupling\n[nT]")
+    ax3.plot_date(newell_coupling['time'][time_future], avg_newell_coupling[time_future]/4421., '-', c=c_ec, alpha=alpha_fut)
     mplcyberpunk.add_glow_effects(ax1)
     mplcyberpunk.add_glow_effects(ax2)
     mplcyberpunk.add_glow_effects(ax3)
@@ -545,24 +544,46 @@ def plot_solarwind_pretty(sw_past, sw_future, dst, newell_coupling, timestamp):
             verticalalignment='top', bbox=props)
     ax2.text(0.01, 0.95, "Predicted $Dst$ [nT]", transform=ax2.transAxes, fontsize=14,
             verticalalignment='top', bbox=props)
-    ax3.text(0.01, 0.95, 'Newell Coupling / 4421\n$\mathregular{[(km/s)^{4/3} nT^{2/3}]}$', transform=ax3.transAxes, fontsize=14,
+    ax3.text(0.01, 0.95, 'Newell Coupling / 4421 $\mathregular{[(km/s)^{4/3} nT^{2/3}]}$', transform=ax3.transAxes, fontsize=14,
             verticalalignment='top', bbox=props)
     pltcfg.plot_dst_activity_lines(xlims=[dst['time'][0], dst['time'][-1]], ax=ax2, color='silver')
     pltcfg.plot_speed_lines(xlims=[dst['time'][0], dst['time'][-1]], ax=ax1, color='silver')
 
     # Add vertical lines for 'now' time:
+    print_time_lines = True
     for ax in [ax1, ax2, ax3]:
+        # Add a line denoting "now"
         ax.axvline(x=timestamp, linewidth=2, color='silver')
-    vplotmin, vplotmax = ax1.get_ylim()
-    ax1.annotate('now', xy=(timestamp, vplotmax-(vplotmax-vplotmin)*0.15), xytext=(timestamp+timedelta(hours=2.5),vplotmax-(vplotmax-vplotmin)*0.155), color='silver', fontsize=14)
+        # Add buffer to top of plots so that labels don't overlap with data:
+        ax_ymin, ax_ymax = ax.get_ylim()
+        text_adj = (ax_ymax-ax_ymin)*0.17
+        ax.set_ylim((ax_ymin, ax_ymax + text_adj))
+        # Add lines for future days:
+        ax_ymin, ax_ymax = ax.get_ylim()
+        text_adj = (ax_ymax-ax_ymin)*0.15
+        for t_day in [1,2,3,4]:
+            t_days_timestamp = timestamp+timedelta(days=t_day)
+            ax.axvline(x=t_days_timestamp, ls='--', linewidth=0.7, color='silver')
+            if print_time_lines:
+                ax.annotate('now', xy=(timestamp, ax_ymax-text_adj), xytext=(timestamp+timedelta(hours=2.5),
+                            ax_ymax-text_adj*1.03), color='silver', fontsize=14)
+                ax.annotate('+{} days'.format(t_day), xy=(t_days_timestamp, ax_ymax-text_adj), xytext=(t_days_timestamp+timedelta(hours=2),
+                            ax_ymax-text_adj*1.03), color='silver', fontsize=10)
+        print_time_lines = False
 
     # Formatting:
-    myformat = DateFormatter('%b %d %Hh')
+    tick_date = num2date(dst['time'][0]).replace(hour=0, minute=0, second=0, microsecond=0)
+    ax3.set_xticks([tick_date + timedelta(days=n) for n in range(1,15)])
+    ax3.set_xlim([dst['time'][0], dst['time'][-1]])
+    myformat = DateFormatter('%a\n%b %d')
     ax3.xaxis.set_major_formatter(myformat)
     ax1.tick_params(axis='both', which='major', labelsize=14)
     ax2.tick_params(axis='both', which='major', labelsize=14)
     ax3.tick_params(axis='both', which='major', labelsize=14)
     plt.subplots_adjust(hspace=0.)
+    ax1.set_title("Helio4Cast Geomagnetic Activity Forecast, {} UTC".format(timestamp.strftime("%Y-%m-%d %H:%M")), pad=20)
+
+    pltcfg.group_info_text_small()
 
     plt.savefig("predstorm_pretty.png")
 
