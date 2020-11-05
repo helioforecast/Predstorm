@@ -74,4 +74,4 @@ def group_info_text():
     plt.figtext(0.99,0.025,'https://twitter.com/chrisoutofspace', fontsize=12, ha='right')
 
 def group_info_text_small():
-    plt.figtext(0.95,0.020,'Helio4Cast Group, Graz, https://helioforecast.space', fontsize=12, ha='right')
+    plt.figtext(0.90,0.020,'Helio4Cast Group, Graz, https://helioforecast.space', fontsize=12, ha='right')

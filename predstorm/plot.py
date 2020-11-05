@@ -586,6 +586,8 @@ def plot_solarwind_pretty(sw_past, sw_future, dst, newell_coupling, timestamp):
     pltcfg.group_info_text_small()
 
     plt.savefig("predstorm_pretty.png")
+    # To cut the final version:
+    # convert predstorm_pretty.png -crop 1420x1000+145+30 predstorm_pretty_cropped.png
 
 
 def plot_stereo_dscovr_comparison(stam, dism, dst, timestamp=None, look_back=20, outfile=None, **kwargs):
