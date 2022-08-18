@@ -65,7 +65,6 @@ import urllib
 import astropy.time
 import cdflib
 import heliosat
-from heliosat.spice import transform_frame
 import spiceypy
 try:
     from netCDF4 import Dataset
@@ -249,6 +248,8 @@ class SatData():
 
     def convert_mag_to(self, refframe):
         """Converts MAG from one refframe to another."""
+
+        #from heliosat.spice import transform_frame
         
         barray = np.stack((self['bx'], self['by'], self['bz']), axis=1)
         tarray = [num2date(t).replace(tzinfo=None) for t in self['time']]
