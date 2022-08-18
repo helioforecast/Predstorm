@@ -1153,6 +1153,8 @@ class SatData():
         cut_times = [1,2,3,4,5,6,8,12,16,20,24]
         reduced_keys = reduced_keys[:keep_first] + [k for k in reduced_keys[keep_first:] if int(k[5:-1]) in cut_times]
         features = df_features[reduced_keys]
+        # Interpolate over an NaNs:
+        features = features.interpolate(method='linear', limit_direction='forward')
 
         logger.info("Making Dst prediction for {} using machine learning model".format(self.source))
 

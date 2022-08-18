@@ -22,7 +22,7 @@ Remaining dependencies (particularly those for CDF handling) can be downloaded u
 
 PREDSTORM also relies on the HelioSat package for all heliospheric data downloads and SPICE kernel handling. Currently it can be downloaded from GitHub:
 
-    git clone https://github.com/IWF-helio/HelioSat.git
+    git clone https://github.com/ajefweiss/HelioSat.git
     cd HelioSat
 	  python setup.py install
 

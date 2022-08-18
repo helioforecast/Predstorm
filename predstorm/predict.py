@@ -683,12 +683,10 @@ def calc_ring_current_term(deltat, bz, speed, m1=-4.4, m2=2.4, e1=9.74, e2=4.69)
 def extract_local_time_variables(time):
     """Takes the UTC time in numpy date format and 
     returns local time and day of year variables, cos/sin.
-
     Parameters:
     -----------
     time : np.array
         Contains timestamps in numpy format.
-
     Returns:
     --------
     sin_DOY, cos_DOY, sin_LT, cos_LT : np.arrays
@@ -708,6 +706,38 @@ def extract_local_time_variables(time):
     
     sin_DOY, cos_DOY = np.sin(2.*np.pi*dtdayofyear/365.), np.sin(2.*np.pi*dtdayofyear/365.)
     sin_LT, cos_LT = np.sin(2.*np.pi*dtlocaltime/24.), np.sin(2.*np.pi*dtlocaltime/24.)
+
+    return sin_DOY, cos_DOY, sin_LT, cos_LT
+
+
+def extract_local_time_variables_corrected(time):
+    """Takes the UTC time in numpy date format and
+    returns local time and day of year variables, cos/sin.
+
+    Parameters:
+    -----------
+    time : np.array
+        Contains timestamps in numpy format.
+
+    Returns:
+    --------
+    sin_DOY, cos_DOY, sin_LT, cos_LT : np.arrays
+        Sine and cosine of day-of-yeat and local-time.
+    """
+
+    utczone = tz.gettz('UTC')
+    cetzone = tz.gettz('CET')
+    # Original data is in UTC:
+    dtimeUTC = [dt.replace(tzinfo=utczone) for dt in dtime]
+    # Correct to local time zone (CET) for local time:
+    dtimeCET = [dt.astimezone(cetzone) for dt in dtime]
+    dtlocaltime = np.array([(dt.hour + dt.minute/60. + dt.second/3600.) for dt in dtimeCET]) / 24.
+    # add_day calculation checks for leap years
+    add_day = np.array([calendar.isleap(dt.year) for dt in dtimeCET]).astype(int)
+    dtdayofyear = (np.array([dt.timetuple().tm_yday for dt in dtimeCET]) + dtlocaltime) / (365. + add_day)
+
+    sin_DOY, cos_DOY = np.sin(2.*np.pi*dtdayofyear), np.cos(2.*np.pi*dtdayofyear)
+    sin_LT, cos_LT = np.sin(2.*np.pi*dtlocaltime), np.cos(2.*np.pi*dtlocaltime)
 
     return sin_DOY, cos_DOY, sin_LT, cos_LT
 
