@@ -859,7 +859,7 @@ class SatData():
         return newData
 
 
-    def shift_time_to_L1(self, sun_syn=26.24, method='new', ignore_rotation=False):
+    def shift_time_to_L1(self, sun_syn=26.24, method='new', ignore_rotation=False, L1Pos=[]):
         """Shifts the time variable to roughly correspond to solar wind at L1 using a
         correction for timing for the Parker spiral.
         See Simunac et al. 2009 Ann. Geophys. equation 1 and Thomas et al. 2018 Space Weather,
@@ -900,7 +900,8 @@ class SatData():
                 logger.warning("Loading position data (SatData.load_positions()) for shift_time_to_L1()!")
                 self.load_positions()
             dttime = [num2date(t).replace(tzinfo=None) for t in self['time']]
-            L1Pos = get_l1_position(dttime, units=self.pos.h['Units'], refframe=self.pos.h['ReferenceFrame'])
+            if len(L1Pos) == 0:
+                L1Pos = get_l1_position(dttime, units=self.pos.h['Units'], refframe=self.pos.h['ReferenceFrame'])
             L1_r = L1Pos['r']
             timelag_diff_r = np.zeros(len(L1_r))
 
@@ -941,7 +942,7 @@ class SatData():
         return self
 
 
-    def shift_wind_to_L1(self):
+    def shift_wind_to_L1(self, L1Pos=[]):
         """Corrects for differences in B and density values due to solar wind
         expansion at different radii.
         
@@ -960,7 +961,8 @@ class SatData():
         """
 
         dttime = [num2date(t).replace(tzinfo=None) for t in self['time']]
-        L1Pos = get_l1_position(dttime, units=self.pos.h['Units'], refframe=self.pos.h['ReferenceFrame'])
+        if len(L1Pos) == 0:
+            L1Pos = get_l1_position(dttime, units=self.pos.h['Units'], refframe=self.pos.h['ReferenceFrame'])
         r_ratio = L1Pos['r']/self.pos['r']
 
         if 'density' in self.vars:
