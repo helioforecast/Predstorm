@@ -177,11 +177,12 @@ def main():
     logger.info("(2) Getting STEREO-A data...")
 
     # Estimate lag between STEREO-A measurements and Earth:
-    lag_sta_L1, lag_sta_r = ps.get_time_lag_wrt_earth(timestamp=timestamp, satname='STEREO-A')
-    est_timelag = lag_sta_L1 + lag_sta_r
+    #lag_sta_L1, lag_sta_r = ps.get_time_lag_wrt_earth(timestamp=timestamp, satname='STEREO-A')
+    #est_timelag = lag_sta_L1 + lag_sta_r
     # Find the number of days to plot into future (reduces as ST-A comes closer):
-    plot_future_days = min([est_timelag, psl5.plot_future_days])
-    stereo_start = timestamp - timedelta(days=plot_future_days+7)
+    #plot_future_days = min([est_timelag, psl5.plot_future_days])
+    #stereo_start = timestamp - timedelta(days=plot_future_days+7)
+    plot_future_days = 3
     logger.info("From STEREO-A position, plotting {:.1f} days in the past and {:.1f} days into the future.".format(
         plot_past_days, plot_future_days))
 
