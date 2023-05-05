@@ -63,8 +63,7 @@ import urllib
 
 # External
 import astropy.time
-import cdflib
-import heliosat
+#import heliosat
 import spiceypy
 try:
     from netCDF4 import Dataset
@@ -2412,7 +2411,6 @@ def get_rtsw_archive_data(filepath, add_dst=False):
                  'by': np.array(hf.get('by_gsm')), 'bz': np.array(hf.get('bz_gsm')),
                  'speed': np.array(hf.get('speed')), 'density': np.array(hf.get('density')), 
                  'temp': np.array(hf.get('temperature'))}
-    hf.close()
 
     if add_dst:
         data_dict['dst'] = np.array(hf.get('dst'))
@@ -2421,6 +2419,8 @@ def get_rtsw_archive_data(filepath, add_dst=False):
     rtsw_data.h['SamplingRate'] = hf.attrs['SamplingRate']
     rtsw_data.h['ReferenceFrame'] = 'GSM'
     rtsw_data.h['SpiceBody'] = 'EARTH'
+    hf.close()
+
     return rtsw_data
 
 
