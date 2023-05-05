@@ -5,18 +5,13 @@ using time-shifted data from a spacecraft east of the Sun-Earth line.
 Currently STEREO-A beacon data is used, but it is also suited for using data from a
 possible future L5 mission or interplanetary CubeSats.
 
-Author: C. Moestl, R. Bailey, IWF Graz, Austria
+Author: C. Moestl, R. Bailey, GeoSphere Austria
 twitter @chrisoutofspace, https://github.com/cmoestl
-started April 2018, last update June 2019
-
-python 3.7
-packages needed to add to anaconda installation: sunpy, cdflib (https://github.com/MAVENSDC/cdflib)
-
+Created April 2018, last updated May 2023
 
 issues:
 - rewrite verification in predstorm_l5.py
 - use astropy instead of ephem in predstorm_module.py
-
 
 current status:
 The code works with STEREO-A beacon and DSCOVR data and downloads STEREO-A beacon files
@@ -101,7 +96,6 @@ import seaborn as sns
 import urllib
 
 # Local imports
-import heliosat
 import predstorm as ps
 from predstorm.config.constants import AU, dist_to_L1
 from predstorm.config import plotting as pltcfg
@@ -213,6 +207,8 @@ def main():
         use_recurrence_model = True
 
     # If reading STEREO-A failed, take day from 27-day recurrence model instead:
+    if not os.path.exists("data"):
+        os.mkdir("data")
     if run_mode == 'normal' and use_recurrence_model:
         logger.info("STEREO-A plasma data is missing/corrupted, using 27-day recurrence model for plasma data instead!")
         rec_start = timestamp - timedelta(days=27)
@@ -355,9 +351,10 @@ def main():
         dst_label = 'Dst Burton et al. 1975'
         dst_pred['dst'] = dst_pred['dst'] + psl5.dst_offset
     elif psl5.dst_method.startswith('ml'):
-        with open('dst_pred_model_final.pickle', 'rb') as f:
+        #with open('dst_pred_model_final.pickle', 'rb') as f: # REMOVE
+        with open('dst_pred_model_2023-05-04.pickle', 'rb') as f:
             model = pickle.load(f)
-        dst_pred = sw_merged.make_dst_prediction_from_model(model, old_method=True)
+        dst_pred = sw_merged.make_dst_prediction_from_model(model)
         if psl5.dst_method == 'ml_dstdiff':
             dst_tl = sw_merged.make_dst_prediction(method='temerin_li_2006', t_correction=True)
             dst_pred['dst'] = dst_tl['dst'] + dst_pred['dst'] + psl5.dst_offset

@@ -528,6 +528,65 @@ class SatData():
         return self
 
 
+    def load_positions_spice(self, refframe='HEEQ', units='AU', observer='SUN', rlonlat=True, l1_corr=False):
+        """Loads data on satellite position into data object. Data is loaded using a
+        heliosat.SpiceObject.
+
+        Parameters
+        ==========
+        refframe : str (default=='HEEQ')
+            observer reference frame
+        observer : str (default='SUN')
+            observer body name
+        units : str (default='AU')
+            output units - m / km / AU
+        rlonlat : bool (default=True)
+            If True, returns coordinates in (r, lon, lat) format, not (x,y,z).
+        l1_corr : bool (default=False)
+            Corrects Earth position to L1 position if True.
+
+        Returns
+        =======
+        self with new data in self.pos
+        """
+
+        logger.info("load_positions: Loading position data into {} data".format(self.source))
+        t_traj = [spiceypy.datetime2et(num2date(i).replace(tzinfo=None)) for i in self['time']]
+        traj, _ = np.array(spiceypy.spkpos(self.h['SpiceBody'], t_traj, refframe, 'NONE', observer))
+
+        if units == "AU":
+            traj *= 6.68459e-9
+        elif units == "m":
+            traj *= 1e3
+        elif units == "km":
+            pass
+        else:
+            raise ValueError('unit "{0!s}" is not supported'.format(units))
+
+        posx, posy, posz = traj[:,0], traj[:,1], traj[:,2]
+
+        if l1_corr:
+            if units == 'AU':
+                corr = dist_to_L1/AU
+            elif units == 'm':
+                corr = dist_to_L1/1e3
+            elif units == 'km':
+                corr = dist_to_L1
+            posx = posx - corr
+        if rlonlat:
+            r, theta, phi = cart2sphere(posx, posy, posz)
+            Positions = PositionData([r, phi, theta], 'rlonlat')
+        else:
+            Positions = PositionData([posx, posy, posz], 'xyz')
+
+        Positions.h['Units'] = units
+        Positions.h['ReferenceFrame'] = refframe
+        Positions.h['Observer'] = observer
+        self.pos = Positions
+
+        return self
+
+
     def return_position_details(self, timestamp, sun_syn=26.24):
         """Returns a string describing STEREO-A's current whereabouts.
 
@@ -1156,7 +1215,7 @@ class SatData():
         cut_times = [1,2,3,4,5,6,8,12,16,20,24]
         reduced_keys = reduced_keys[:keep_first] + [k for k in reduced_keys[keep_first:] if int(k[5:-1]) in cut_times]
         features = df_features[reduced_keys]
-        # Interpolate over an NaNs:
+        # Interpolate over any NaNs:
         features = features.interpolate(method='linear', limit_direction='forward')
 
         logger.info("Making Dst prediction for {} using machine learning model".format(self.source))
@@ -1515,7 +1574,7 @@ def get_time_lag_wrt_earth(timestamp=None, satname='STEREO-A', v_mean=400., sun_
     else:
         raise Exception("Not a valid satellite name to find position!")
 
-    traj = SAT.trajectory([timestamp], frame='HEEQ', units='AU',
+    traj = SAT.trajectory([timestamp], reference_frame='HEEQ', units='AU',
                           observer='SUN')
 
     posx, posy, posz = traj[:,0][0], traj[:,1][0], traj[:,2][0]
@@ -1677,11 +1736,7 @@ def get_dscovr_archive_data(starttime, endtime, resolution='min', skip_files=Tru
                       source='DSCOVR')
     dscovr.h['DataSource'] = "DSCOVR Level 1 (NOAA)"
     dscovr.h['SamplingRate'] = tarray[1] - tarray[0]
-    if heliosat.__version__ >= '0.4.0':
-        dscovr.h['ReferenceFrame'] = DSCOVR_.spacecraft['data_keys']['dscovr_mag']['version_default']['columns'][0]['frame']
-    else:
-        dscovr.h['ReferenceFrame'] = DSCOVR_.spacecraft["data"]['mag'].get("frame")
-    dscovr.h['HeliosatObject'] = DSCOVR_
+    dscovr.h['SpiceBody'] = 'EARTH'
 
     return dscovr
 
@@ -1976,9 +2031,7 @@ def get_noaa_realtime_data():
     sw_data.h['DataSource'] = "DSCOVR (NOAA)"
     sw_data.h['SamplingRate'] = 1./24./60.
     sw_data.h['ReferenceFrame'] = 'GSM'
-    # Source isn't provided, but can assume DSCOVR:
-    DSCOVR_ = heliosat.DSCOVR()
-    sw_data.h['HeliosatObject'] = DSCOVR_
+    sw_data.h['SpiceBody'] = 'EARTH'
 
     logger.info('get_noaa_realtime_data: NOAA RTSW data read completed.')
 
@@ -1988,7 +2041,7 @@ def get_noaa_realtime_data():
 def get_omni_data(starttime=None, endtime=None, filepath='', download=False, dldir='data'):
     """
     Reads OMNI2 .dat format data
-    Will download and read OMNI2 data file (in .dat format).
+    Will download and read OMNI2 data file (in .dat format) if download=True.
     Variable definitions from OMNI2 dataset:
     see http://omniweb.gsfc.nasa.gov/html/ow_data.html
 
@@ -2149,7 +2202,7 @@ def get_omni_data(starttime=None, endtime=None, filepath='', download=False, dld
         omni_data.h['SourceURL'] = omni2_url
     omni_data.h['SamplingRate'] = times1[1] - times1[0]
     omni_data.h['ReferenceFrame'] = 'GSM'
-    omni_data.h['HeliosatObject'] = heliosat._SpiceObject(None, "EARTH")
+    omni_data.h['SpiceBody'] = 'EARTH'
 
     if starttime != None or endtime != None:
         omni_data = omni_data.cut(starttime=starttime, endtime=endtime)
@@ -2268,7 +2321,7 @@ def get_omni_data_new(starttime=None, endtime=None, filepath='', dldir='data'):
     omni_data.h['SourceURL'] = omni_data_url
     omni_data.h['SamplingRate'] = times[1] - times[0]
     omni_data.h['ReferenceFrame'] = 'GSM'
-    omni_data.h['HeliosatObject'] = heliosat._SpiceObject(None, "EARTH")
+    omni_data.h['SpiceBody'] = 'EARTH'
 
     if starttime != None or endtime != None:
         omni_data = omni_data.cut(starttime=starttime, endtime=endtime)
@@ -2359,13 +2412,15 @@ def get_rtsw_archive_data(filepath, add_dst=False):
                  'by': np.array(hf.get('by_gsm')), 'bz': np.array(hf.get('bz_gsm')),
                  'speed': np.array(hf.get('speed')), 'density': np.array(hf.get('density')), 
                  'temp': np.array(hf.get('temperature'))}
+    hf.close()
+
     if add_dst:
         data_dict['dst'] = np.array(hf.get('dst'))
     rtsw_data = SatData(data_dict, source='DSCOVR')
     rtsw_data.h['DataSource'] = "DSCOVR (NOAA)"
     rtsw_data.h['SamplingRate'] = hf.attrs['SamplingRate']
     rtsw_data.h['ReferenceFrame'] = 'GSM'
-    rtsw_data.h['HeliosatObject'] = heliosat.DSCOVR()
+    rtsw_data.h['SpiceBody'] = 'EARTH'
     return rtsw_data
 
 
