@@ -1,5 +1,7 @@
 __pycache__
 results
+archive
+realtime
 real
 data
 build
@@ -13,6 +15,7 @@ predstorm/spice/kernels/*
 omni2*.*
 .DS*
 predstorm_real*
+config.ini
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

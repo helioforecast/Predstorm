@@ -44,11 +44,11 @@ logger = logging.getLogger(__name__)
 # --------------------------- PLOTTING FUNCTIONS ----------------------------------------
 # =======================================================================================
 
-def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPRED_data, newell_coupling=None, dst_label='Dst Temerin & Li 2002', past_days=3.5, future_days=7., verification_mode=False, timestamp=None, times_3DCORE=[], times_nans={}, outfile='predstorm_real.png', **kwargs):
+def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPRED_data, newell_coupling=None, dst_label='Dst Temerin & Li 2002', past_days=3.5, future_days=7., timestamp=None, times_3DCORE=[], times_nans={}, plot_path='predstorm_real.png', **kwargs):
     """
     Plots solar wind variables, past from DSCOVR and future/predicted from STEREO-A.
     Total B-field and Bz (top), solar wind speed (second), particle density (third)
-    and Dst (fourth) from Kyoto and model prediction.
+    and preliminary Dst (fourth) from Kyoto and model prediction.
 
     Parameters
     ==========
@@ -74,9 +74,6 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
         Marker size for markers in plot.
     figsize : tuple(float=width, float=height) (default=(14,12))
         Figure size (in inches) for output file.
-    verification_mode : bool (default=False)
-        If True, verification mode will produce a plot of the predicted Dst
-        for model verification purposes.
     timestamp : datetime obj
         Time for 'now' label in plot.
 
@@ -311,25 +308,8 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
     pltcfg.group_info_text()
     pltcfg.liability_text()
 
-    #save plot
-    if not verification_mode:
-        plot_label = 'realtime'
-    else:
-        plot_label = 'verify'
-
-    filename = os.path.join('results','predstorm_v1_{}_stereo_a_plot_{}.png'.format(
-                            plot_label, datetime.strftime(timestamp, "%Y-%m-%d-%H_%M")))
-    filename_eps = filename.replace('png', 'eps')
-
-    if not verification_mode:
-        plt.savefig(outfile)
-        logger.info('Real-time plot saved as {}!'.format(outfile))
-
-    #if not server: # Just plot and exit
-    #    plt.show()
-    #    sys.exit()
-    plt.savefig(filename)
-    logger.info('Plot saved as png:\n'+ filename)
+    plt.savefig(plot_path)
+    logger.info('Plot saved as:\n        '+ plot_path)
 
 
 def plot_solarwind_science(DSCOVR_data, STEREOA_data, verification_mode=False, timestamp=None, past_days=7, future_days=7, plot_step=20, outfile='predstorm_science.png', **kwargs):

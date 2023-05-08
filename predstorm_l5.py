@@ -66,13 +66,26 @@ import os
 import sys
 import copy
 import getopt
+import shutil
+
+# Load config file
+import configparser
+config = configparser.ConfigParser()
+
+myopts, args = getopt.getopt(sys.argv[1:],"hv=", ['config=',"server", "help", "historic=", "verbose=",
+                                                  "use3DCORE=", "validation", "force-stereoa"])
+config_path = "config.ini"
+for opt, arg in myopts:
+    if opt == '--config':           # Define path for config
+        config_path = arg
+
+config.read(config_path)
 
 # READ INPUT OPTIONS FROM COMMAND LINE
 argv = sys.argv[1:]
-opts, args = getopt.getopt(argv,"hv=",["server", "help", "historic=", "verbose=", "use3DCORE=", "validation", "force-stereoa"])
 
 server = False
-if "--server" in [o for o, v in opts]:
+if "--server" in [o for o, v in myopts]:
     server = True
     print("In server mode!")
 
@@ -103,9 +116,6 @@ from predstorm.plot import plot_solarwind_and_dst_prediction, plot_solarwind_sci
 from predstorm.plot import plot_solarwind_pretty
 from predstorm.predict import dst_loss_function
 
-# GET INPUT PARAMETERS
-import predstorm_l5_input as psl5
-
 #========================================================================================
 #--------------------------------- MAIN SCRIPT ------------------------------------------
 #========================================================================================
@@ -116,7 +126,13 @@ def main():
     # General variables:
     tstr_format = "%Y-%m-%dT%H%M" #formerly "%Y-%m-%d-%H_%M"
     use_recurrence_model = False
-    plot_past_days = psl5.plot_past_days
+    plot_past_days = float(config['RealTimePred']['PlotPastDays'])
+    plot_future_days = float(config['RealTimePred']['PlotFutureDays'])
+    data_src_future = config['RealTimePred']['FutureSource'].upper()
+    if data_src_future == 'RECURRENCE':
+        use_recurrence_model = True
+    else:
+        use_recurrence_model = False
 
     # Define timing variables:
     timenow = datetime.utcnow()
@@ -176,15 +192,15 @@ def main():
 
     logger.info("(2) Getting STEREO-A data...")
 
-    # Estimate lag between STEREO-A measurements and Earth:
-    #lag_sta_L1, lag_sta_r = ps.get_time_lag_wrt_earth(timestamp=timestamp, satname='STEREO-A')
-    #est_timelag = lag_sta_L1 + lag_sta_r
-    # Find the number of days to plot into future (reduces as ST-A comes closer):
-    #plot_future_days = min([est_timelag, psl5.plot_future_days])
-    #stereo_start = timestamp - timedelta(days=plot_future_days+7)
-    plot_future_days = 3
-    logger.info("From STEREO-A position, plotting {:.1f} days in the past and {:.1f} days into the future.".format(
-        plot_past_days, plot_future_days))
+    if not use_recurrence_model:
+        # Estimate lag between STEREO-A measurements and Earth:
+        lag_sta_L1, lag_sta_r = ps.get_time_lag_wrt_earth(timestamp=timestamp, satname='STEREO-A')
+        est_timelag = lag_sta_L1 + lag_sta_r
+        # Find the number of days to plot into future (reduces as ST-A comes closer):
+        plot_future_days = min([est_timelag, plot_future_days])
+        stereo_start = timestamp - timedelta(days=plot_future_days+7)
+        logger.info("From STEREO-A position, plotting {:.1f} days in the past and {:.1f} days into the future.".format(
+            plot_past_days, plot_future_days))
 
     # Read data:
     try:
@@ -214,8 +230,9 @@ def main():
         logger.info("STEREO-A plasma data is missing/corrupted, using 27-day recurrence model for plasma data instead!")
         rec_start = timestamp - timedelta(days=27)
         rec_end = timestamp - timedelta(days=27-plot_future_days)
-        pers27_path = "data/rtsw_min_last100days.h5"
+        pers27_path = os.path.join(inputpath, "rtsw_min_last100days.h5")
         sw_future_min = ps.get_rtsw_archive_data(pers27_path)
+        logger.info("Data runs from {} to {}".format(num2date(sw_future_min['time'][0]), num2date(sw_future_min['time'][-1])))
         sw_future_min.cut(starttime=rec_start, endtime=rec_end)
         sw_future_min['time'] += 27. # correct by one Carrington rotation
         sw_future_min.h['DataSource'] += ' t+27days'
@@ -248,7 +265,6 @@ def main():
         fr_t_m, fr_B_m, fr_t, fr_B = ps.get_3DCORE_output(path_3DCORE)
     else:
         fr_t_m = []
-    dst['dst'] = dst['dst'] + psl5.dst_obs_offset
 
     #========================== (2) PREDICTION CALCULATIONS ==================================
 
@@ -334,31 +350,34 @@ def main():
     # Calculate Newell coupling parameter
     newell_coupling = sw_merged.get_newell_coupling()
 
+    dst_method = config['RealTimePred']['DstPredMethod']
+    dst_offset = float(config['RealTimePred']['DstOffset'])
+    dst_model_path = config['RealTimePred']['DstModelPath']
+
     # Predict Dst from L1 and STEREO-A:
-    if psl5.dst_method == 'temerin_li':
+    if dst_method == 'temerin_li':
         dst_pred = sw_merged.make_dst_prediction()
         dst_label = 'Dst Temerin & Li 2002'
-        dst_pred['dst'] = dst_pred['dst'] + psl5.dst_offset
-    elif psl5.dst_method == 'temerin_li_2006':
+        dst_pred['dst'] = dst_pred['dst'] + dst_offset
+    elif dst_method == 'temerin_li_2006':
         dst_pred = sw_merged.make_dst_prediction(method='temerin_li_2006', t_correction=True)
         dst_label = 'Dst Temerin & Li 2006'
-        dst_pred['dst'] = dst_pred['dst'] + psl5.dst_offset
-    elif psl5.dst_method == 'obrien':
+        dst_pred['dst'] = dst_pred['dst'] + dst_offset
+    elif dst_method == 'obrien':
         dst_pred = sw_merged.make_dst_prediction(method='obrien')
         dst_label = 'Dst OBrien & McPherron 2000'
-        dst_pred['dst'] = dst_pred['dst'] + psl5.dst_offset
-    elif psl5.dst_method == 'burton':
+        dst_pred['dst'] = dst_pred['dst'] + dst_offset
+    elif dst_method == 'burton':
         dst_pred = sw_merged.make_dst_prediction(method='burton')
         dst_label = 'Dst Burton et al. 1975'
-        dst_pred['dst'] = dst_pred['dst'] + psl5.dst_offset
-    elif psl5.dst_method.startswith('ml'):
-        #with open('dst_pred_model_final.pickle', 'rb') as f: # REMOVE
-        with open('dst_pred_model_2023-05-04.pickle', 'rb') as f:
+        dst_pred['dst'] = dst_pred['dst'] + dst_offset
+    elif dst_method.startswith('ml'):
+        with open(dst_model_path, 'rb') as f:
             model = pickle.load(f)
         dst_pred = sw_merged.make_dst_prediction_from_model(model)
-        if psl5.dst_method == 'ml_dstdiff':
+        if dst_method == 'ml_dstdiff':
             dst_tl = sw_merged.make_dst_prediction(method='temerin_li_2006', t_correction=True)
-            dst_pred['dst'] = dst_tl['dst'] + dst_pred['dst'] + psl5.dst_offset
+            dst_pred['dst'] = dst_tl['dst'] + dst_pred['dst'] + dst_offset
         dst_label = 'Dst predicted using ML (GBR)'
 
     # Combine in data object:
@@ -372,6 +391,7 @@ def main():
     logger.info("\n-------------------------\nPLOTTING\n-------------------------")
     # ********************************************************************
     logger.info("Creating output plots...")
+    realtime_plot_path = os.path.join(savepath_rt,'predstorm_real.png')
     plot_solarwind_and_dst_prediction([sw_past_min, sw_past], [sw_future_min, sw_future], 
                                       dst, dst_pred,
                                       newell_coupling=newell_coupling,
@@ -380,8 +400,14 @@ def main():
                                       dst_label=dst_label,
                                       timestamp=timestamp,
                                       times_3DCORE=fr_t_m,
-                                      times_nans=shifted_nan_periods)
+                                      times_nans=shifted_nan_periods,
+                                      plot_path=realtime_plot_path)
     plt.close()
+
+    archive_plot_path = os.path.join(savepath_archive,'predstorm_v1_realtime_{}.png'.format(
+        datetime.strftime(timestamp, "%Y-%m-%d")))
+    shutil.copyfile(realtime_plot_path, archive_plot_path)
+
     plot_solarwind_science([sw_past_min, sw_past], [sw_future_min, sw_future], 
                                       timestamp=timestamp,
                                       past_days=plot_past_days,
@@ -401,14 +427,21 @@ def main():
     logger.info("\n-------------------------\nWRITING RESULTS\n-------------------------")
 
     # Realtime 1-hour data:
-    ps.save_to_file('predstorm_real.txt', wind=sw_merged, dst=dst_pred, kp=kp_newell, aurora=aurora_power, ec=newell_coupling)
+    ps.save_to_file(os.path.join(savepath_rt,'predstorm_real.txt'), wind=sw_merged, dst=dst_pred, 
+                    kp=kp_newell, aurora=aurora_power, ec=newell_coupling)
     # Realtime 1-min data:
     if savemindata:
-        ps.save_to_file('predstorm_real_1m.txt', wind=sw_merged_min, 
+        ps.save_to_file(os.path.join(savepath_rt,'predstorm_real_1m.txt'), wind=sw_merged_min, 
                         dst=dst_pred.interp_to_time(sw_merged_min['time']),
                         kp=kp_newell.interp_to_time(sw_merged_min['time']), 
                         aurora=aurora_power.interp_to_time(sw_merged_min['time']), 
                         ec=newell_coupling.interp_to_time(sw_merged_min['time']))
+
+    archive_data_path_1m = os.path.join(savepath_archive,'predstorm_v1_realtime_1m_{}.txt'.format(
+        datetime.strftime(timestamp, "%Y-%m-%d")))
+    archive_data_path_1h = archive_data_path_1m.replace('1m', '1h')
+    shutil.copyfile(os.path.join(savepath_rt,'predstorm_real.txt'), archive_data_path_1h)
+    shutil.copyfile(os.path.join(savepath_rt,'predstorm_real_1m.txt'), archive_data_path_1m)
 
     past_100days = timenow - timedelta(days=100)
 
@@ -434,7 +467,7 @@ def main():
             pickle.dump(forecasts, f)
 
     # Standard data:
-    filename_save = outputdirectory+'/savefiles/predstorm_v1_realtime_stereo_a_save_{}.txt'.format(timenowstr)
+    filename_save = os.path.join(savepath_archive, 'predstorm_v1_realtime_stereo_a_save_{}.txt'.format(timenowstr))
     ps.save_to_file(filename_save, wind=sw_merged, dst=dst_pred, kp=kp_newell, aurora=aurora_power, ec=newell_coupling)
     logger.info('Variables saved in TXT form: '+filename_save)
 
@@ -615,7 +648,7 @@ if __name__ == '__main__':
     run_mode = 'normal'
     verbose, use3DCORE, force_stereoa = True, False, False
     run_validation = False
-    for opt, arg in opts:
+    for opt, arg in myopts:
         if opt == "--server":
             server = True
         if opt == '-v' or opt == "--verbose":
@@ -667,17 +700,31 @@ if __name__ == '__main__':
     logger = ps.init_logging(verbose=verbose)
 
     # CHECK OUTPUT DIRECTORIES AND REQUIRED FILES:
-    outputdirectory='results'
-    # Check if directory for output exists (for plots and txt files)
-    if os.path.isdir(outputdirectory) == False:
-        os.mkdir(outputdirectory)
-    # Make directory for savefiles
-    if os.path.isdir(outputdirectory+'/savefiles') == False:
-        os.mkdir(outputdirectory+'/savefiles')
-    # Check if directory for beacon data exists:
-    if os.path.isdir('data') == False: 
-        logger.info("Creating folder data for data downloads...")
-        os.mkdir('data')
+    # outputdirectory='results'
+    # # Check if directory for output exists (for plots and txt files)
+    # if os.path.isdir(outputdirectory) == False:
+    #     os.mkdir(outputdirectory)
+    # # Make directory for savefiles
+    # if os.path.isdir(outputdirectory+'/savefiles') == False:
+    #     os.mkdir(outputdirectory+'/savefiles')
+    # # Check if directory for beacon data exists:
+    # if os.path.isdir('data') == False: 
+    #     logger.info("Creating folder data for data downloads...")
+    #     os.mkdir('data')
+
+    # Make sure all paths are available:
+    # ----------------------------------
+    inputpath = config['RealTimePred']['InputDataPath']
+    if not os.path.exists(inputpath):
+        os.mkdir(inputpath)
+
+    savepath_rt = config['RealTimePred']['RealtimePath']
+    if not os.path.exists(savepath_rt):
+        os.mkdir(savepath_rt)
+
+    savepath_archive = config['RealTimePred']['ArchivePath']
+    if not os.path.exists(savepath_archive):
+        os.mkdir(savepath_archive)
 
     # Closes all plots
     plt.close('all')
