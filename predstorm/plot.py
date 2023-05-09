@@ -312,7 +312,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
     logger.info('Plot saved as:\n        '+ plot_path)
 
 
-def plot_solarwind_science(DSCOVR_data, STEREOA_data, verification_mode=False, timestamp=None, past_days=7, future_days=7, plot_step=20, outfile='predstorm_science.png', **kwargs):
+def plot_solarwind_science(DSCOVR_data, STEREOA_data, verification_mode=False, timestamp=None, past_days=7, future_days=7, plot_step=20, plot_path='predstorm_science.png', **kwargs):
     """
     Plots solar wind variables, past from DSCOVR and future/predicted from STEREO-A.
     Total B-field and Bz (top), solar wind speed (second), particle density (third)
@@ -485,11 +485,11 @@ def plot_solarwind_science(DSCOVR_data, STEREOA_data, verification_mode=False, t
         plot_label = 'verify'
 
     if not verification_mode:
-        plt.savefig(outfile)
-        logger.info('Real-time plot saved as {}!'.format(outfile))
+        plt.savefig(plot_path)
+        logger.info('Real-time plot saved as {}!'.format(plot_path))
 
 
-def plot_solarwind_pretty(sw_past, sw_future, dst, newell_coupling, timestamp):
+def plot_solarwind_pretty(sw_past, sw_future, dst, newell_coupling, timestamp, plot_path='predstorm_pretty.png'):
     """Uses the package mplcyberpunk to make a simpler and more visually appealing plot.
 
     TO-DO:
@@ -565,9 +565,12 @@ def plot_solarwind_pretty(sw_past, sw_future, dst, newell_coupling, timestamp):
 
     pltcfg.group_info_text_small()
 
-    plt.savefig("predstorm_pretty.png")
+    plt.savefig(plot_path)
     # To cut the final version:
     # convert predstorm_pretty.png -crop 1420x1000+145+30 predstorm_pretty_cropped.png
+
+    # Reset Matplotlib styles to normal:
+    plt.rcParams.update(plt.rcParamsDefault)
 
 
 def plot_stereo_dscovr_comparison(stam, dism, dst, timestamp=None, look_back=20, outfile=None, **kwargs):

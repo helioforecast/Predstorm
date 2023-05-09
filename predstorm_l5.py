@@ -90,10 +90,10 @@ if "--server" in [o for o, v in myopts]:
     print("In server mode!")
 
 import matplotlib
-if server:
-    matplotlib.use('Agg') # important for server version, otherwise error when making figures
-else:
-    matplotlib.use('Qt5Agg') # figures are shown on mac
+#if server:
+matplotlib.use('Agg') # important for server version, otherwise error when making figures
+#else:
+#    matplotlib.use('Qt5Agg') # figures are shown on mac
 
 from datetime import datetime, timedelta
 import h5py
@@ -128,6 +128,7 @@ def main():
     use_recurrence_model = False
     plot_past_days = float(config['RealTimePred']['PlotPastDays'])
     plot_future_days = float(config['RealTimePred']['PlotFutureDays'])
+    save_future_days = float(config['RealTimePred']['SaveFutureDays'])
     data_src_future = config['RealTimePred']['FutureSource'].upper()
     if data_src_future == 'RECURRENCE':
         use_recurrence_model = True
@@ -140,6 +141,7 @@ def main():
         timestamp = timenow
     timestampstr = datetime.strftime(timestamp, tstr_format) # timeutcstr
     timenowstr = datetime.strftime(timenow, tstr_format)
+    datestr = datetime.strftime(timenow, '%Y-%m-%d')
     use_realtime = (timenow - timestamp).days < (7.-plot_past_days)
 
     predstorm_header = ''
@@ -161,7 +163,6 @@ def main():
     #================================== (1) GET DATA ========================================
 
     logger.info("\n-------------------------\nDATA READS\n-------------------------")
-    ps.get_sdo_realtime_image()
 
     #------------------------ (1a) Get real-time DSCOVR data --------------------------------
 
@@ -229,15 +230,20 @@ def main():
     if run_mode == 'normal' and use_recurrence_model:
         logger.info("STEREO-A plasma data is missing/corrupted, using 27-day recurrence model for plasma data instead!")
         rec_start = timestamp - timedelta(days=27)
-        rec_end = timestamp - timedelta(days=27-plot_future_days)
+        rec_end = timestamp - timedelta(days=27-save_future_days)
         pers27_path = os.path.join(inputpath, "rtsw_min_last100days.h5")
         sw_future_min = ps.get_rtsw_archive_data(pers27_path)
-        logger.info("Data runs from {} to {}".format(num2date(sw_future_min['time'][0]), num2date(sw_future_min['time'][-1])))
+        tlast_recurrence = num2date(sw_future_min['time'][-1])
+        logger.info("Data runs from {} to {}".format(num2date(sw_future_min['time'][0]), tlast_recurrence))
         sw_future_min.cut(starttime=rec_start, endtime=rec_end)
         sw_future_min['time'] += 27. # correct by one Carrington rotation
         sw_future_min.h['DataSource'] += ' t+27days'
         sw_future_min.source += '+27days'
         shifted_nan_periods = sw_future_min.find_nan_periods()
+
+        # Make sure last data point is after current date
+        if len(sw_future_min['time']) == 0:
+            raise Exception("The file rtsw_min_last100days.h5 foes not contain enough data for using recurrence!")
 
     if not use_recurrence_model:
         time_last_sta = num2date(stam['time'][-1]).replace(tzinfo=None)
@@ -388,11 +394,19 @@ def main():
 
     #========================== (3) PLOT RESULTS ============================================
 
+    # Make reduced copies to make plotting and min/max setting easier:
+    sw_future_min_plot = copy.deepcopy(sw_future_min)
+    sw_future_plot = copy.deepcopy(sw_future)
+    plot_start = timestamp
+    plot_end = timestamp + timedelta(save_future_days)
+    sw_future_min_plot.cut(starttime=plot_start, endtime=plot_end)
+    sw_future_plot.cut(starttime=plot_start, endtime=plot_end)
+
     logger.info("\n-------------------------\nPLOTTING\n-------------------------")
     # ********************************************************************
     logger.info("Creating output plots...")
     realtime_plot_path = os.path.join(savepath_rt,'predstorm_real.png')
-    plot_solarwind_and_dst_prediction([sw_past_min, sw_past], [sw_future_min, sw_future], 
+    plot_solarwind_and_dst_prediction([sw_past_min, sw_past], [sw_future_min_plot, sw_future_plot], 
                                       dst, dst_pred,
                                       newell_coupling=newell_coupling,
                                       past_days=plot_past_days,
@@ -408,13 +422,17 @@ def main():
         datetime.strftime(timestamp, "%Y-%m-%d")))
     shutil.copyfile(realtime_plot_path, archive_plot_path)
 
+    science_plot_path = os.path.join(savepath_rt,'predstorm_science.png')
     plot_solarwind_science([sw_past_min, sw_past], [sw_future_min, sw_future], 
                                       timestamp=timestamp,
                                       past_days=plot_past_days,
-                                      future_days=plot_future_days)
+                                      future_days=plot_future_days,
+                                      plot_path=science_plot_path)
 
     try:
-        plot_solarwind_pretty(sw_past, sw_future, dst_pred, newell_coupling, timestamp)
+        pretty_plot_path = os.path.join(savepath_rt,'predstorm_real.png')
+        plot_solarwind_pretty(sw_past, sw_future, dst_pred, newell_coupling, timestamp,
+                              plot_path=pretty_plot_path)
     except Exception as e:
         logger.warning("Could not run plot_solarwind_pretty() due to error: {}".format(e))
     # ********************************************************************
@@ -427,11 +445,11 @@ def main():
     logger.info("\n-------------------------\nWRITING RESULTS\n-------------------------")
 
     # Realtime 1-hour data:
-    ps.save_to_file(os.path.join(savepath_rt,'predstorm_real.txt'), wind=sw_merged, dst=dst_pred, 
+    ps.save_to_file(os.path.join(savepath_rt,'predstorm_real.txt'), wind=sw_merged, dst=dst_pred,
                     kp=kp_newell, aurora=aurora_power, ec=newell_coupling)
     # Realtime 1-min data:
     if savemindata:
-        ps.save_to_file(os.path.join(savepath_rt,'predstorm_real_1m.txt'), wind=sw_merged_min, 
+        ps.save_to_file(os.path.join(savepath_rt,'predstorm_real_1m.txt'), wind=sw_merged_min,
                         dst=dst_pred.interp_to_time(sw_merged_min['time']),
                         kp=kp_newell.interp_to_time(sw_merged_min['time']), 
                         aurora=aurora_power.interp_to_time(sw_merged_min['time']), 
@@ -447,7 +465,7 @@ def main():
 
     # Data for archiving (past 100 days):
     if run_mode == 'normal':
-        pickled_forecasts = "data/past_100days_running_forecasts.p"
+        pickled_forecasts = os.path.join(inputpath, "past_100days_running_forecasts.p")
         if not os.path.exists(pickled_forecasts):
             forecasts = sw_merged.data
             forecasts = forecasts[:, forecasts[0] > date2num(timestamp)]
@@ -467,7 +485,7 @@ def main():
             pickle.dump(forecasts, f)
 
     # Standard data:
-    filename_save = os.path.join(savepath_archive, 'predstorm_v1_realtime_stereo_a_save_{}.txt'.format(timenowstr))
+    filename_save = os.path.join(savepath_archive, 'predstorm_v1_realtime_stereo_a_save_{}.txt'.format(datestr))
     ps.save_to_file(filename_save, wind=sw_merged, dst=dst_pred, kp=kp_newell, aurora=aurora_power, ec=newell_coupling)
     logger.info('Variables saved in TXT form: '+filename_save)
 
@@ -550,11 +568,11 @@ def main():
 
     logger.info("Final results:\n\n"+results_str)
 
-    #-------------------------------------- (4f) TEST PLOT FOR -------------------------------------
+    #------------------------------- (4f) PLOT SOME BASIC STATS -------------------------
     try:
         fig, (axes) = plt.subplots(1, 3, figsize=(15, 5))
         # Plot of correlation between values
-        axes[0].plot(dst_pred_cut, dst_cut, 'bx')
+        axes[0].plot(dst_pred_cut, dst_cut, 'x')
         axes[0].set_title("Real vs. forecast Dst")
         axes[0].set_xlabel("Forecast Dst [nT]")
         axes[0].set_ylabel("Kyoto Dst [nT]")
@@ -565,7 +583,8 @@ def main():
         axes[1].set_xlim([30, -200])
         axes[1].set_xlabel("Forecast Dst [nT]")
 
-        plt.savefig('predstorm_stats.png')
+        plt.suptitle("")
+        plt.savefig(os.path.join(savepath_rt, 'predstorm_stats.png'))
     except:
         pass
 
@@ -698,19 +717,6 @@ if __name__ == '__main__':
 
     # INITIATE LOGGING:
     logger = ps.init_logging(verbose=verbose)
-
-    # CHECK OUTPUT DIRECTORIES AND REQUIRED FILES:
-    # outputdirectory='results'
-    # # Check if directory for output exists (for plots and txt files)
-    # if os.path.isdir(outputdirectory) == False:
-    #     os.mkdir(outputdirectory)
-    # # Make directory for savefiles
-    # if os.path.isdir(outputdirectory+'/savefiles') == False:
-    #     os.mkdir(outputdirectory+'/savefiles')
-    # # Check if directory for beacon data exists:
-    # if os.path.isdir('data') == False: 
-    #     logger.info("Creating folder data for data downloads...")
-    #     os.mkdir('data')
 
     # Make sure all paths are available:
     # ----------------------------------

@@ -34,6 +34,8 @@ config['RealTimePred'] =       {'DstPredMethod'   : 'ml_dstdiff',
                                 'PlotPastDays'    : '3.5',
                                 # Number of days into the future to plot
                                 'PlotFutureDays'  : '3',
+                                # Number of days into the future to save as prediction
+                                'SaveFutureDays'  : '14',
                                 # Source of data for next days (options are 'recurrence' or 'STEREO-A')
                                 'FutureSource'    : 'Recurrence',
                                 # Location to save input data e.g. real-time solar wind
