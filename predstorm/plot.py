@@ -489,12 +489,13 @@ def plot_solarwind_science(DSCOVR_data, STEREOA_data, verification_mode=False, t
         logger.info('Real-time plot saved as {}!'.format(plot_path))
 
 
-def plot_solarwind_pretty(sw_past, sw_future, dst, newell_coupling, timestamp, plot_path='predstorm_pretty.png'):
+def plot_solarwind_pretty(sw_past, sw_future, dst, newell_coupling, timestamp, future_days=3, plot_path='predstorm_pretty.png'):
     """Uses the package mplcyberpunk to make a simpler and more visually appealing plot.
 
     TO-DO:
     - Implement weighted average smoothing on Newell Coupling."""
 
+    sys.path.append("/usr/local/lib/python3.8/dist-packages") # for specific server
     import mplcyberpunk
     plt.style.use("cyberpunk")
     c_speed = (0.58, 0.404, 0.741)
@@ -505,9 +506,11 @@ def plot_solarwind_pretty(sw_past, sw_future, dst, newell_coupling, timestamp, p
     fig, (ax1, ax2, ax3) = plt.subplots(3, figsize=(17,9), sharex=True)
     time_past = dst['time'] <= date2num(timestamp)
     time_future = dst['time'] >= date2num(timestamp)
+    i_fut = np.where(np.logical_and(sw_future['time'] > date2num(timestamp), \
+                     sw_future['time'] < date2num(timestamp)+future_days))[0]
     # Plot data:
     ax1.plot_date(sw_past['time'], sw_past['speed'], '-', c=c_speed, label="Solar wind speed [km/s]")
-    ax1.plot_date(sw_future['time'], sw_future['speed'], '-', c=c_speed, alpha=alpha_fut)
+    ax1.plot_date(sw_future['time'][i_fut], sw_future['speed'][i_fut], '-', c=c_speed, alpha=alpha_fut)
     ax2.plot_date(dst['time'][time_past], dst['dst'][time_past], '-', c=c_dst, label="$Dst$ [nT]")
     ax2.plot_date(dst['time'][time_future], dst['dst'][time_future], '-', c=c_dst, alpha=alpha_fut)
     avg_newell_coupling = newell_coupling.get_weighted_average('ec')
@@ -554,7 +557,7 @@ def plot_solarwind_pretty(sw_past, sw_future, dst, newell_coupling, timestamp, p
     # Formatting:
     tick_date = num2date(dst['time'][0]).replace(hour=0, minute=0, second=0, microsecond=0)
     ax3.set_xticks([tick_date + timedelta(days=n) for n in range(1,15)])
-    ax3.set_xlim([dst['time'][0], dst['time'][-1]])
+    ax3.set_xlim([dst['time'][0], date2num(timestamp)+future_days]) #dst['time'][-1]])
     myformat = DateFormatter('%a\n%b %d')
     ax3.xaxis.set_major_formatter(myformat)
     ax1.tick_params(axis='both', which='major', labelsize=14)

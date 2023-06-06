@@ -202,6 +202,8 @@ def main():
         stereo_start = timestamp - timedelta(days=plot_future_days+7)
         logger.info("From STEREO-A position, plotting {:.1f} days in the past and {:.1f} days into the future.".format(
             plot_past_days, plot_future_days))
+    else:
+        stereo_start = timestamp
 
     # Read data:
     try:
@@ -430,7 +432,7 @@ def main():
                                       plot_path=science_plot_path)
 
     try:
-        pretty_plot_path = os.path.join(savepath_rt,'predstorm_real.png')
+        pretty_plot_path = os.path.join(savepath_rt,'predstorm_pretty.png')
         plot_solarwind_pretty(sw_past, sw_future, dst_pred, newell_coupling, timestamp,
                               plot_path=pretty_plot_path)
     except Exception as e:
