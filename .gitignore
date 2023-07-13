@@ -6,6 +6,7 @@ real
 data
 build
 dist
+create_config_*
 predstorm.egg*
 sta_beacon
 predstorm/spice/kernels/*

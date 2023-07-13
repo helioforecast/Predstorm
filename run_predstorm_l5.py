@@ -404,6 +404,10 @@ def main():
     sw_future_min_plot.cut(starttime=plot_start, endtime=plot_end)
     sw_future_plot.cut(starttime=plot_start, endtime=plot_end)
 
+    # Archive paths
+    savepath_archive_plt = os.path.join(savepath_archive, 'plots')
+    savepath_archive_txt = os.path.join(savepath_archive, 'text')
+
     logger.info("\n-------------------------\nPLOTTING\n-------------------------")
     # ********************************************************************
     logger.info("Creating output plots...")
@@ -420,7 +424,7 @@ def main():
                                       plot_path=realtime_plot_path)
     plt.close()
 
-    archive_plot_path = os.path.join(savepath_archive,'predstorm_v1_realtime_{}.png'.format(
+    archive_plot_path = os.path.join(savepath_archive_plt,'predstorm_v1_realtime_{}.png'.format(
         datetime.strftime(timestamp, "%Y-%m-%d")))
     shutil.copyfile(realtime_plot_path, archive_plot_path)
 
@@ -453,11 +457,11 @@ def main():
     if savemindata:
         ps.save_to_file(os.path.join(savepath_rt,'predstorm_real_1m.txt'), wind=sw_merged_min,
                         dst=dst_pred.interp_to_time(sw_merged_min['time']),
-                        kp=kp_newell.interp_to_time(sw_merged_min['time']), 
-                        aurora=aurora_power.interp_to_time(sw_merged_min['time']), 
+                        kp=kp_newell.interp_to_time(sw_merged_min['time']),
+                        aurora=aurora_power.interp_to_time(sw_merged_min['time']),
                         ec=newell_coupling.interp_to_time(sw_merged_min['time']))
 
-    archive_data_path_1m = os.path.join(savepath_archive,'predstorm_v1_realtime_1m_{}.txt'.format(
+    archive_data_path_1m = os.path.join(savepath_archive_txt,'predstorm_v1_realtime_1m_{}.txt'.format(
         datetime.strftime(timestamp, "%Y-%m-%d")))
     archive_data_path_1h = archive_data_path_1m.replace('1m', '1h')
     shutil.copyfile(os.path.join(savepath_rt,'predstorm_real.txt'), archive_data_path_1h)
@@ -487,11 +491,9 @@ def main():
             pickle.dump(forecasts, f)
 
     # Standard data:
-    filename_save = os.path.join(savepath_archive, 'predstorm_v1_realtime_stereo_a_save_{}.txt'.format(datestr))
+    filename_save = os.path.join(savepath_archive_txt, 'predstorm_v1_realtime_stereo_a_save_{}.txt'.format(datestr))
     ps.save_to_file(filename_save, wind=sw_merged, dst=dst_pred, kp=kp_newell, aurora=aurora_power, ec=newell_coupling)
     logger.info('Variables saved in TXT form: '+filename_save)
-
-    logger.info("PREDSTORM_L5 run complete!")
 
 
     #========================== (5) CARRY OUT VALIDATION ====================================
@@ -731,8 +733,11 @@ if __name__ == '__main__':
         os.mkdir(savepath_rt)
 
     savepath_archive = config['RealTimePred']['ArchivePath']
-    if not os.path.exists(savepath_archive):
-        os.mkdir(savepath_archive)
+    if not os.path.exists(os.path.join(savepath_archive, 'plots')):
+        os.mkdir(os.path.join(savepath_archive, 'plots'))
+    if not os.path.exists(os.path.join(savepath_archive, 'text')):
+        os.mkdir(os.path.join(savepath_archive, 'text'))
+
 
     # Closes all plots
     plt.close('all')
@@ -744,4 +749,5 @@ if __name__ == '__main__':
 
     main()
 
+    print("------ This run completed at {}! ------\n".format(datetime.utcnow()))
 
