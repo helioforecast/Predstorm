@@ -1,0 +1,17 @@
+name: predstorm1
+dependencies:
+  - python=3.10
+  - jupyterlab
+  - pip==22.3.1
+  - pip:     
+    - numpy==1.23.1
+    - matplotlib==3.6.3
+    - astropy==5.3.1
+    - h5py==3.8.0
+    - numba==0.56.4
+    - pandas==1.5.3
+    - scikit-learn==1.2.1
+    - seaborn==0.12.2
+    - spiceypy==5.1.2
+    - requests==2.31
+    - mplcyberpunk==0.7.0
