@@ -1,0 +1,19 @@
+name: predstorm
+channels:
+  - conda-forge
+  - anaconda
+  - defaults
+dependencies:
+  - astropy=4.3
+  - h5py=3.7
+  - matplotlib=3.5
+  - numba=0.56
+  - numpy=1.21
+  - pandas=1.3
+  - python=3.7
+  - requests=2.29
+  - scikit-learn=1.0
+  - seaborn=0.12
+  - spiceypy=5.1
+  - pip:
+    - mplcyberpunk==0.7
