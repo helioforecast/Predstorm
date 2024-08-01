@@ -564,7 +564,7 @@ def plot_solarwind_pretty(sw_past, sw_future, dst, newell_coupling, timestamp, f
     ax2.tick_params(axis='both', which='major', labelsize=14)
     ax3.tick_params(axis='both', which='major', labelsize=14)
     plt.subplots_adjust(hspace=0.)
-    ax1.set_title("Helio4Cast Geomagnetic Activity Forecast, {} UTC".format(timestamp.strftime("%Y-%m-%d %H:%M")), pad=20)
+    ax1.set_title("Austrian Space Weather Office, Recurrence Model Geomagnetic Activity Forecast, {} UTC".format(timestamp.strftime("%Y-%m-%d %H:%M")), pad=20)
 
     pltcfg.group_info_text_small()
 
