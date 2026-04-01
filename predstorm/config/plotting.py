@@ -71,7 +71,7 @@ def liability_text():
 
 def group_info_text():
     plt.figtext(0.99,0.05,'Austrian Space Weather Office, GeoSphere Austria, https://helioforecast.space', fontsize=12, ha='right')
-    plt.figtext(0.99,0.025,'https://x.com/ASWOGeoSphere', fontsize=12, ha='right')
+    plt.figtext(0.99,0.025,'https://bsky.app/profile/aswogeosphere.bsky.social', fontsize=10, ha='right')
 
 def group_info_text_small():
     plt.figtext(0.90,0.020,'Austrian Space Weather Office, GeoSphere Austria, https://helioforecast.space', fontsize=12, ha='right')

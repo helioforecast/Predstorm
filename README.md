@@ -4,7 +4,7 @@ This is Python3 code for space weather prediction research.
 
 The package is used for predicting the background solar wind, high speed solar wind streams and solar storm magnetic flux ropes based on data from solar wind monitors at the Sun-Earth L1 and L5 points, as well as from any spacecraft positioned east of the Sun-Earth line around or < 1 AU. We also derive predictions of the geomagnetic Dst index, Kp and auroral power.
 
-If you want to use parts of this code for generating results for peer-reviewed scientific publications, please contact us per email (see contributor biographies) or via twitter @chrisoutofspace (Christian Moestl).
+If you want to use parts of this code for generating results for peer-reviewed scientific publications, please contact us per email (see contributor biographies) or via bluesky @chrisoutofspace (Christian Moestl).
 
 To see this code running in real-time, visit https://helioforecast.space/solarwind.
 

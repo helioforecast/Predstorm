@@ -1890,7 +1890,51 @@ def get_l1_position(times, units='AU', refframe='HEEQ', observer='SUN'):
     return L1Pos
 
 
+
+
+
+
+
 def get_noaa_dst():
+    """Loads real-time Dst data from NOAA webpage:
+    http://services.swpc.noaa.gov/products/kyoto-dst.json
+
+    Parameters
+    ==========
+    None
+
+    Returns
+    =======
+    dst : SatData object
+        Object containing arrays of time and dst values.
+    """
+    url_dst='http://services.swpc.noaa.gov/products/kyoto-dst.json'
+    with urllib.request.urlopen(url_dst) as url:
+        dr = json.loads(url.read().decode())
+    rdst_time=np.zeros(len(dr))
+    rdst=np.zeros(len(dr))
+
+    #put the data in the array 
+    for entry in dr:
+            x = [entry["time_tag"] for entry in dr]
+            rdst = [entry["dst"] for entry in dr]        
+
+    for i in np.arange(0,len(rdst)):
+     #          rdst_time[i]=datetime.datetime.strptime(x[i], "%Y-%m-%dT%H:%M:%S") 
+               rdst_time[i]=date2num(datetime.strptime(x[i], "%Y-%m-%dT%H:%M:%S"))
+
+    logger.info("NOAA real-time Dst data loaded.")
+
+    dst_data = SatData({'time': rdst_time, 'dst': rdst},
+                       source='KyotoDst')
+    dst_data.h['DataSource'] = "Kyoto Dst (NOAA)"
+    dst_data.h['SamplingRate'] = 1./24.
+
+    return dst_data
+
+
+########previous version for NOAA Dst files
+def get_noaa_dst_old():
     """Loads real-time Dst data from NOAA webpage:
     http://services.swpc.noaa.gov/products/kyoto-dst.json
 
@@ -1906,14 +1950,16 @@ def get_noaa_dst():
 
     url_dst='http://services.swpc.noaa.gov/products/kyoto-dst.json'
     with urllib.request.urlopen(url_dst) as url:
-        dr = json.loads    (url.read().decode())
+        dr = json.loads(url.read().decode())
     dr=dr[1:]
     #define variables 
-    #plasma
     rdst_time_str=['']*len(dr)
     rdst_time=np.zeros(len(dr))
     rdst=np.zeros(len(dr))
     #convert variables to numpy arrays
+    
+    
+    
     #mag
     for k in np.arange(0,len(dr),1):
         #handle missing data, they show up as None from the JSON data file
