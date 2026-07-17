@@ -96,7 +96,7 @@ matplotlib.use('Agg') # important for server version, otherwise error when makin
 #    matplotlib.use('Qt5Agg') # figures are shown on mac
 
 from datetime import datetime, timedelta
-import h5py
+#import h5py
 import logging
 import logging.config
 import matplotlib.pyplot as plt
@@ -166,28 +166,30 @@ def main():
 
     #------------------------ (1a) Get real-time DSCOVR data --------------------------------
 
-    logger.info("(1) Getting L1 data...")
-    if use_realtime:
+    # DEPRECATED SINCE NOAA DATA NO LONGER AVAILABLE IN THIS FORMAT
+
+    #logger.info("(1) Getting L1 data...")
+    #if use_realtime:
         # If recent, use real-time data:
-        dism = ps.get_noaa_realtime_data()
-        dism = dism.cut(endtime=timestamp)
-    else:
+    #    dism = ps.get_noaa_realtime_data()
+    #    dism = dism.cut(endtime=timestamp)
+    #else:
         # If older timestamp, source from online archive:
-        logger.info("Using archived DSCOVR data")
-        dism = ps.get_dscovr_data(starttime=timestamp-timedelta(days=plot_past_days+1),
-                                  endtime=timestamp)
-    time_last_rtsw = num2date(dism['time'][-1]).replace(tzinfo=None) # original timenow
+    #    logger.info("Using archived DSCOVR data")
+    #    dism = ps.get_dscovr_data(starttime=timestamp-timedelta(days=plot_past_days+1),
+    #                              endtime=timestamp)
+    #time_last_rtsw = num2date(dism['time'][-1]).replace(tzinfo=None) # original timenow
 
     # Linearly interpolate over NaNs and resample to hourly data:
-    dism.interp_nans()
-    sw_past_min = dism
-    sw_past = dism.make_hourly_data()
+    #dism.interp_nans()
+    #sw_past_min = dism
+    #sw_past = dism.make_hourly_data()
 
-    logger.info('Current time (UTC):')
-    logger.info('\t{}'.format(timenow))
-    logger.info('Time of last datapoint in NOAA real-time data (UTC):')
-    logger.info('\t{}'.format(time_last_rtsw))
-    logger.info('Time lag in minutes: {:.0f}'.format(np.round((timenow-time_last_rtsw).seconds/60., 0)))
+    #logger.info('Current time (UTC):')
+    #logger.info('\t{}'.format(timenow))
+    #logger.info('Time of last datapoint in NOAA real-time data (UTC):')
+    #logger.info('\t{}'.format(time_last_rtsw))
+    #logger.info('Time lag in minutes: {:.0f}'.format(np.round((timenow-time_last_rtsw).seconds/60., 0)))
 
     #------------------------ (1b) Get real-time STEREO-A beacon data -----------------------
 
@@ -233,19 +235,28 @@ def main():
         logger.info("STEREO-A plasma data is missing/corrupted, using 27-day recurrence model for plasma data instead!")
         rec_start = timestamp - timedelta(days=27)
         rec_end = timestamp - timedelta(days=27-save_future_days)
-        pers27_path = os.path.join(inputpath, "rtsw_min_last100days.h5")
-        sw_future_min = ps.get_rtsw_archive_data(pers27_path)
+        pers27_path_min = os.path.join(inputpath, "rtsw_min_last100days_TEST.h5")
+        pers27_path_hour = os.path.join(inputpath, "rtsw_hour_last100days_TEST.h5")
+        if not os.path.exists(pers27_path_min):
+            print("!!!!!!!!!!!!!!!!!!!!\nMissing RTSW archived data for recurrence!")
+            print("Make sure you run the following to create the file:")
+            print("    python archive_rtsw.py")
+            sys.exit()
+        sw_future_min = ps.get_rtsw_archive_data(pers27_path_min)
+        sw_future_hour = ps.get_rtsw_archive_data(pers27_path_hour)
+        sw_past_min = copy.deepcopy(sw_future_min)
+        sw_past = copy.deepcopy(sw_future_hour)
         tlast_recurrence = num2date(sw_future_min['time'][-1])
         logger.info("Data runs from {} to {}".format(num2date(sw_future_min['time'][0]), tlast_recurrence))
         sw_future_min.cut(starttime=rec_start, endtime=rec_end)
-        sw_future_min['time'] += 27. # correct by one Carrington rotation
+        sw_future_min['time'] += 27. # "correct" by one Carrington rotation
         sw_future_min.h['DataSource'] += ' t+27days'
         sw_future_min.source += '+27days'
         shifted_nan_periods = sw_future_min.find_nan_periods()
 
         # Make sure last data point is after current date
         if len(sw_future_min['time']) == 0:
-            raise Exception("The file rtsw_min_last100days.h5 foes not contain enough data for using recurrence!")
+            raise Exception("The file rtsw_min_last100days.h5 does not contain enough data for using recurrence!")
 
     if not use_recurrence_model:
         time_last_sta = num2date(stam['time'][-1]).replace(tzinfo=None)
@@ -378,6 +389,10 @@ def main():
     elif dst_method == 'burton':
         dst_pred = sw_merged.make_dst_prediction(method='burton')
         dst_label = 'Dst Burton et al. 1975'
+        dst_pred['dst'] = dst_pred['dst'] + dst_offset
+    elif dst_method == 'pennati_2026':
+        dst_pred = sw_merged.make_dst_prediction(method='pennati_2026')
+        dst_label = 'Dst Pennati et al. 2026'
         dst_pred['dst'] = dst_pred['dst'] + dst_offset
     elif dst_method.startswith('ml'):
         with open(dst_model_path, 'rb') as f:
@@ -650,7 +665,7 @@ def validation(look_back=40):
         axes[i_var].plot_date(sw_validation['time'], sta_only, 'r-', lw=lw, label="STEREO-A ({:.0f}%)".format(100.*len(l5_inds[0])/len(sw_validation)))
         axes[i_var].set_ylabel(ylabels[pltvar])
     axes[-1].plot_date(sw_validation['time'], sw_validation['dst']-kyoto_dst['dst'], 'k-', lw=lw)
-    axes[-1].set_ylabel("$\Delta Dst$ [nT]")
+    axes[-1].set_ylabel(r"$\Delta Dst$ [nT]")
 
     # Formatting:
     axes[0].set_title("Validation plot for solar wind forecasting between {} and {}".format((now - timedelta(days=look_back)).strftime('%Y-%m-%d'), now.strftime('%Y-%m-%d')))

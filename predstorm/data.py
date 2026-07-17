@@ -46,9 +46,10 @@ from datetime import datetime, timedelta, timezone
 from dateutil.relativedelta import relativedelta
 from dateutil import tz
 import gzip
-import h5py
+#import h5py
 import logging
 import numpy as np
+import pandas as pd
 import pdb
 import pickle
 import re
@@ -61,10 +62,11 @@ from glob import iglob
 import json
 import urllib
 
+
 # External
 import astropy.time
 #import heliosat
-import spiceypy
+#import spiceypy
 try:
     from netCDF4 import Dataset
 except:
@@ -73,7 +75,7 @@ except:
 # Local
 from .predict import make_kp_from_wind, calc_ring_current_term
 from .predict import make_aurora_power_from_wind, calc_newell_coupling
-from .predict import calc_dst_burton, calc_dst_obrien, calc_dst_temerin_li
+from .predict import calc_dst_burton, calc_dst_obrien, calc_dst_temerin_li, calc_dst_pennati
 from .predict import DstFeatureExtraction, dst_loss_function
 from .config.constants import AU, dist_to_L1
 
@@ -1171,6 +1173,9 @@ class SatData():
         elif method.lower() == 'burton':
             logger.info("Calculating Dst for {} using Burton model".format(self.source))
             dst_pred = calc_dst_burton(self['time'], self['bz'], self['speed'], self['density'])
+        elif method.lower() == 'pennati_2026':
+            logger.info("Calculating Dst for {} using Pennati 2026 model".format(self.source))
+            dst_pred = calc_dst_pennati(self['time'], self['bz'], self['speed'], self['density'])
 
         dstData = SatData({'time': copy.deepcopy(self['time']), 'dst': dst_pred})
         dstData.h['DataSource'] = "Dst prediction from {} data using {} method".format(self.source, method)
@@ -1892,9 +1897,6 @@ def get_l1_position(times, units='AU', refframe='HEEQ', observer='SUN'):
 
 
 
-
-
-
 def get_noaa_dst():
     """Loads real-time Dst data from NOAA webpage:
     http://services.swpc.noaa.gov/products/kyoto-dst.json
@@ -2450,22 +2452,46 @@ def get_quicklook_dst_data(starttime, endtime):
             readtable = True
 
 
+def load_all_keys(hdf_file):
+    """
+    Loads pandas-created HDF5 file into DataFrame + metadata.
+    """
+
+    dfs = []
+
+    with pd.HDFStore(hdf_file, mode="r") as store:
+        # read all keys
+        for key in store.keys():
+            df = store[key]
+            dfs.append(df)
+
+        # Get metadata from root
+        attrs = store._handle.root._v_attrs
+        metadata = {k: getattr(attrs, k) for k in attrs._v_attrnames}
+
+    # combine columns
+    df_all = pd.concat(dfs, axis=1).sort_index()
+
+    return df_all, metadata
+# !!! NEW
+
 def get_rtsw_archive_data(filepath, add_dst=False):
-    hf = h5py.File(filepath, 'r')
-    data_dict = {'time': np.array(hf.get('time')),
-                 'btot': np.array(hf.get('bt')), 'bx': np.array(hf.get('bx_gsm')), 
-                 'by': np.array(hf.get('by_gsm')), 'bz': np.array(hf.get('bz_gsm')),
-                 'speed': np.array(hf.get('speed')), 'density': np.array(hf.get('density')), 
-                 'temp': np.array(hf.get('temperature'))}
+
+    df, metadata = load_all_keys(filepath)
+
+    data_dict = {'time': date2num(df.index),
+                 'btot': df['bt'].to_numpy(), 'bx': df['bx_gsm'].to_numpy(),
+                 'by': df['by_gsm'].to_numpy(), 'bz': df['by_gsm'].to_numpy(),
+                 'speed': df['proton_speed'].to_numpy(), 'density': df['proton_density'].to_numpy(),
+                 'temp': df['proton_temperature'].to_numpy()}
 
     if add_dst:
-        data_dict['dst'] = np.array(hf.get('dst'))
+        data_dict['dst'] = df['dst'].to_numpy()
     rtsw_data = SatData(data_dict, source='DSCOVR')
     rtsw_data.h['DataSource'] = "DSCOVR (NOAA)"
-    rtsw_data.h['SamplingRate'] = hf.attrs['SamplingRate']
+    rtsw_data.h['SamplingRate'] = date2num(df.index[-1])+date2num(df.index[-2])
     rtsw_data.h['ReferenceFrame'] = 'GSM'
     rtsw_data.h['SpiceBody'] = 'EARTH'
-    hf.close()
 
     return rtsw_data
 
@@ -2864,6 +2890,7 @@ def merge_Data(satdata1, satdata2, keys=None):
         timestep = satdata1.h['SamplingRate']
     n_timesteps = len(np.arange(satdata1['time'][-1] + timestep, satdata2['time'][-1], timestep))  
     # Make time array with matching steps
+    #print(satdata1['time'][-1], satdata2['time'][-1], n_timesteps, timestep)
     new_time = np.array(satdata1['time'][-1] + np.arange(1, n_timesteps) * timestep)
 
     datadict = {}

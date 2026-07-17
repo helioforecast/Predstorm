@@ -31,8 +31,11 @@ import astropy.time
 import scipy
 
 # Machine learning specific:
-from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.metrics import mean_squared_error, make_scorer
+try:
+    from sklearn.base import BaseEstimator, TransformerMixin
+    from sklearn.metrics import mean_squared_error, make_scorer
+except:
+    print("Can't import maching-learning packages!")
 
 
 class DstFeatureExtraction(BaseEstimator, TransformerMixin):
@@ -253,7 +256,7 @@ def calc_dst_obrien(time, bz, speed, density):
     speed : np.array
         Array containing solar wind speed.
     density : np.array
-        Array containing Bz in coordinate system ?.
+        Array containing density.
 
     Returns
     =======
@@ -285,6 +288,42 @@ def calc_dst_obrien(time, bz, speed, density):
         lrc = rc
 
     return dst_obrien
+
+
+def calc_dst_pennati(time, bz, speed, density):
+    """Calculates Dst from solar wind input according to the Pennati et al. 2026 method.
+
+    Parameters
+    ==========
+    time : np.array
+        Array containing time variables.
+    bz : np.array
+        Array containing Bz in coordinate system ?.
+    speed : np.array
+        Array containing solar wind speed.
+    density : np.array
+        Array containing solar wind proton density.
+
+    Returns
+    =======
+    dst_pennati : np.array
+        Array with calculated values over timesteps time.
+    """
+
+    dst_pennati = -1 * np.ones(len(time)) #starting values for Dst
+
+    Pdyn = 1.6726e-6 * density * speed**2 # [nPa]
+    Ey = (-speed) * bz * 1e-3 # [mV/m]
+
+    for i in range(len(dst_pennati)-1):
+        # Equation for PyOperon data-driven model (DDM) #1 from Table 2 in the study
+        ddm1 =   ( 0.375602483749 - 0.447044461966 * np.sqrt(np.sqrt(0.707106769085 * Pdyn[i])) *
+                 (0.318309873343 * Pdyn[i] + np.maximum((0.197246953845 * dst_pennati[i] + 4.448832511902 * Ey[i]), 0.090346775949 * dst_pennati[i])) )
+
+        dst_pennati[i+1] = dst_pennati[i] + ddm1
+
+    return dst_pennati
+
 
 
 def calc_dst_temerin_li(time, btot, bx, by, bz, speed, speedx, density, version='2002n', linear_t_correction=False):
