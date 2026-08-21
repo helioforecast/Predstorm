@@ -292,6 +292,7 @@ def calc_dst_obrien(time, bz, speed, density):
 
 def calc_dst_pennati(time, bz, speed, density):
     """Calculates Dst from solar wind input according to the Pennati et al. 2026 method.
+    Make sure there are no nans in the input arrays!
 
     Parameters
     ==========

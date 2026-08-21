@@ -19,9 +19,6 @@ into the sta_beacon directory 14 days prior to current time
 tested for correctly handling missing PLASTIC files
 
 things to add:
-- add error bars for the Temerin/Li Dst model with 1 and 2 sigma
-- fill data gaps from STEREO-A beacon data with reasonable Bz fluctuations etc.
-  based on a assessment of errors with the ... stereob_errors program
 - add timeshifts from L1 to Earth
 - add approximate levels of Dst for each location to see the aurora (depends on season)
   taken from correlations of ovation prime, SuomiNPP data in NASA worldview and Dst
@@ -120,7 +117,7 @@ from predstorm.predict import dst_loss_function
 #--------------------------------- MAIN SCRIPT ------------------------------------------
 #========================================================================================
 
-def main():
+def main(timestamp):
     """The main code."""
 
     # General variables:
@@ -164,34 +161,7 @@ def main():
 
     logger.info("\n-------------------------\nDATA READS\n-------------------------")
 
-    #------------------------ (1a) Get real-time DSCOVR data --------------------------------
-
-    # DEPRECATED SINCE NOAA DATA NO LONGER AVAILABLE IN THIS FORMAT
-
-    #logger.info("(1) Getting L1 data...")
-    #if use_realtime:
-        # If recent, use real-time data:
-    #    dism = ps.get_noaa_realtime_data()
-    #    dism = dism.cut(endtime=timestamp)
-    #else:
-        # If older timestamp, source from online archive:
-    #    logger.info("Using archived DSCOVR data")
-    #    dism = ps.get_dscovr_data(starttime=timestamp-timedelta(days=plot_past_days+1),
-    #                              endtime=timestamp)
-    #time_last_rtsw = num2date(dism['time'][-1]).replace(tzinfo=None) # original timenow
-
-    # Linearly interpolate over NaNs and resample to hourly data:
-    #dism.interp_nans()
-    #sw_past_min = dism
-    #sw_past = dism.make_hourly_data()
-
-    #logger.info('Current time (UTC):')
-    #logger.info('\t{}'.format(timenow))
-    #logger.info('Time of last datapoint in NOAA real-time data (UTC):')
-    #logger.info('\t{}'.format(time_last_rtsw))
-    #logger.info('Time lag in minutes: {:.0f}'.format(np.round((timenow-time_last_rtsw).seconds/60., 0)))
-
-    #------------------------ (1b) Get real-time STEREO-A beacon data -----------------------
+    #------------------------ (1a) Get real-time STEREO-A beacon data -----------------------
 
     logger.info("(2) Getting STEREO-A data...")
 
@@ -208,6 +178,7 @@ def main():
         stereo_start = timestamp
 
     # Read data:
+    # TODO: Make this part conditional since it is now deprecated since STEREO-A passed Earth
     try:
         stam = ps.get_stereo_beacon_data(starttime=stereo_start, endtime=timestamp+timedelta(minutes=1))
         if stam.h['PlasmaDataIntegrity'] == 0: # very low quality data
@@ -258,26 +229,48 @@ def main():
         if len(sw_future_min['time']) == 0:
             raise Exception("The file rtsw_min_last100days.h5 does not contain enough data for using recurrence!")
 
+    elif run_mode == 'historic':
+        logger.info(f"Running in HISTORIC mode to produce plots using old data for the timestamp {timestamp}.")
+        rec_start = timestamp - timedelta(days=27)
+        rec_end = timestamp - timedelta(days=27-save_future_days)
+        pers27_path_min = os.path.join(inputpath, "rtsw_min_last100days_historic.h5")
+        pers27_path_hour = os.path.join(inputpath, "rtsw_hour_last100days_historic.h5")
+        sw_future_min = ps.get_rtsw_archive_data(pers27_path_min, archive_fmt='h5py')
+        sw_future_hour = ps.get_rtsw_archive_data(pers27_path_hour, archive_fmt='h5py')
+        sw_past_min = copy.deepcopy(sw_future_min)
+        sw_past = copy.deepcopy(sw_future_hour)
+        tlast_recurrence = num2date(sw_future_min['time'][-1])
+        logger.info("Data runs from {} to {}".format(num2date(sw_future_min['time'][0]), tlast_recurrence))
+        sw_past_min.cut(endtime=timestamp)
+        sw_past.cut(endtime=timestamp)
+        sw_future_min.cut(starttime=rec_start, endtime=rec_end)
+        sw_future_min['time'] += 27. # "correct" by one Carrington rotation
+        sw_future_min.h['DataSource'] += ' t+27days'
+        sw_future_min.source += '+27days'
+        shifted_nan_periods = sw_future_min.find_nan_periods()
+
     if not use_recurrence_model:
         time_last_sta = num2date(stam['time'][-1]).replace(tzinfo=None)
         logger.info('Time of last datapoint in STEREO-A data (UTC):')
         logger.info('\t{}'.format(time_last_sta))
         logger.info('Time lag in minutes: {:.0f}'.format(np.round((timenow - time_last_sta).seconds/60., 0)))
 
-    #------------------------- (1c) Load NOAA Dst for comparison ----------------------------
+    #------------------------- (1b) Load NOAA Dst for comparison ----------------------------
 
     logger.info("(3) Getting Kyoto Dst data...")
     if use_realtime:
         dst = ps.get_noaa_dst()
     else:
-        dst = ps.get_past_dst(filepath="dstarchive/WWW_dstae00010670.dat",
-                              starttime=num2date(timestamp)-timedelta(days=plot_past_days+1),
-                              endtime=num2date(timestamp))
+        dst = ps.get_past_dst(filepath="dstarchive/WWW_dstae00546658.dat",
+                              starttime=timestamp-timedelta(days=plot_past_days+1),
+                              endtime=timestamp)
+                              #starttime=num2date(timestamp)-timedelta(days=plot_past_days+1),
+                              #endtime=num2date(timestamp))
         if len(dst) == 0.:
-            raise Exception("Kyoto Dst data for historic mode is missing! Go to http://wdc.kugi.kyoto-u.ac.jp/dstae/index.html")
+            raise Exception("Kyoto Dst data (IAGA02 format) for historic mode is missing! Go to http://wdc.kugi.kyoto-u.ac.jp/dstae/index.html")
     dst = dst.cut(endtime=timestamp)
 
-    #------------------------- (1d) Load 3DCORE output if available -------------------------
+    #------------------------- (1c) Load 3DCORE output if available -------------------------
 
     if use3DCORE:
         logger.info("(4) Reading 3DCORE flux rope output...")
@@ -285,7 +278,7 @@ def main():
     else:
         fr_t_m = []
 
-    #========================== (2) PREDICTION CALCULATIONS ==================================
+    #========================== (2) PREDICTION CALCULATIONS =================================
 
     #------------------------ (2a) Corrections to time-shifted STEREO-A data ----------------
 
@@ -372,6 +365,9 @@ def main():
     dst_method = config['RealTimePred']['DstPredMethod']
     dst_offset = float(config['RealTimePred']['DstOffset'])
     dst_model_path = config['RealTimePred']['DstModelPath']
+
+    # Remove nans before calculating Dst:
+    sw_merged = sw_merged.interp_nans()
 
     # Predict Dst from L1 and STEREO-A:
     if dst_method == 'temerin_li':
@@ -684,6 +680,7 @@ def validation(look_back=40):
 if __name__ == '__main__':
 
     run_mode = 'normal'
+    timestamp = ''
     verbose, use3DCORE, force_stereoa = True, False, False
     run_validation = False
     for opt, arg in myopts:
@@ -713,8 +710,12 @@ if __name__ == '__main__':
             print("-------------------------------------")
             print("RUN OPTIONS:")
             print("--server      : Run script in server mode.")
+            print("                The function archive_noaa_rtsw_data_historic in archive_rtsw.py should be")
+            print("                used to create the files rtsw_hour_last100days.h5.")
             print("                python predstorm_l5.py --server")
             print("--historic    : Run script with a historic data set.")
+            print("                NOTE: In order to use historic mode with old NOAA data, a file needs to be")
+            print("                created using archive_noaa_rtsw_data_historic using archive_rtsw.py")
             print("                python predstorm_l5.py --historic='2017-09-07T23:00'")
             print("--use3DCORE   : Run script with 3DCORE flux rope input.")
             print("                python predstorm_l5.py --historic='2017-09-07T23:00' --use3DCORE='dst.pickle'")
@@ -762,7 +763,7 @@ if __name__ == '__main__':
         validation()
         sys.exit()
 
-    main()
+    main(timestamp)
 
     print("------ This run completed at {}! ------\n".format(datetime.utcnow()))
 

@@ -46,7 +46,6 @@ from datetime import datetime, timedelta, timezone
 from dateutil.relativedelta import relativedelta
 from dateutil import tz
 import gzip
-#import h5py
 import logging
 import numpy as np
 import pandas as pd
@@ -2475,23 +2474,62 @@ def load_all_keys(hdf_file):
     return df_all, metadata
 # !!! NEW
 
-def get_rtsw_archive_data(filepath, add_dst=False):
+def get_rtsw_archive_data(filepath, add_dst=False, archive_fmt='df'):
+    """
+    Reads data from PREDSTORM real-time output.
 
-    df, metadata = load_all_keys(filepath)
+    Parameters
+    ==========
+    filepath : str
+        Path to archived data
+    add_dst : bool (default=False)
+        If True, adds Dst to output
+    format : str default='df', otherwise 'h5py'
+        Defines the format of the file to read in
 
-    data_dict = {'time': date2num(df.index),
-                 'btot': df['bt'].to_numpy(), 'bx': df['bx_gsm'].to_numpy(),
-                 'by': df['by_gsm'].to_numpy(), 'bz': df['by_gsm'].to_numpy(),
-                 'speed': df['proton_speed'].to_numpy(), 'density': df['proton_density'].to_numpy(),
-                 'temp': df['proton_temperature'].to_numpy()}
+    Returns
+    =======
+    pred_data : predstorm.SatData
+        Object containing all data.
+    """
+
+    import h5py
+
+    if archive_fmt == 'df':
+        df, metadata = load_all_keys(filepath)
+        data_dict = {'time': date2num(df.index),
+                     'btot': df['bt'].to_numpy(), 'bx': df['bx_gsm'].to_numpy(),
+                     'by': df['by_gsm'].to_numpy(), 'bz': df['by_gsm'].to_numpy(),
+                     'speed': df['proton_speed'].to_numpy(), 'density': df['proton_density'].to_numpy(),
+                     'temp': df['proton_temperature'].to_numpy()}
+    else:
+        print("--- READING HISTORIC H5PY FILE")
+        hf = h5py.File(filepath, 'r')
+        data_dict = {'time': np.array(hf.get('time')),
+                     'btot': np.array(hf.get('bt')), 'bx': np.array(hf.get('bx_gsm')),
+                     'by': np.array(hf.get('by_gsm')), 'bz': np.array(hf.get('bz_gsm')),
+                     'speed': np.array(hf.get('speed')), 'density': np.array(hf.get('density')),
+                     'temp': np.array(hf.get('temperature'))}
 
     if add_dst:
-        data_dict['dst'] = df['dst'].to_numpy()
+        if archive_fmt == 'df':
+            data_dict['dst'] = df['dst'].to_numpy()
+        else:
+            data_dict['dst'] = np.array(hf.get('dst'))
+
     rtsw_data = SatData(data_dict, source='DSCOVR')
     rtsw_data.h['DataSource'] = "DSCOVR (NOAA)"
-    rtsw_data.h['SamplingRate'] = date2num(df.index[-1])+date2num(df.index[-2])
+
+    if archive_fmt == 'df':
+        rtsw_data.h['SamplingRate'] = date2num(df.index[-1])+date2num(df.index[-2])
+    else:
+        rtsw_data.h['SamplingRate'] = hf.attrs['SamplingRate']
+
     rtsw_data.h['ReferenceFrame'] = 'GSM'
     rtsw_data.h['SpiceBody'] = 'EARTH'
+
+    if archive_fmt == 'h5py':
+        hf.close()
 
     return rtsw_data
 
