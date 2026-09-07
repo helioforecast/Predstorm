@@ -171,6 +171,122 @@ def archive_noaa_rtsw_data(json_path, archive_path, suffix='', archive_ndays=100
     logging.info('Archiving of NOAA data complete.')
 
 
+def remake_noaa_rtsw_archive(json_path, archive_path, suffix='', archive_ndays=100):
+    """Rebuild the rolling RTSW archives from all dated JSON snapshots.
+
+    Files must use the names ``plasma_YYYY-MM-DD.json``,
+    ``mag_YYYY-MM-DD.json`` and ``dst_YYYY-MM-DD.json``. Later snapshots win
+    when the same timestamp occurs more than once, allowing revised NOAA
+    values to replace earlier ones.
+
+    Both HDF5 files are built as temporary files before either existing
+    archive is replaced.
+    """
+
+    pla_keys = ['proton_density', 'proton_speed', 'proton_temperature']
+    mag_keys = ['bx_gsm', 'by_gsm', 'bz_gsm', 'bt']
+    dst_keys = ['dst']
+    all_keys = pla_keys + mag_keys + dst_keys
+
+    def read_snapshots(prefix, columns, active_only=False):
+        pattern = os.path.join(json_path, f'{prefix}_????-??-??.json')
+        files = sorted(glob.glob(pattern))
+        if not files:
+            raise FileNotFoundError(f'No files found matching {pattern}')
+
+        frames = []
+        for filename in files:
+            logging.info('Reading %s', filename)
+            frame = pd.read_json(filename)
+            if 'time_tag' not in frame.columns:
+                raise ValueError(f'{filename} has no time_tag column')
+
+            frame = frame.set_index('time_tag')
+            frame.index = pd.to_datetime(frame.index)
+
+            if active_only:
+                if 'active' not in frame.columns:
+                    raise ValueError(f'{filename} has no active column')
+                frame = frame[frame['active'] == True]
+
+            missing = [key for key in columns if key not in frame.columns]
+            if missing:
+                raise ValueError(f'{filename} is missing columns: {missing}')
+
+            frames.append(frame[columns])
+
+        combined = pd.concat(frames).sort_index()
+        combined = combined[~combined.index.duplicated(keep='last')]
+        for key in columns:
+            combined[key] = pd.to_numeric(combined[key], errors='coerce')
+        return combined
+
+    df_pla = read_snapshots('plasma', pla_keys, active_only=True)
+    df_mag = read_snapshots('mag', mag_keys, active_only=True)
+    df_dst = read_snapshots('dst', dst_keys)
+
+    df_min = pd.concat([df_pla, df_mag, df_dst], axis=1).sort_index()
+    df_min = df_min[~df_min.index.duplicated(keep='last')]
+
+    newest_time = df_min.index.max()
+    cutoff = newest_time - pd.Timedelta(days=archive_ndays)
+    df_min = df_min[df_min.index >= cutoff]
+    df_hour = df_min.resample('h').mean()
+
+    if df_min.empty or df_hour.empty:
+        raise ValueError('The JSON snapshots produced an empty archive')
+
+    os.makedirs(archive_path, exist_ok=True)
+    hdf_file_min = os.path.join(
+        archive_path, f'rtsw_min_last100days{suffix}.h5')
+    hdf_file_hour = os.path.join(
+        archive_path, f'rtsw_hour_last100days{suffix}.h5')
+    tmp_file_min = hdf_file_min + '.tmp'
+    tmp_file_hour = hdf_file_hour + '.tmp'
+
+    def write_complete_archive(frame, filepath, sampling_rate):
+        if os.path.exists(filepath):
+            os.remove(filepath)
+
+        with pd.HDFStore(filepath, mode='w') as store:
+            for key in all_keys:
+                store.append(
+                    key, frame[[key]], format='table', data_columns=True)
+
+            metadata = {
+                'Description': 'Real time solar wind magnetic field and plasma data from NOAA',
+                'TimeRange': (
+                    f'{frame.index.min():%Y-%m-%dT%H:%M} - '
+                    f'{frame.index.max():%Y-%m-%dT%H:%M}'
+                ),
+                'SourceURL': 'https://services.swpc.noaa.gov/products/solar-wind/',
+                'CompiledBy': 'Helio4Cast code, https://github.com/helioforecast/helio4cast',
+                'Authors': 'C. Moestl (twitter @chrisoutofspace) and R. L. Bailey (GitHub bairaelyn)',
+                'FileCreationDate': datetime.now().strftime('%Y-%m-%dT%H:%M') + ' UTC',
+                'Units': 'B-field: nT, Density: cm^-3, Temperature: K, Speed: km s^-1',
+                'Notes': 'Takes only data from active observer as defined by NOAA.',
+                'SamplingRate': sampling_rate,
+            }
+            root_attrs = store._handle.root._v_attrs
+            for key, value in metadata.items():
+                setattr(root_attrs, key, value)
+
+    try:
+        write_complete_archive(df_min, tmp_file_min, 1. / 24. / 60.)
+        write_complete_archive(df_hour, tmp_file_hour, 1. / 24.)
+        os.replace(tmp_file_min, hdf_file_min)
+        os.replace(tmp_file_hour, hdf_file_hour)
+    finally:
+        for tmp_file in (tmp_file_min, tmp_file_hour):
+            if os.path.exists(tmp_file):
+                os.remove(tmp_file)
+
+    logging.info(
+        'Rebuilt NOAA archives from %s through %s.',
+        df_min.index.min(), df_min.index.max())
+    return True
+
+
 def archive_noaa_rtsw_data_historic(json_path, archive_path, datenow="", limit_by_ndays=100):
     """Archives the NOAA real-time solar wind data files in hdf5 format.
 
@@ -513,24 +629,40 @@ def load_all_keys(hdf_file):
     return df_all, metadata
 
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-json_path = os.path.join(SCRIPT_DIR, "data")
-datestrf = "%Y-%m-%d"
+def main():
+    parser = argparse.ArgumentParser(description='Maintain NOAA RTSW archives.')
+    parser.add_argument(
+        '--remake', action='store_true',
+        help='Rebuild the archives from all dated JSON snapshots in data/.')
+    args = parser.parse_args()
 
-# NORMAL RUNS
-get_plas, get_mag, get_dst = download_noaa_rtsw_data(json_path)
-archive_noaa_rtsw_data(json_path, json_path, suffix='_TEST')
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+    json_path = os.path.join(SCRIPT_DIR, 'data')
 
-# WHEN FIRST CREATING A FILE, run with fake_recurrence=True
-#get_plas, get_mag, get_dst = download_noaa_rtsw_data(json_path)
-#archive_noaa_rtsw_data(json_path, 'data', fake_recurrence=True)
+    if args.remake:
+        remake_noaa_rtsw_archive(
+            json_path, json_path, suffix='_REMAKE', archive_ndays=100)
+        return
 
-# CREATING A FILE USING DATA WITH OLD FORMAT (pre-March 2026)
-#archive_noaa_rtsw_data_historic('NOAA-Data', 'data', datenow=datetime(2024,10,31))
+    # NORMAL RUNS
+    get_plas, get_mag, get_dst = download_noaa_rtsw_data(json_path)
+    #if not all((get_plas, get_mag, get_dst)):
+    #    raise RuntimeError('One or more NOAA downloads failed')
 
-# TEST A FILE WRITTEN BY THIS CODE
-#df_test, metadata = load_all_keys("data/rtsw_min_last100days.h5")
+    archive_noaa_rtsw_data(json_path, json_path, suffix='_TEST')
+
+    # WHEN FIRST CREATING A FILE, run with fake_recurrence=True
+    #get_plas, get_mag, get_dst = download_noaa_rtsw_data(json_path)
+    #archive_noaa_rtsw_data(json_path, 'data', fake_recurrence=True)
+
+    # CREATING A FILE USING DATA WITH OLD FORMAT (pre-March 2026)
+    #archive_noaa_rtsw_data_historic('NOAA-Data', 'data', datenow=datetime(2024,10,31))
+
+    # TEST A FILE WRITTEN BY THIS CODE
+    #df_test, metadata = load_all_keys("data/rtsw_min_last100days.h5")
 
 
+if __name__ == '__main__':
+    main()
 
 
