@@ -8,7 +8,7 @@ import json
 import logging
 import numpy as np
 from matplotlib.dates import date2num, num2date
-import urllib
+import urllib.request
 import urllib.error
 
 try:
@@ -513,13 +513,13 @@ def load_all_keys(hdf_file):
     return df_all, metadata
 
 
-
-json_path = "data"
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+json_path = os.path.join(SCRIPT_DIR, "data")
 datestrf = "%Y-%m-%d"
 
 # NORMAL RUNS
 get_plas, get_mag, get_dst = download_noaa_rtsw_data(json_path)
-archive_noaa_rtsw_data(json_path, 'data', suffix='_TEST')
+archive_noaa_rtsw_data(json_path, json_path, suffix='_TEST')
 
 # WHEN FIRST CREATING A FILE, run with fake_recurrence=True
 #get_plas, get_mag, get_dst = download_noaa_rtsw_data(json_path)
