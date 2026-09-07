@@ -2880,7 +2880,7 @@ def save_to_file(filepath, wind=None, dst=None, aurora=None, kp=None, ec=None):
         'Dst[nT]', 'Kp', 'AP[GW]', 'Ec/4421[(km/s)**(4/3)nT**(2/3)]')
     time_cols_fmt = '%4i %2i %2i %2i %2i %2i %15.6f'
     b_cols_fmt = 4*'%7.2f'
-    p_cols_fmt = '%9.0i%9.0i'
+    p_cols_fmt = '%9.0f%9.0f'
     indices_fmt = '%8.0f%7.2f%8.1f%12.1f'
     float_fmt = time_cols_fmt + b_cols_fmt + p_cols_fmt + indices_fmt
     np.savetxt(filepath, out, delimiter='',fmt=float_fmt, header=column_vals)
