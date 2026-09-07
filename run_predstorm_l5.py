@@ -219,6 +219,8 @@ def main(timestamp):
         sw_past = copy.deepcopy(sw_future_hour)
         tlast_recurrence = num2date(sw_future_min['time'][-1])
         logger.info("Data runs from {} to {}".format(num2date(sw_future_min['time'][0]), tlast_recurrence))
+        sw_past_min.cut(endtime=timestamp)
+        sw_past.cut(endtime=timestamp)
         sw_future_min.cut(starttime=rec_start, endtime=rec_end)
         sw_future_min['time'] += 27. # "correct" by one Carrington rotation
         sw_future_min.h['DataSource'] += ' t+27days'

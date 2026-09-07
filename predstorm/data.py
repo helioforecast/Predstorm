@@ -2493,13 +2493,14 @@ def get_rtsw_archive_data(filepath, add_dst=False, archive_fmt='df'):
         Object containing all data.
     """
 
-    import h5py
+    if archive_fmt == 'h5py':
+        import h5py
 
     if archive_fmt == 'df':
         df, metadata = load_all_keys(filepath)
         data_dict = {'time': date2num(df.index),
                      'btot': df['bt'].to_numpy(), 'bx': df['bx_gsm'].to_numpy(),
-                     'by': df['by_gsm'].to_numpy(), 'bz': df['by_gsm'].to_numpy(),
+                     'by': df['by_gsm'].to_numpy(), 'bz': df['bz_gsm'].to_numpy(),
                      'speed': df['proton_speed'].to_numpy(), 'density': df['proton_density'].to_numpy(),
                      'temp': df['proton_temperature'].to_numpy()}
     else:
@@ -2521,7 +2522,7 @@ def get_rtsw_archive_data(filepath, add_dst=False, archive_fmt='df'):
     rtsw_data.h['DataSource'] = "DSCOVR (NOAA)"
 
     if archive_fmt == 'df':
-        rtsw_data.h['SamplingRate'] = date2num(df.index[-1])+date2num(df.index[-2])
+        rtsw_data.h['SamplingRate'] = date2num(df.index[-1]) - date2num(df.index[-2])
     else:
         rtsw_data.h['SamplingRate'] = hf.attrs['SamplingRate']
 

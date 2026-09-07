@@ -10,9 +10,11 @@ import numpy as np
 from matplotlib.dates import date2num, num2date
 import urllib
 import urllib.error
-import requests
 
-import h5py
+try:
+    import h5py
+except:
+    pass
 import pandas as pd
 
 
@@ -54,22 +56,24 @@ def download_noaa_rtsw_data(save_path):
 
     today = get_today_utc()
 
+    os.makedirs(save_path, exist_ok=True)
+
     try:
         urllib.request.urlretrieve(plasma_noaa, os.path.join(save_path, f'plasma_{today}.json'))
     except urllib.error.URLError as e:
-        logging.error(' '+plasma+' '+e.reason)
+        logging.error("Failed to download %s: %s", plasma_noaa, e.reason)
         get_plas = False
 
     try:
         urllib.request.urlretrieve(mag_noaa, os.path.join(save_path, f'mag_{today}.json'))
     except urllib.error.URLError as e:
-        logging.error(' '+mag+' '+e.reason)
+        logging.error("Failed to download %s: %s", mag_noaa, e.reason)
         get_mag = False
 
     try:
         urllib.request.urlretrieve(dst_noaa, os.path.join(save_path, f'dst_{today}.json'))
     except urllib.error.URLError as e:
-        logging.error(' '+dst+' '+e.reason)
+        logging.error("Failed to download %s: %s", dst_noaa, e.reason)
         get_dst = False
 
     return get_plas, get_mag, get_dst
@@ -110,9 +114,9 @@ def archive_noaa_rtsw_data(json_path, archive_path, suffix='', archive_ndays=100
     today = get_today_utc()
 
     # Read latest NOAA RTSW data files:
-    df_pla = pd.read_json(f"data/plasma_{today}.json")
-    df_mag = pd.read_json(f"data/mag_{today}.json")
-    df_dst = pd.read_json(f"data/dst_{today}.json")
+    df_pla = pd.read_json(os.path.join(json_path, f"plasma_{today}.json"))
+    df_mag = pd.read_json(os.path.join(json_path, f"mag_{today}.json"))
+    df_dst = pd.read_json(os.path.join(json_path, f"dst_{today}.json"))
 
     # Sort by increasing time:
     df_pla = df_pla.set_index('time_tag').sort_index()
@@ -515,7 +519,7 @@ datestrf = "%Y-%m-%d"
 
 # NORMAL RUNS
 get_plas, get_mag, get_dst = download_noaa_rtsw_data(json_path)
-archive_noaa_rtsw_data(json_path, 'data')
+archive_noaa_rtsw_data(json_path, 'data', suffix='_TEST')
 
 # WHEN FIRST CREATING A FILE, run with fake_recurrence=True
 #get_plas, get_mag, get_dst = download_noaa_rtsw_data(json_path)
