@@ -162,6 +162,9 @@ def archive_noaa_rtsw_data(json_path, archive_path, suffix='', archive_ndays=100
     for key in pla_keys+mag_keys+dst_keys:
         df_MIN[key] = pd.to_numeric(df_MIN[key], errors="coerce")
 
+    # NOAA uses -9999 as the missing-value sentinel. Replace this:
+    df_MIN[all_keys] = df_MIN[all_keys].replace(-9999, np.nan)
+
     df_HOUR = df_MIN.resample("h").mean()
 
     hdf_file_min =  os.path.join(archive_path, f'rtsw_min_last100days{suffix}.h5')
@@ -221,6 +224,10 @@ def remake_noaa_rtsw_archive(json_path, archive_path, suffix='', archive_ndays=1
         combined = combined[~combined.index.duplicated(keep='last')]
         for key in columns:
             combined[key] = pd.to_numeric(combined[key], errors='coerce')
+
+        # NOAA uses -9999 as the missing-value sentinel. Replace this:
+        combined[columns] = combined[columns].replace(-9999, np.nan)
+
         return combined
 
     df_pla = read_snapshots('plasma', pla_keys, active_only=True)

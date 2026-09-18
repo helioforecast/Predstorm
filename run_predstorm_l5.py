@@ -113,6 +113,93 @@ from predstorm.plot import plot_solarwind_and_dst_prediction, plot_solarwind_sci
 from predstorm.plot import plot_solarwind_pretty
 from predstorm.predict import dst_loss_function
 
+
+#========================================================================================
+#-------------------------------- HELPER FUNCTIONS --------------------------------------
+#========================================================================================
+
+def get_recurrence_data(archive, timestamp, future_days, rotations=(1, 2, 3), rotation_days=27, max_gap_hours=6,):
+    """Find a usable recurrence interval from an earlier solar rotation."""
+
+    required_keys = ["btot", "bx", "by", "bz", "speed", "density"]
+
+    for rotation in rotations:
+        shift_days = rotation * rotation_days
+        rec_start = timestamp - timedelta(days=shift_days)
+        rec_end = rec_start + timedelta(days=future_days)
+
+        candidate = copy.deepcopy(archive)
+        candidate.cut(starttime=rec_start, endtime=rec_end)
+
+        if len(candidate["time"]) < 2:
+            logger.warning(
+                "No data available for the %d-day recurrence window.",
+                shift_days,
+            )
+            continue
+
+        valid = True
+
+        for key in required_keys:
+            if key not in candidate.vars:
+                logger.warning(
+                    "%d-day recurrence is missing %s.",
+                    shift_days,
+                    key,
+                )
+                valid = False
+                break
+
+            finite = np.isfinite(candidate[key])
+
+            if np.count_nonzero(finite) < 2:
+                logger.warning(
+                    "%d-day recurrence has insufficient valid %s data.",
+                    shift_days,
+                    key,
+                )
+                valid = False
+                break
+
+            valid_times = candidate["time"][finite]
+            largest_gap_hours = (
+                np.max(np.diff(valid_times)) * 24.0
+                if len(valid_times) > 1 else np.inf
+            )
+
+            if largest_gap_hours > max_gap_hours:
+                logger.warning(
+                    "%d-day recurrence has a %.1f-hour gap in %s.",
+                    shift_days,
+                    largest_gap_hours,
+                    key,
+                )
+                valid = False
+                break
+
+        if not valid:
+            continue
+
+        # Interpolate only the short gaps accepted above.
+        candidate = candidate.interp_nans(keys=required_keys)
+
+        # Move the selected recurrence interval to the forecast period.
+        candidate["time"] += shift_days
+        candidate.h["DataSource"] += f" t+{shift_days}days"
+        candidate.source += f"+{shift_days}days"
+        candidate.h["RecurrenceShiftDays"] = shift_days
+
+        logger.warning(
+            "Using the %d-day recurrence model.",
+            shift_days,
+        )
+
+        return candidate, shift_days
+
+    raise RuntimeError(
+        "No usable 27-, 54-, or 81-day recurrence interval was found."
+    )
+
 #========================================================================================
 #--------------------------------- MAIN SCRIPT ------------------------------------------
 #========================================================================================
@@ -206,26 +293,43 @@ def main(timestamp):
         logger.info("STEREO-A plasma data is missing/corrupted, using 27-day recurrence model for plasma data instead!")
         rec_start = timestamp - timedelta(days=27)
         rec_end = timestamp - timedelta(days=27-save_future_days)
+
         pers27_path_min = os.path.join(inputpath, "rtsw_min_last100days_TEST.h5")
         pers27_path_hour = os.path.join(inputpath, "rtsw_hour_last100days_TEST.h5")
+
         if not os.path.exists(pers27_path_min):
             print("!!!!!!!!!!!!!!!!!!!!\nMissing RTSW archived data for recurrence!")
             print("Make sure you run the following to create the file:")
             print("    python archive_rtsw.py")
             sys.exit()
-        sw_future_min = ps.get_rtsw_archive_data(pers27_path_min)
-        sw_future_hour = ps.get_rtsw_archive_data(pers27_path_hour)
-        sw_past_min = copy.deepcopy(sw_future_min)
-        sw_past = copy.deepcopy(sw_future_hour)
-        tlast_recurrence = num2date(sw_future_min['time'][-1])
-        logger.info("Data runs from {} to {}".format(num2date(sw_future_min['time'][0]), tlast_recurrence))
+
+        if not os.path.exists(pers27_path_min):
+            raise FileNotFoundError(
+                f"Missing RTSW recurrence archive: {pers27_path_min}"
+            )
+
+        rtsw_archive_min = ps.get_rtsw_archive_data(pers27_path_min)
+        rtsw_archive_hour = ps.get_rtsw_archive_data(pers27_path_hour)
+
+        # Keep the complete archive copies for the observed/past portion:
+        sw_past_min = copy.deepcopy(rtsw_archive_min)
+        sw_past = copy.deepcopy(rtsw_archive_hour)
         sw_past_min.cut(endtime=timestamp)
         sw_past.cut(endtime=timestamp)
-        sw_future_min.cut(starttime=rec_start, endtime=rec_end)
-        sw_future_min['time'] += 27. # "correct" by one Carrington rotation
-        sw_future_min.h['DataSource'] += ' t+27days'
-        sw_future_min.source += '+27days'
+
+        tlast_recurrence = num2date(rtsw_archive_min['time'][-1])
+        logger.info("Data runs from {} to {}".format(num2date(rtsw_archive_min['time'][0]), tlast_recurrence))
+
+        # Automatically try 27, 54 and then 81 days:
+        sw_future_min, recurrence_shift_days = get_recurrence_data(
+            rtsw_archive_min,
+            timestamp,
+            save_future_days,
+        )
+
         shifted_nan_periods = sw_future_min.find_nan_periods()
+
+        logger.info("Recurrence forecast constructed using data from %d days ago.", recurrence_shift_days)
 
         # Make sure last data point is after current date
         if len(sw_future_min['time']) == 0:
