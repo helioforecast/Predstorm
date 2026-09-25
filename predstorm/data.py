@@ -1894,8 +1894,6 @@ def get_l1_position(times, units='AU', refframe='HEEQ', observer='SUN'):
     return L1Pos
 
 
-
-
 def get_noaa_dst():
     """Loads real-time Dst data from NOAA webpage:
     http://services.swpc.noaa.gov/products/kyoto-dst.json
@@ -2474,6 +2472,59 @@ def load_all_keys(hdf_file):
     return df_all, metadata
 # !!! NEW
 
+def sanitize_rtsw_data(data_dict):
+    """Replace NOAA sentinels and physically invalid values with NaN."""
+
+    # Negative values are invalid only for these unsigned quantities.
+    invalid_value_rules = {
+        "speed":   lambda values: values <= 0.0,
+        "density": lambda values: values < 0.0,
+        "temp":    lambda values: values < 0.0,
+        "btot":    lambda values: values <= 0.0,
+    }
+
+    times = np.asarray(data_dict["time"])
+
+    for key in data_dict:
+        if key == "time":
+            continue
+
+        values = np.asarray(data_dict[key], dtype=float).copy()
+
+        # NOAA missing-data sentinel, applicable to every parameter.
+        sentinel_mask = np.isclose(
+            values,
+            -9999.0,
+            rtol=0.0,
+            atol=1e-6,
+        )
+
+        invalid_mask = sentinel_mask.copy()
+
+        # Apply physical checks only to parameters for which negative values
+        # are impossible.
+        if key in invalid_value_rules:
+            invalid_mask |= invalid_value_rules[key](values)
+
+        if np.any(invalid_mask):
+            invalid_times = times[invalid_mask]
+
+            logger.warning(
+                "Replacing %d invalid %s values with NaN. "
+                "Affected interval: %s to %s",
+                np.count_nonzero(invalid_mask),
+                key,
+                num2date(invalid_times[0]),
+                num2date(invalid_times[-1]),
+            )
+
+            values[invalid_mask] = np.nan
+
+        data_dict[key] = values
+
+    return data_dict
+
+
 def get_rtsw_archive_data(filepath, add_dst=False, archive_fmt='df'):
     """
     Reads data from PREDSTORM real-time output.
@@ -2519,26 +2570,7 @@ def get_rtsw_archive_data(filepath, add_dst=False, archive_fmt='df'):
             data_dict['dst'] = np.array(hf.get('dst'))
 
     # Safety check for invalid NOAA solar-wind speed values.
-    speed = np.asarray(data_dict["speed"], dtype=float).copy()
-
-    sentinel_mask = np.isclose(speed, -9999.0)
-    negative_mask = speed < 0.0
-    invalid_speed = sentinel_mask | negative_mask
-
-    if np.any(invalid_speed):
-        invalid_times = np.asarray(data_dict["time"])[invalid_speed]
-
-        logger.warning(
-            "Replacing %d invalid solar-wind speed values with NaN. "
-            "Affected interval: %s to %s",
-            np.count_nonzero(invalid_speed),
-            num2date(invalid_times[0]),
-            num2date(invalid_times[-1]),
-        )
-
-        speed[invalid_speed] = np.nan
-
-    data_dict["speed"] = speed
+    data_dict = sanitize_rtsw_data(data_dict)
 
     rtsw_data = SatData(data_dict, source='DSCOVR')
     rtsw_data.h['DataSource'] = "DSCOVR (NOAA)"
