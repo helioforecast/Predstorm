@@ -118,58 +118,110 @@ from predstorm.predict import dst_loss_function
 #-------------------------------- HELPER FUNCTIONS --------------------------------------
 #========================================================================================
 
-def get_recurrence_data(archive, timestamp, future_days, rotations=(1, 2, 3), rotation_days=27, max_gap_hours=6,):
+def get_recurrence_data(archive, timestamp, future_days, rotations=(1, 2, 3), rotation_days=27, max_missing_fraction=0.5, max_gap_hours=6,):
     """Find a usable recurrence interval from an earlier solar rotation."""
 
     required_keys = ["btot", "bx", "by", "bz", "speed", "density"]
 
     for rotation in rotations:
         shift_days = rotation * rotation_days
+
         rec_start = timestamp - timedelta(days=shift_days)
         rec_end = rec_start + timedelta(days=future_days)
 
+        # Create the candidate before examining its timestamps.
         candidate = copy.deepcopy(archive)
-        candidate.cut(starttime=rec_start, endtime=rec_end)
+        candidate.cut(starttime=rec_start, endtime=rec_end,)
 
         if len(candidate["time"]) < 2:
-            logger.warning(
-                "No data available for the %d-day recurrence window.",
-                shift_days,
-            )
+            logger.warning("No data available for the %d-day recurrence window.", shift_days)
             continue
+
+        rec_start_num = date2num(rec_start)
+        rec_end_num = date2num(rec_end)
+
+        # Derive cadence after candidate has been created.
+        unique_times = np.unique(candidate["time"])
+        time_differences = np.diff(unique_times)
+        time_differences = time_differences[np.isfinite(time_differences) & (time_differences > 0)]
+
+        if len(time_differences) == 0:
+            logger.warning("%d-day recurrence has no measurable time cadence.",shift_days)
+            continue
+
+        sampling_rate = np.median(time_differences)
+
+        expected_samples = max(1, int(np.ceil((rec_end_num - rec_start_num) / sampling_rate)))
 
         valid = True
 
         for key in required_keys:
             if key not in candidate.vars:
-                logger.warning(
-                    "%d-day recurrence is missing %s.",
-                    shift_days,
-                    key,
-                )
+                logger.warning("%d-day recurrence is missing %s.", shift_days, key)
                 valid = False
                 break
 
             finite = np.isfinite(candidate[key])
+            valid_times = candidate["time"][finite]
 
-            if np.count_nonzero(finite) < 2:
+            # Only consider points inside the exact requested interval.
+            valid_times = valid_times[(valid_times >= rec_start_num) & (valid_times < rec_end_num)]
+
+            if len(valid_times) < 2:
+                logger.warning("%d-day recurrence has insufficient valid %s data.", shift_days, key)
+                valid = False
+                break
+
+            # Assign observations to expected cadence bins. This prevents duplicate
+            # or unusually high-cadence samples from inflating the coverage.
+            occupied_bins = np.floor((valid_times - rec_start_num) / sampling_rate).astype(int)
+
+            occupied_bins = occupied_bins[(occupied_bins >= 0) & (occupied_bins < expected_samples)]
+
+            valid_bin_count = len(np.unique(occupied_bins))
+            valid_fraction = valid_bin_count / expected_samples
+            missing_fraction = 1.0 - valid_fraction
+
+            # Include missing periods at both boundaries. The old calculation only
+            # measured gaps between existing samples and missed an empty tail.
+            times_with_boundaries = np.concatenate((
+                [rec_start_num],
+                np.sort(np.unique(valid_times)),
+                [rec_end_num],
+            ))
+
+            largest_gap_hours = (np.max(np.diff(times_with_boundaries)) * 24.0)
+
+            trailing_gap_hours = (rec_end_num - np.max(valid_times)) * 24.0
+
+            logger.info(
+                "%d-day recurrence %s coverage: %.1f%% "
+                "(%d of %d time bins); trailing gap %.1f hours; "
+                "largest gap %.1f hours",
+                shift_days,
+                key,
+                valid_fraction * 100.0,
+                valid_bin_count,
+                expected_samples,
+                trailing_gap_hours,
+                largest_gap_hours,
+            )
+
+            if missing_fraction > max_missing_fraction:
                 logger.warning(
-                    "%d-day recurrence has insufficient valid %s data.",
+                    "%d-day recurrence is missing %.1f%% of %s; "
+                    "trying an earlier rotation.",
                     shift_days,
+                    missing_fraction * 100.0,
                     key,
                 )
                 valid = False
                 break
 
-            valid_times = candidate["time"][finite]
-            largest_gap_hours = (
-                np.max(np.diff(valid_times)) * 24.0
-                if len(valid_times) > 1 else np.inf
-            )
-
             if largest_gap_hours > max_gap_hours:
                 logger.warning(
-                    "%d-day recurrence has a %.1f-hour gap in %s.",
+                    "%d-day recurrence has a %.1f-hour gap in %s; "
+                    "trying an earlier rotation.",
                     shift_days,
                     largest_gap_hours,
                     key,
@@ -321,10 +373,12 @@ def main(timestamp):
         logger.info("Data runs from {} to {}".format(num2date(rtsw_archive_min['time'][0]), tlast_recurrence))
 
         # Automatically try 27, 54 and then 81 days:
+        required_future_days = max(save_future_days, plot_future_days)
+
         sw_future_min, recurrence_shift_days = get_recurrence_data(
             rtsw_archive_min,
             timestamp,
-            save_future_days,
+            required_future_days,
         )
 
         shifted_nan_periods = sw_future_min.find_nan_periods()
@@ -545,19 +599,19 @@ def main(timestamp):
         datetime.strftime(timestamp, "%Y-%m-%d")))
     shutil.copyfile(realtime_plot_path, archive_plot_path)
 
-    science_plot_path = os.path.join(savepath_rt,'predstorm_science.png')
-    plot_solarwind_science([sw_past_min, sw_past], [sw_future_min, sw_future], 
-                                      timestamp=timestamp,
-                                      past_days=plot_past_days,
-                                      future_days=plot_future_days,
-                                      plot_path=science_plot_path)
-
     try:
         pretty_plot_path = os.path.join(savepath_rt,'predstorm_pretty.png')
         plot_solarwind_pretty(sw_past, sw_future, dst_pred, newell_coupling, timestamp,
                               plot_path=pretty_plot_path)
     except Exception as e:
         logger.warning("Could not run plot_solarwind_pretty() due to error: {}".format(e))
+
+    science_plot_path = os.path.join(savepath_rt,'predstorm_science.png')
+    plot_solarwind_science([sw_past_min, sw_past], [sw_future_min, sw_future], 
+                                      timestamp=timestamp,
+                                      past_days=plot_past_days,
+                                      future_days=plot_future_days,
+                                      plot_path=science_plot_path)
     # ********************************************************************
 
 
