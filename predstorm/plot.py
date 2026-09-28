@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 # --------------------------- PLOTTING FUNCTIONS ----------------------------------------
 # =======================================================================================
 
-def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPRED_data, newell_coupling=None, dst_label='Dst Temerin & Li 2002', past_days=3.5, future_days=7., timestamp=None, times_3DCORE=[], times_nans={}, plot_path='predstorm_real.png', **kwargs):
+def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPRED_data, newell_coupling=None, dst_label='Dst Temerin & Li 2002', past_days=3.5, future_days=7., rec_shift_days=27, timestamp=None, times_3DCORE=[], times_nans={}, plot_path='predstorm_real.png', **kwargs):
     """
     Plots solar wind variables, past from DSCOVR and future/predicted from STEREO-A.
     Total B-field and Bz (top), solar wind speed (second), particle density (third)
@@ -167,7 +167,7 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
     if 'stereo' in stam.source.lower():
         pred_source = 'STEREO-Ahead Beacon'
     elif 'dscovr' in stam.source.lower() or 'noaa' in stam.source.lower():
-        pred_source = '27-day SW-Recurrence Model (NOAA)'
+        pred_source = f'{rec_shift_days}-day SW-Recurrence Model (NOAA)'
     plt.title('L1 real time solar wind from NOAA SWPC for '+ datetime.strftime(timestamp, "%Y-%m-%d %H:%M")+ 
               ' UT & {}'.format(pred_source), fontsize=fs_title)
 
@@ -489,91 +489,113 @@ def plot_solarwind_science(DSCOVR_data, STEREOA_data, verification_mode=False, t
         logger.info('Real-time plot saved as {}!'.format(plot_path))
 
 
-def plot_solarwind_pretty(sw_past, sw_future, dst, newell_coupling, timestamp, future_days=3, plot_path='predstorm_pretty.png'):
-    """Uses the package mplcyberpunk to make a simpler and more visually appealing plot.
+def plot_solarwind_pretty(sw_past, sw_future, dst, newell_coupling, timestamp, past_days=7, future_days=3, plot_path="predstorm_pretty.png"):
+    """Create the compact PREDSTORM overview plot."""
 
-    TO-DO:
-    - Implement weighted average smoothing on Newell Coupling."""
-
-    sys.path.append("/usr/local/lib/python3.8/dist-packages") # for specific server
+    sys.path.append("/usr/local/lib/python3.8/dist-packages")
     import mplcyberpunk
+
     plt.style.use("cyberpunk")
+
     c_speed = (0.58, 0.404, 0.741)
     c_dst = (0.031, 0.969, 0.996)
     c_ec = (0.961, 0.827, 0)
-    alpha_fut = 0.5
+    alpha_future = 0.5
 
-    fig, (ax1, ax2, ax3) = plt.subplots(3, figsize=(17,9), sharex=True)
-    time_past = dst['time'] <= date2num(timestamp)
-    time_future = dst['time'] >= date2num(timestamp)
-    i_fut = np.where(np.logical_and(sw_future['time'] > date2num(timestamp), \
-                     sw_future['time'] < date2num(timestamp)+future_days))[0]
-    # Plot data:
-    ax1.plot_date(sw_past['time'], sw_past['speed'], '-', c=c_speed, label="Solar wind speed [km/s]")
-    ax1.plot_date(sw_future['time'][i_fut], sw_future['speed'][i_fut], '-', c=c_speed, alpha=alpha_fut)
-    ax2.plot_date(dst['time'][time_past], dst['dst'][time_past], '-', c=c_dst, label="$Dst$ [nT]")
-    ax2.plot_date(dst['time'][time_future], dst['dst'][time_future], '-', c=c_dst, alpha=alpha_fut)
-    avg_newell_coupling = newell_coupling.get_weighted_average('ec')
-    ax3.plot_date(newell_coupling['time'][time_past], avg_newell_coupling[time_past]/4421., '-', c=c_ec, label="Newell Coupling\n[nT]")
-    ax3.plot_date(newell_coupling['time'][time_future], avg_newell_coupling[time_future]/4421., '-', c=c_ec, alpha=alpha_fut)
-    mplcyberpunk.add_glow_effects(ax1)
-    mplcyberpunk.add_glow_effects(ax2)
-    mplcyberpunk.add_glow_effects(ax3)
+    time_now = date2num(timestamp)
+    plot_start = date2num(timestamp - timedelta(days=past_days))
+    plot_end = date2num(timestamp + timedelta(days=future_days))
 
-    # Add labels:
-    props = dict(boxstyle='round', facecolor='silver', alpha=0.2)
-    # place a text box in upper left in axes coords
-    ax1.text(0.01, 0.95, "Solar wind speed [km/s]", transform=ax1.transAxes, fontsize=14,
-            verticalalignment='top', bbox=props)
-    ax2.text(0.01, 0.95, "Predicted $Dst$ [nT]", transform=ax2.transAxes, fontsize=14,
-            verticalalignment='top', bbox=props)
-    ax3.text(0.01, 0.95, 'Newell Coupling / 4421 $\mathregular{[(km/s)^{4/3} nT^{2/3}]}$', transform=ax3.transAxes, fontsize=14,
-            verticalalignment='top', bbox=props)
-    pltcfg.plot_dst_activity_lines(xlims=[dst['time'][0], dst['time'][-1]], ax=ax2, color='silver')
-    pltcfg.plot_speed_lines(xlims=[dst['time'][0], dst['time'][-1]], ax=ax1, color='silver')
+    # Select only data inside the displayed interval.
+    speed_past_mask = (sw_past["time"] >= plot_start) & (sw_past["time"] <= time_now)
+    speed_future_mask = (sw_future["time"] >= time_now) & (sw_future["time"] <= plot_end)
+    dst_past_mask = (dst["time"] >= plot_start) & (dst["time"] <= time_now)
+    dst_future_mask = (dst["time"] > time_now) & (dst["time"] <= plot_end)
+    ec_past_mask = (newell_coupling["time"] >= plot_start) & (newell_coupling["time"] <= time_now)
+    ec_future_mask = (newell_coupling["time"] > time_now) & (newell_coupling["time"] <= plot_end)
 
-    # Add vertical lines for 'now' time:
-    print_time_lines = True
-    for ax in [ax1, ax2, ax3]:
-        # Add a line denoting "now"
-        ax.axvline(x=timestamp, linewidth=2, color='silver')
-        # Add buffer to top of plots so that labels don't overlap with data:
-        ax_ymin, ax_ymax = ax.get_ylim()
-        text_adj = (ax_ymax-ax_ymin)*0.17
-        ax.set_ylim((ax_ymin, ax_ymax + text_adj))
-        # Add lines for future days:
-        ax_ymin, ax_ymax = ax.get_ylim()
-        text_adj = (ax_ymax-ax_ymin)*0.15
-        for t_day in [1,2,3,4]:
-            t_days_timestamp = timestamp+timedelta(days=t_day)
-            ax.axvline(x=t_days_timestamp, ls='--', linewidth=0.7, color='silver')
-            if print_time_lines:
-                ax.annotate('now', xy=(timestamp, ax_ymax-text_adj), xytext=(timestamp+timedelta(hours=2.5),
-                            ax_ymax-text_adj*1.03), color='silver', fontsize=14)
-                ax.annotate('+{} days'.format(t_day), xy=(t_days_timestamp, ax_ymax-text_adj), xytext=(t_days_timestamp+timedelta(hours=2),
-                            ax_ymax-text_adj*1.03), color='silver', fontsize=10)
-        print_time_lines = False
+    avg_newell_coupling = newell_coupling.get_weighted_average("ec") / 4421.0
 
-    # Formatting:
-    tick_date = num2date(dst['time'][0]).replace(hour=0, minute=0, second=0, microsecond=0)
-    ax3.set_xticks([tick_date + timedelta(days=n) for n in range(1,15)])
-    ax3.set_xlim([dst['time'][0], date2num(timestamp)+future_days]) #dst['time'][-1]])
-    myformat = DateFormatter('%a\n%b %d')
-    ax3.xaxis.set_major_formatter(myformat)
-    ax1.tick_params(axis='both', which='major', labelsize=14)
-    ax2.tick_params(axis='both', which='major', labelsize=14)
-    ax3.tick_params(axis='both', which='major', labelsize=14)
-    plt.subplots_adjust(hspace=0.)
-    ax1.set_title("Austrian Space Weather Office, Recurrence Model Geomagnetic Activity Forecast, {} UTC".format(timestamp.strftime("%Y-%m-%d %H:%M")), pad=20)
+    # Start with a clean figure so repeated runs do not retain old axes.
+    plt.close("all")
+    fig, (ax1, ax2, ax3) = plt.subplots(3, figsize=(17, 9), sharex=True)
 
+    # Solar-wind speed.
+    ax1.plot_date(sw_past["time"][speed_past_mask], sw_past["speed"][speed_past_mask], "-",
+                  color=c_speed, label="Solar-wind speed [km/s]")
+    ax1.plot_date(sw_future["time"][speed_future_mask], sw_future["speed"][speed_future_mask], "-",
+                  color=c_speed, alpha=alpha_future)
+
+    # Predicted Dst.
+    ax2.plot_date(dst["time"][dst_past_mask], dst["dst"][dst_past_mask], "-",
+                  color=c_dst, label=r"$Dst$ [nT]")
+    ax2.plot_date(dst["time"][dst_future_mask], dst["dst"][dst_future_mask], "-",
+                  color=c_dst, alpha=alpha_future)
+
+    # Newell coupling.
+    ax3.plot_date(newell_coupling["time"][ec_past_mask], avg_newell_coupling[ec_past_mask], "-",
+                  color=c_ec, label="Newell coupling / 4421")
+    ax3.plot_date(newell_coupling["time"][ec_future_mask], avg_newell_coupling[ec_future_mask], "-",
+                  color=c_ec, alpha=alpha_future)
+
+    for ax in (ax1, ax2, ax3):
+        mplcyberpunk.add_glow_effects(ax)
+
+    # Reference levels.
+    pltcfg.plot_dst_activity_lines(xlims=[plot_start, plot_end], ax=ax2, color="silver")
+    pltcfg.plot_speed_lines(xlims=[plot_start, plot_end], ax=ax1, color="silver")
+
+    # Panel labels.
+    label_box = {"boxstyle": "round", "facecolor": "silver", "alpha": 0.2}
+
+    ax1.text(0.01, 0.95, "Solar-wind speed [km/s]", transform=ax1.transAxes, fontsize=14,
+             verticalalignment="top", bbox=label_box)
+    ax2.text(0.01, 0.95, r"Predicted $Dst$ [nT]", transform=ax2.transAxes, fontsize=14,
+             verticalalignment="top", bbox=label_box)
+    ax3.text(0.01, 0.95, "Newell coupling / 4421", transform=ax3.transAxes, fontsize=14,
+             verticalalignment="top", bbox=label_box)
+
+    # Current-time line and shared formatting.
+    for ax in (ax1, ax2, ax3):
+        ax.axvline(time_now, linewidth=2, color="silver")
+        ax.set_xlim(plot_start, plot_end)
+        ax.tick_params(axis="both", which="major", labelsize=12)
+
+    # Future-day markers.
+    for day in range(1, int(np.floor(future_days)) + 1):
+        marker_time = date2num(timestamp + timedelta(days=day))
+
+        for ax in (ax1, ax2, ax3):
+            ax.axvline(marker_time, linestyle="--", linewidth=0.7, color="silver", alpha=0.7)
+
+        day_label = f"+{day} day" if day == 1 else f"+{day} days"
+        ax1.annotate(day_label, xy=(marker_time, 1), xycoords=("data", "axes fraction"),
+                     xytext=(4, -18), textcoords="offset points", color="silver",
+                     fontsize=9, verticalalignment="top")
+
+    ax1.annotate("now", xy=(time_now, 1), xycoords=("data", "axes fraction"),
+                 xytext=(4, -18), textcoords="offset points", color="silver",
+                 fontsize=10, verticalalignment="top")
+
+    # Use concise, automatically spaced date labels.
+    date_locator = mdates.AutoDateLocator(minticks=6, maxticks=10)
+    date_formatter = mdates.ConciseDateFormatter(date_locator)
+    ax3.xaxis.set_major_locator(date_locator)
+    ax3.xaxis.set_major_formatter(date_formatter)
+
+    title = ("Austrian Space Weather Office, Recurrence Model Geomagnetic Activity Forecast, "
+             f"{timestamp:%Y-%m-%d %H:%M} UTC")
+    ax1.set_title(title, pad=20)
+
+    plt.subplots_adjust(hspace=0.05)
     pltcfg.group_info_text_small()
+    pltcfg.liability_text()
 
-    plt.savefig(plot_path)
-    # To cut the final version:
-    # convert predstorm_pretty.png -crop 1420x1000+145+30 predstorm_pretty_cropped.png
+    fig.savefig(plot_path, bbox_inches="tight", dpi=150)
+    plt.close(fig)
 
-    # Reset Matplotlib styles to normal:
-    plt.rcParams.update(plt.rcParamsDefault)
+    logger.info("Pretty plot saved as %s; displayed interval is %s to %s.",
+                plot_path, num2date(plot_start), num2date(plot_end))
 
 
 def plot_stereo_dscovr_comparison(stam, dism, dst, timestamp=None, look_back=20, outfile=None, **kwargs):

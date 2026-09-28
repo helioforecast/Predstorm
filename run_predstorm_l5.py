@@ -356,9 +356,7 @@ def main(timestamp):
             sys.exit()
 
         if not os.path.exists(pers27_path_min):
-            raise FileNotFoundError(
-                f"Missing RTSW recurrence archive: {pers27_path_min}"
-            )
+            raise FileNotFoundError(f"Missing RTSW recurrence archive: {pers27_path_min}")
 
         rtsw_archive_min = ps.get_rtsw_archive_data(pers27_path_min)
         rtsw_archive_hour = ps.get_rtsw_archive_data(pers27_path_hour)
@@ -588,6 +586,7 @@ def main(timestamp):
                                       newell_coupling=newell_coupling,
                                       past_days=plot_past_days,
                                       future_days=plot_future_days,
+                                      rec_shift_days=recurrence_shift_days,
                                       dst_label=dst_label,
                                       timestamp=timestamp,
                                       times_3DCORE=fr_t_m,
