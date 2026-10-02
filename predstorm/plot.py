@@ -230,13 +230,13 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
     plt.plot_date(dst['time'], dst['dst'],'o', c=c_dst, label='Dst observed',markersize=ms_dst)
     plt.ylabel('Dst [nT]', fontsize=fs_ylabel)
 
-    dstplotmax = np.nanmax(np.concatenate((dst['dst'], dst_pred['dst'])))+20
-    dstplotmin = np.nanmin(np.concatenate((dst['dst'], dst_pred['dst'])))-20
+    # dstplotmax = np.nanmax(np.concatenate((dst['dst'], dst_pred['dst'])))+20
+    # dstplotmin = np.nanmin(np.concatenate((dst['dst'], dst_pred['dst'])))-20
 
-    if dstplotmin > -100:       # Low activity (normal)
-        plt.ylim([-100, dstplotmax + 30])
-    else:                       # High activity
-        plt.ylim([dstplotmin, dstplotmax])
+    # if dstplotmin > -100:       # Low activity (normal)
+    #     plt.ylim([-100, dstplotmax + 30])
+    # else:                       # High activity
+    #     plt.ylim([dstplotmin, dstplotmax])
 
     # Plot predicted Dst
     dst_pred_past = dst_pred['time'] < date2num(timestamp)
@@ -260,6 +260,30 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
                      alpha=0.1, facecolor=c_sta_dst)
     plt.fill_between(dst_pred['time'][ih_fut], dst_pred['dst'][ih_fut]-2*error_l5, dst_pred['dst'][ih_fut]+2*error_l5,
                      alpha=0.1, facecolor=c_sta_dst)
+
+    # Calculate limits from data inside the visible plot interval.
+    dst_visible = (dst["time"] >= plotstart) & (dst["time"] <= plotend)
+    dst_pred_visible = (dst_pred["time"] >= plotstart) & (dst_pred["time"] <= plotend)
+
+    visible_dst = np.concatenate((dst["dst"][dst_visible], dst_pred["dst"][dst_pred_visible]))
+    visible_dst = visible_dst[np.isfinite(visible_dst)]
+
+    if len(visible_dst) > 0:
+        # Include the largest plotted prediction interval:
+        error_margin = 2.0 * max(error_l1, error_l5, error_pers)
+        data_min = np.min(visible_dst) - error_margin
+        data_max = np.max(visible_dst) + error_margin
+
+        dstplotmin = min(-100.0, data_min - 5.0)
+
+        # Reserve the upper 15% of the panel for the legend:
+        legend_fraction = 0.15
+        data_span = max(data_max - dstplotmin, 1.0)
+        dstplotmax = data_max + data_span * legend_fraction / (1.0 - legend_fraction)
+
+        ax4.set_ylim(dstplotmin, dstplotmax)
+    else:
+        ax4.set_ylim(-100, 50)
 
     # Label plot with geomagnetic storm levels
     pltcfg.plot_dst_activity_lines(xlims=[plotstart, plotend])
@@ -287,10 +311,15 @@ def plot_solarwind_and_dst_prediction(DSCOVR_data, STEREOA_data, DST_data, DSTPR
     # GENERAL FORMATTING
     # ------------------
     for ax in axes:
-        ax.set_xlim([plotstart,plotend])
+        ax.set_xlim([plotstart, plotend])
         ax.tick_params(axis="x", labelsize=fs)
         ax.tick_params(axis="y", labelsize=fs)
-        ax.legend(loc=2,ncol=4,fontsize=fs_legend)
+
+        if ax is ax4:
+            ax.legend(loc="upper left", ncol=4, fontsize=fs_legend, framealpha=0.9,
+                      borderaxespad=0.25, handlelength=2.0, columnspacing=1.0)
+        else:
+            ax.legend(loc="upper left", ncol=4, fontsize=fs_legend)
 
         # Dates on x-axes:
         myformat = mdates.DateFormatter(date_fmt)

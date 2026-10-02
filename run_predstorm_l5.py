@@ -92,7 +92,7 @@ matplotlib.use('Agg') # important for server version, otherwise error when makin
 #else:
 #    matplotlib.use('Qt5Agg') # figures are shown on mac
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 #import h5py
 import logging
 import logging.config
@@ -272,7 +272,7 @@ def main(timestamp):
         use_recurrence_model = False
 
     # Define timing variables:
-    timenow = datetime.utcnow()
+    timenow = datetime.now(timezone.utc).replace(tzinfo=None)
     if run_mode == 'normal':
         timestamp = timenow
     timestampstr = datetime.strftime(timestamp, tstr_format) # timeutcstr
@@ -769,7 +769,7 @@ def validation(look_back=40):
     import seaborn as sns
     sns.set_style('darkgrid')
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     lw = pltcfg.lw
 
@@ -924,5 +924,5 @@ if __name__ == '__main__':
 
     main(timestamp)
 
-    print("------ This run completed at {}! ------\n".format(datetime.utcnow()))
+    print("------ This run completed at {}! ------\n".format(datetime.now(timezone.utc).replace(tzinfo=None)))
 
